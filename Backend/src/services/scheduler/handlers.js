@@ -15,7 +15,7 @@ import {
   DEFAULT_TIMEZONE,
   LOG_SCOPE,
 } from '../../constants/scheduler.js';
-import { buildScheduledSyncSpecs } from '../../utils/boardSyncSweepHelpers.js';
+import { buildScheduledSyncSpecs, buildScheduledSyncBoardWrites } from '../../utils/boardSyncSweepHelpers.js';
 import syncQueue from '../sync/queue.js';
 
 const BLOCK_FOR_KIND = { [KIND_INVOICE]: 'invoice', [KIND_STATEMENT]: 'statement' };
@@ -51,6 +51,10 @@ export async function runBoardSyncSweep(job) {
   }
 
   await syncQueue.addBulk(specs);
+  const writes = buildScheduledSyncBoardWrites(specs);
+  if (writes.length > 0) {
+    await Board.bulkWrite(writes, { ordered: false });
+  }
   info(LOG_SCOPE, 'board_sync sweep enqueued', { count: specs.length });
 }
 
@@ -143,15 +147,10 @@ export function registerAutomationHandlers() {
  *
  * A handler enqueues and returns — it must never await the work itself, or a
  * tick stops being bounded.
+ *
+ * Portal board catch-up is driven by node-cron (`startBoardSyncCron`), not by
+ * the EventBridge tick — do not register `board_sync` here.
  */
 export function registerSchedulerHandlers() {
-  // Portal-wide catch-up: one ScheduledJob (targetId=portal) fans out
-  // scheduled_sync for every sync-enabled board. Idempotent via stable jobIds,
-  // so AT_LEAST_ONCE is correct — a miss is worse than a harmless repeat.
-  register(BOARD_SYNC_KIND, {
-    policy: AT_LEAST_ONCE,
-    handler: (job) => runBoardSyncSweep(job),
-  });
-
   registerAutomationHandlers();
 }

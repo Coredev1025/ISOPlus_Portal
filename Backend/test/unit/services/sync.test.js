@@ -2,12 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../msw/server.js';
 import Board from '../../../src/models/Board.js';
-import ScheduledJob from '../../../src/models/ScheduledJob.js';
-import {
-  BOARD_SYNC_CRON_DEFAULT,
-  BOARD_SYNC_KIND,
-  BOARD_SYNC_TARGET_ID,
-} from '../../../src/constants/scheduler.js';
+import { BOARD_SYNC_CRON_DEFAULT } from '../../../src/constants/scheduler.js';
 import {
   enableBoardSync,
   disableBoardSync,
@@ -16,6 +11,8 @@ import {
   enableWorkspaceSync,
   getBoardSyncStatus,
 } from '../../../src/services/sync.js';
+import { computeNextRun } from '../../../src/services/scheduler/nextRun.js';
+import { DEFAULT_TIMEZONE } from '../../../src/constants/scheduler.js';
 
 /**
  * src/services/sync.js. test/unit/routes/sync.test.js already drives most of
@@ -84,6 +81,7 @@ describe('enableBoardSync', () => {
     'data_backlog_sync',
     'realtime_sync',
     'manual_triggered_sync',
+    'scheduled_sync',
   ])('refuses to re-enable a board already in %s', async (syncStatus) => {
     const boardId = await seedBoard({ syncStatus });
 
@@ -285,24 +283,26 @@ describe('getBoardSyncStatus', () => {
     expect(status.syncStats.itemsSynced).toBe(12);
   });
 
-  it('attaches the portal next run on schedule.upcoming', async () => {
-    const boardId = await seedBoard({
-      syncData: true,
-      syncStatus: 'realtime_sync',
-    });
-    const nextRunAt = new Date('2026-08-20T16:00:00Z');
-    await ScheduledJob.create({
-      kind: BOARD_SYNC_KIND,
-      targetId: BOARD_SYNC_TARGET_ID,
-      cron: BOARD_SYNC_CRON_DEFAULT,
-      timezone: 'Australia/Sydney',
-      nextRunAt,
-    });
+  it('attaches the portal next run on schedule.upcoming from the cron', async () => {
+    const savedCron = process.env.BOARD_SYNC_CRON;
+    delete process.env.BOARD_SYNC_CRON;
+    try {
+      const boardId = await seedBoard({
+        syncData: true,
+        syncStatus: 'realtime_sync',
+      });
+      const before = new Date();
 
-    const status = await getBoardSyncStatus(boardId);
+      const status = await getBoardSyncStatus(boardId);
+      const expected = computeNextRun(BOARD_SYNC_CRON_DEFAULT, DEFAULT_TIMEZONE, before);
 
-    expect(status.schedule.upcoming.at.toISOString()).toBe(nextRunAt.toISOString());
-    expect(status.schedule.cron).toBe(BOARD_SYNC_CRON_DEFAULT);
-    expect(status.schedule.current).toBeNull();
+      expect(status.schedule.cron).toBe(BOARD_SYNC_CRON_DEFAULT);
+      expect(status.schedule.timezone).toBe(DEFAULT_TIMEZONE);
+      expect(status.schedule.upcoming.at.toISOString()).toBe(expected.toISOString());
+      expect(status.schedule.current).toBeNull();
+    } finally {
+      if (savedCron === undefined) delete process.env.BOARD_SYNC_CRON;
+      else process.env.BOARD_SYNC_CRON = savedCron;
+    }
   });
 });

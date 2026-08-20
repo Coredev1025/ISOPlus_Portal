@@ -51,6 +51,28 @@ describe('buildBoardSyncScheduleView', () => {
     expect(view.current).toEqual({ state: 'waiting', syncType: 'scheduled_sync' });
   });
 
+  it('ignores a finished BullMQ job so Current returns to Idle', () => {
+    const view = buildBoardSyncScheduleView({
+      board: { syncStatus: 'realtime_sync', lastSyncedAt: new Date('2026-08-18T16:00:00Z') },
+      jobStatus: { state: 'completed' },
+      syncExecution: null,
+      lastCompleted: null,
+      portalSchedule: portal,
+    });
+    expect(view.current).toBeNull();
+  });
+
+  it('ignores a failed BullMQ job left on syncJobId', () => {
+    const view = buildBoardSyncScheduleView({
+      board: { syncStatus: 'realtime_sync', lastSyncedAt: null },
+      jobStatus: { state: 'failed' },
+      syncExecution: null,
+      lastCompleted: null,
+      portalSchedule: portal,
+    });
+    expect(view.current).toBeNull();
+  });
+
   it('omits upcoming when the portal schedule is missing', () => {
     const view = buildBoardSyncScheduleView({
       board: { syncStatus: 'realtime_sync', lastSyncedAt: null },

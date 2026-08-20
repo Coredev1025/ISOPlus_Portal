@@ -3,7 +3,7 @@ import Board from '../../../src/models/Board.js';
 import AutomationSettings from '../../../src/models/AutomationSettings.js';
 import { registerSchedulerHandlers, runBoardSyncSweep } from '../../../src/services/scheduler/handlers.js';
 import { resolve, clearRegistry } from '../../../src/services/scheduler/registry.js';
-import { AT_LEAST_ONCE, BOARD_SYNC_KIND } from '../../../src/constants/scheduler.js';
+import { BOARD_SYNC_KIND } from '../../../src/constants/scheduler.js';
 import { KIND_INVOICE, KIND_STATEMENT } from '../../../src/constants/automation.js';
 import { SCHEDULED_SYNC_JOB_TYPE } from '../../../src/constants/sync.js';
 import { recordedBulkJobs, resetRecordedJobs } from '../../helpers/queue.js';
@@ -41,23 +41,20 @@ describe('board_sync sweep handler', () => {
     else process.env.PERSONAL_ACCESS_TOKEN = originalToken;
   });
 
-  it('registers board_sync under AT_LEAST_ONCE', () => {
+  it('does not register board_sync on the EventBridge tick registry', () => {
     registerSchedulerHandlers();
-    const entry = resolve(BOARD_SYNC_KIND);
-    expect(entry.policy).toBe(AT_LEAST_ONCE);
+    expect(() => resolve(BOARD_SYNC_KIND)).toThrow(/not registered/);
   });
 
   it('enqueues one scheduled_sync job per sync-enabled board for the claimed slot', async () => {
     await Board.create([
-      { boardId: 'on-1', name: 'A', workspaceId: 'ws-1', syncData: true },
+      { boardId: 'on-1', name: 'A', workspaceId: 'ws-1', syncData: true, syncStatus: 'realtime_sync' },
       { boardId: 'off-1', name: 'B', workspaceId: 'ws-1', syncData: false },
-      { boardId: 'on-2', name: 'C', workspaceId: 'ws-2', syncData: true },
+      { boardId: 'on-2', name: 'C', workspaceId: 'ws-2', syncData: true, syncStatus: 'realtime_sync' },
     ]);
-    registerSchedulerHandlers();
-    const { handler } = resolve(BOARD_SYNC_KIND);
     const slot = new Date('2026-08-11T16:00:00Z');
 
-    await handler({
+    await runBoardSyncSweep({
       targetId: 'portal',
       workspaceId: null,
       scheduledFor: slot,
@@ -69,6 +66,29 @@ describe('board_sync sweep handler', () => {
     expect(jobs.map((j) => j.data.boardId).sort()).toEqual(['on-1', 'on-2']);
     expect(jobs[0].data.jobType).toBe(SCHEDULED_SYNC_JOB_TYPE);
     expect(jobs[0].data.authorization).toBe('Bearer test-token');
+
+    const on1 = await Board.findOne({ boardId: 'on-1' }).lean();
+    expect(on1.syncStatus).toBe(SCHEDULED_SYNC_JOB_TYPE);
+    expect(on1.syncJobId).toBe(jobs.find((j) => j.data.boardId === 'on-1').opts.jobId);
+  });
+
+  it('stamps syncJobId for first-time boards without overwriting backlog status', async () => {
+    await Board.create({
+      boardId: 'backlog-1',
+      name: 'D',
+      workspaceId: 'ws-1',
+      syncData: true,
+      syncStatus: 'data_backlog_sync',
+    });
+
+    await runBoardSyncSweep({
+      scheduledFor: new Date('2026-08-11T16:00:00Z'),
+      timezone: 'Australia/Sydney',
+    });
+
+    const stored = await Board.findOne({ boardId: 'backlog-1' }).lean();
+    expect(stored.syncStatus).toBe('data_backlog_sync');
+    expect(stored.syncJobId).toMatch(/^sched:backlog-1:/);
   });
 
   it('resolves without enqueueing when no board has sync enabled', async () => {

@@ -1,11 +1,14 @@
 import { BOARD_SYNC_CRON_DEFAULT } from '../constants/scheduler.js';
-import { SCHEDULED_SYNC_JOB_TYPE } from '../constants/sync.js';
+import {
+  SCHEDULED_SYNC_JOB_TYPE,
+  SCHEDULED_SYNC_QUEUEABLE_STATUSES,
+} from '../constants/sync.js';
 
 /**
  * Stable identifier for one claimed sweep slot, used in BullMQ jobIds.
  * Derived from the claimed slot in the schedule timezone, never Date.now().
  */
-function scheduledSyncPeriodKey({ slot, timezone }) {
+export function scheduledSyncPeriodKey({ slot, timezone }) {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat('en-CA', {
       timeZone: timezone,
@@ -50,4 +53,41 @@ export function buildScheduledSyncSpecs({ boards, slot, timezone, authorization 
     },
     opts: { jobId: `sched:${board.boardId}:${periodKey}` },
   }));
+}
+
+/**
+ * After addBulk: stamp syncJobId so status can show Queued while waiting.
+ * Flip syncStatus to scheduled_sync only when the board is not mid first-time
+ * validation/backlog (those keep their own status labels).
+ */
+export function buildScheduledSyncBoardWrites(specs) {
+  return specs.flatMap((spec) => {
+    const boardId = spec.data.boardId;
+    const syncJobId = String(spec.opts.jobId);
+    return [
+      {
+        updateOne: {
+          filter: {
+            boardId,
+            syncStatus: { $in: SCHEDULED_SYNC_QUEUEABLE_STATUSES },
+          },
+          update: {
+            $set: {
+              syncStatus: SCHEDULED_SYNC_JOB_TYPE,
+              syncJobId,
+            },
+          },
+        },
+      },
+      {
+        updateOne: {
+          filter: {
+            boardId,
+            syncStatus: { $nin: SCHEDULED_SYNC_QUEUEABLE_STATUSES },
+          },
+          update: { $set: { syncJobId } },
+        },
+      },
+    ];
+  });
 }

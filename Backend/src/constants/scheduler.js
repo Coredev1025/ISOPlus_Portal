@@ -106,21 +106,22 @@ export const AT_LEAST_ONCE_MIN_INTERVAL_MINUTES = 5;
 // ── Portal board catch-up ───────────────────────────────────────────────────
 
 /**
- * Registry key for the portal-wide ISO+ board catch-up sweep.
- * Touchpoints: handlers.js, portalSchedule.js, boardSyncSweepHelpers.js,
- * boardSyncScheduleViewHelpers.js.
+ * Registry key / log kind for the portal-wide ISO+ board catch-up sweep.
+ * Touchpoints: handlers.js (runBoardSyncSweep), portalSchedule.js,
+ * boardSyncSweepHelpers.js.
  */
 export const BOARD_SYNC_KIND = 'board_sync';
 
 /**
- * Sentinel ScheduledJob.targetId for the one portal sweep. Not a board id.
- * Touchpoints: portalSchedule.js, handlers.js, getBoardSyncStatus.
+ * Sentinel formerly used as ScheduledJob.targetId for the portal sweep.
+ * Still passed on the sweep job payload for log correlation.
+ * Touchpoints: portalSchedule.js, handlers.js (runBoardSyncSweep).
  */
 export const BOARD_SYNC_TARGET_ID = 'portal';
 
 /**
  * Daily 02:00. Used when BOARD_SYNC_CRON is unset.
- * Touchpoints: boardSyncSweepHelpers.js (resolveBoardSyncCron).
+ * Touchpoints: boardSyncSweepHelpers.js (resolveBoardSyncCron), portalSchedule.js.
  */
 export const BOARD_SYNC_CRON_DEFAULT = '0 2 * * *';
 

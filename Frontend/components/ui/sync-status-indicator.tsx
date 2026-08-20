@@ -10,6 +10,8 @@ import { Progress } from "@/components/ui/progress";
 const MANUAL_SYNC_STATES = new Set(['active', 'waiting', 'failed']);
 const FAILED_EXECUTION_STATUSES = new Set(['failed', 'timeout']);
 const ACTIVE_EXECUTION_STATUSES = new Set(['started', 'in-progress']);
+/** Catch-up from the portal cron — no floating progress card. */
+const HIDDEN_INDICATOR_SYNC_TYPES = new Set(['scheduled_sync', 'realtime_sync']);
 
 function buildSyncError(board: any, message: string) {
   return {
@@ -17,6 +19,11 @@ function buildSyncError(board: any, message: string) {
     stack: board.syncExecution?.error?.stack || null,
     details: board.syncExecution?.error?.details || null,
   };
+}
+
+function isHiddenFromIndicator(board: any) {
+  const syncType = board.syncExecution?.syncType || board.syncStatus;
+  return HIDDEN_INDICATOR_SYNC_TYPES.has(syncType);
 }
 
 function isManualSyncBoard(board: any) {
@@ -104,14 +111,14 @@ function hasActiveSyncExecution(board: any) {
   const execution = board.syncExecution;
   return execution
     && ACTIVE_EXECUTION_STATUSES.has(execution.status)
-    && execution.syncType !== 'realtime_sync';
+    && !HIDDEN_INDICATOR_SYNC_TYPES.has(execution.syncType);
 }
 
 function hasFailedSyncExecution(board: any) {
   const execution = board.syncExecution;
   return execution
     && FAILED_EXECUTION_STATUSES.has(execution.status)
-    && execution.syncType !== 'realtime_sync'
+    && !HIDDEN_INDICATOR_SYNC_TYPES.has(execution.syncType)
     && isRecentFailure(execution.endTime, 60 * 1000);
 }
 
@@ -119,14 +126,14 @@ function hasActiveJobStatus(board: any) {
   const jobStatus = board.jobStatus;
   return jobStatus
     && (jobStatus.state === 'active' || jobStatus.state === 'waiting')
-    && board.syncStatus !== 'realtime_sync';
+    && !isHiddenFromIndicator(board);
 }
 
 function hasFailedJobStatus(board: any) {
   const jobStatus = board.jobStatus;
   return jobStatus
     && jobStatus.state === 'failed'
-    && board.syncStatus !== 'realtime_sync'
+    && !isHiddenFromIndicator(board)
     && isRecentFailure(jobStatus.finishedOn, 5 * 60 * 1000);
 }
 

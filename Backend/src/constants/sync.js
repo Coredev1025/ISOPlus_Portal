@@ -1,6 +1,8 @@
 /**
  * How many board-sync jobs may run at once. 1 is the traffic cap for
  * scheduled catch-up, manual Resync, and backlog sharing this worker.
+ * Per Node process (each EB instance runs its own worker); multi-instance
+ * fan-out still dedupes via BullMQ jobIds from the cron slot.
  * Touchpoints: workers/syncWorker.js.
  */
 export const SYNC_WORKER_CONCURRENCY = 1;
@@ -12,3 +14,30 @@ export const SYNC_WORKER_CONCURRENCY = 1;
  * models/SyncExecution.js.
  */
 export const SCHEDULED_SYNC_JOB_TYPE = 'scheduled_sync';
+
+/**
+ * Board.syncStatus values that mean sync is already on — enableBoardSync
+ * must refuse rather than reset and re-queue.
+ * Touchpoints: services/sync.js.
+ */
+export const SYNC_ALREADY_ENABLED_STATUSES = [
+  'sync_enabled',
+  'board_validation',
+  'board_valid',
+  'data_backlog_sync',
+  'realtime_sync',
+  'manual_triggered_sync',
+  SCHEDULED_SYNC_JOB_TYPE,
+];
+
+/**
+ * Statuses safe to flip to scheduled_sync when a catch-up job is enqueued
+ * (so Configuration can show Queued). First-time / validation paths keep
+ * their status; only syncJobId is stamped for those.
+ * Touchpoints: boardSyncSweepHelpers.js, services/scheduler/handlers.js.
+ */
+export const SCHEDULED_SYNC_QUEUEABLE_STATUSES = [
+  'sync_enabled',
+  'realtime_sync',
+  SCHEDULED_SYNC_JOB_TYPE,
+];

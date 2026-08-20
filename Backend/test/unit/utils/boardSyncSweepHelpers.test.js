@@ -7,8 +7,10 @@ import {
 import { SCHEDULED_SYNC_JOB_TYPE } from '../../../src/constants/sync.js';
 import {
   buildScheduledSyncSpecs,
+  buildScheduledSyncBoardWrites,
   isEligibleSyncBoard,
   resolveBoardSyncCron,
+  scheduledSyncPeriodKey,
 } from '../../../src/utils/boardSyncSweepHelpers.js';
 
 const TZ = 'Australia/Sydney';
@@ -83,6 +85,49 @@ describe('buildScheduledSyncSpecs', () => {
     const boards = [{ syncData: true, boardId: 'b1', workspaceId: 'ws-1' }];
     buildScheduledSyncSpecs({ boards, slot, timezone: TZ, authorization: 'Bearer t' });
     expect(boards).toEqual([{ syncData: true, boardId: 'b1', workspaceId: 'ws-1' }]);
+  });
+});
+
+describe('scheduledSyncPeriodKey', () => {
+  it('is identical for wall clocks in the same cron minute', () => {
+    const a = scheduledSyncPeriodKey({
+      slot: new Date('2026-08-11T16:00:01Z'),
+      timezone: TZ,
+    });
+    const b = scheduledSyncPeriodKey({
+      slot: new Date('2026-08-11T16:00:59Z'),
+      timezone: TZ,
+    });
+    expect(a).toBe(b);
+    expect(a).toBe('20260812-0200');
+  });
+});
+
+describe('buildScheduledSyncBoardWrites', () => {
+  it('flips queueable boards to scheduled_sync and only stamps job id otherwise', () => {
+    const specs = buildScheduledSyncSpecs({
+      boards: [
+        { syncData: true, boardId: 'live', workspaceId: 'ws-1' },
+        { syncData: true, boardId: 'backlog', workspaceId: 'ws-1' },
+      ],
+      slot,
+      timezone: TZ,
+      authorization: 'Bearer t',
+    });
+    // Helper does not know status — writes cover both branches per board.
+    const writes = buildScheduledSyncBoardWrites(specs);
+    expect(writes).toHaveLength(4);
+    expect(writes[0].updateOne.filter).toEqual({
+      boardId: 'live',
+      syncStatus: { $in: expect.any(Array) },
+    });
+    expect(writes[0].updateOne.update.$set).toEqual({
+      syncStatus: SCHEDULED_SYNC_JOB_TYPE,
+      syncJobId: 'sched:live:20260812-0200',
+    });
+    expect(writes[1].updateOne.update.$set).toEqual({
+      syncJobId: 'sched:live:20260812-0200',
+    });
   });
 });
 

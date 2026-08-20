@@ -1,7 +1,6 @@
 import syncQueue from './sync/queue.js';
 import Board from '../models/Board.js';
 import SyncExecution from '../models/SyncExecution.js';
-import ScheduledJob from '../models/ScheduledJob.js';
 import { registerBoardWebhooks } from './webhookService.js';
 import { info, error, warn } from '../utils/logger.js';
 import {
@@ -10,8 +9,9 @@ import {
   checkActiveQueueJob,
 } from './syncBoardHelpers.js';
 import { sanitizeApiPathSegment } from '../utils/securityHelpers.js';
-import { BOARD_SYNC_KIND, BOARD_SYNC_TARGET_ID } from '../constants/scheduler.js';
 import { buildBoardSyncScheduleView } from '../utils/boardSyncScheduleViewHelpers.js';
+import { buildPortalBoardSyncMeta } from './scheduler/portalSchedule.js';
+import { SYNC_ALREADY_ENABLED_STATUSES } from '../constants/sync.js';
 
 export async function enableBoardSync(authorization, workspaceId, boardId) {
   try {
@@ -21,7 +21,7 @@ export async function enableBoardSync(authorization, workspaceId, boardId) {
     
     const board = await Board.findOne({ boardId: safeBoardId }).select('syncStatus').lean();
     
-    if (board && ['sync_enabled', 'board_validation', 'board_valid', 'data_backlog_sync', 'realtime_sync', 'manual_triggered_sync'].includes(board.syncStatus)) {
+    if (board && SYNC_ALREADY_ENABLED_STATUSES.includes(board.syncStatus)) {
       return {
         success: false,
         message: `Sync already enabled for this board (current status: ${board.syncStatus})`,
@@ -588,15 +588,10 @@ export async function getBoardSyncStatus(boardId) {
       }
     }
 
-    const [lastCompleted, portalSchedule] = await Promise.all([
-      SyncExecution.findOne({ boardId, status: 'completed' })
-        .sort({ endTime: -1 })
-        .select('endTime status syncType')
-        .lean(),
-      ScheduledJob.findOne({ kind: BOARD_SYNC_KIND, targetId: BOARD_SYNC_TARGET_ID })
-        .select('cron timezone nextRunAt')
-        .lean(),
-    ]);
+    const lastCompleted = await SyncExecution.findOne({ boardId, status: 'completed' })
+      .sort({ endTime: -1 })
+      .select('endTime status syncType')
+      .lean();
 
     return {
       boardId: board.boardId,
@@ -614,7 +609,7 @@ export async function getBoardSyncStatus(boardId) {
         jobStatus,
         syncExecution,
         lastCompleted,
-        portalSchedule,
+        portalSchedule: buildPortalBoardSyncMeta(),
       }),
     };
 

@@ -13,6 +13,10 @@ before this design. Do not implement per-board `ScheduledJob` rows.
 |---|---|---|
 | JobId period key via `automationPeriodKey` of the claimed slot | `scheduledSyncPeriodKey` in `boardSyncSweepHelpers.js` (same `YYYYMMDD-HHmm` shape, `Intl`) | Board catch-up must not import invoice-automation helpers. The slot is still the claimed `scheduledFor` / `nextRunAt`, never `Date.now()`. |
 | The `board_sync` handler "today" calls `triggerManualSync` for one `targetId` | `runBoardSyncSweep` fans out `scheduled_sync` for every `syncData: true` board | That was the pre-change state this design replaced; keeping the old sentence would describe code that no longer exists. |
+| Clock: EventBridge → `POST /api/scheduler/tick` claims a portal `ScheduledJob` | In-process `node-cron` calls `runBoardSyncSweep` directly; `board_sync` is **not** registered on the tick | Epic 12 only — invoice/statement automation stay on EventBridge. Multi-instance duplicate fires are accepted; BullMQ `jobId`s collapse them. |
+| Next run from portal `ScheduledJob.nextRunAt` | Next run from `computeNextRun(BOARD_SYNC_CRON, DEFAULT_TIMEZONE, now)` | No tick advances a board-sync row. Boot disables any leftover portal `ScheduledJob` (retried) so ticks cannot claim it. |
+| Cron fire passes wall-clock `new Date()` as the slot | `computeCurrentCronSlot` derives the cron occurrence at/before now | Two instances waking seconds apart share one period key / jobId. |
+| Queued when a waiting BullMQ job exists | Sweep stamps `syncJobId` (and `scheduled_sync` when safe) on enqueue | Worker previously set those only when active, so Current stayed Idle while waiting. |
 
 ## What already exists (do not rebuild)
 
@@ -45,15 +49,11 @@ same class of work as Resync Data.
 **Portal-wide sweep + fan-out + worker concurrency 1.**
 
 ```
-EventBridge / npm run tick
-      │
+node-cron (BOARD_SYNC_CRON, DEFAULT_TIMEZONE)
+      │  started on Mongo connect; skipped in NODE_ENV=test
       ▼
-POST /api/scheduler/tick
-      │
-      ▼
-board_sync handler (AT_LEAST_ONCE)
-      │  one ScheduledJob: kind=board_sync, targetId=portal
-      │  cron from BOARD_SYNC_CRON (default 0 2 * * *)
+runBoardSyncSweep({ scheduledFor: fireTime, timezone })
+      │  offline → skip without throw
       ▼
 find boards where syncData === true
       ▼
@@ -63,6 +63,9 @@ syncWorker concurrency 1  →  scheduled_sync catch-up
       ▼
 board returns to realtime_sync (existing backlog completion path)
 ```
+
+EventBridge / `POST /api/scheduler/tick` continues for invoice and statement
+automation only. It must not claim `board_sync`.
 
 Rejected:
 
@@ -75,18 +78,17 @@ Rejected:
 
 | Key | Value |
 |---|---|
-| Kind | `board_sync` (existing registry key) |
-| `targetId` | sentinel `'portal'` — not a board id |
+| Clock | `node-cron` in-process (not EventBridge) |
 | Default cron | `0 2 * * *` (02:00 in the schedule timezone) |
 | Override | `BOARD_SYNC_CRON` in `Backend/.env` (and `.env.example`) |
-| Timezone | `upsertSchedule` inheritance: `Business.headOfficeTimezone` is unused here because there is no workspace on the sentinel row → `DEFAULT_TIMEZONE` (`Australia/Sydney`) |
-| Who edits the cron | Operators via env / the single `ScheduledJob` row. **Board Configuration does not edit it.** |
+| Timezone | `DEFAULT_TIMEZONE` (`Australia/Sydney`) |
+| Who edits the cron | Operators via env. **Board Configuration does not edit it.** |
 
-Invalid `BOARD_SYNC_CRON` must fail `upsertSchedule` validation at boot log,
+Invalid `BOARD_SYNC_CRON` must refuse to start the timer at boot (warn + skip),
 not silently fall through to `* * * * *`.
 
-Minimum interval remains the existing `AT_LEAST_ONCE` floor (5 minutes). Daily
-is well above it. Do not write a monthly cron on the 29th–31st.
+Multi-instance: every EB instance runs the same cron. Duplicate fires in the
+same minute share `sched:{boardId}:{periodKey}` and collapse in BullMQ.
 
 ## Fan-out
 
@@ -116,7 +118,8 @@ Offline (`isOfflineMode()`): skip without throwing (already true of today's
 `syncWorker` concurrency drops from **2 to 1**. Manual Resync, backlog, and
 scheduled catch-up share that cap. That is intentional.
 
-Do not add `node-schedule`. Do not add a second tick endpoint.
+`node-cron` is the board-sync clock only. Do not drive invoice/statement
+automation from it. Do not add a second tick endpoint.
 
 ## Status on Board Configuration
 
@@ -127,7 +130,7 @@ When the sync checkbox is on, show three facts from an extended
 |---|---|
 | Previous | Last **completed** `SyncExecution` for this board (any catch-up type), else `lastSyncedAt` if present, else none yet |
 | Current | Active execution or BullMQ job for this board; else **Queued** if a `scheduled_sync` job is waiting; else **Idle** |
-| Next scheduled run | `nextRunAt` of the portal `board_sync` row (same for every board) |
+| Next scheduled run | `computeNextRun` of `BOARD_SYNC_CRON` in `DEFAULT_TIMEZONE` (same for every board) |
 
 No new route. Existing auth on `/api/sync/board/status/:boardId` stays.
 
@@ -135,10 +138,11 @@ This is user-visible → Playwright coverage on the configuration page.
 
 ## Failure
 
-Unchanged scheduler policy: `AT_LEAST_ONCE`, `MAX_CONSECUTIVE_FAILURES` 5,
-handler throws if enqueue fails. Per-board work failures stay on BullMQ
-retries and `lastSyncError`. A board that throws inside the worker does not
-fail the whole sweep; remaining jobs stay in the queue.
+`runBoardSyncSweep` throws if enqueue fails (logged by the cron wrapper).
+There is no `ScheduledJob` consecutive-failure counter for board sync.
+Per-board work failures stay on BullMQ retries and `lastSyncError`. A board
+that throws inside the worker does not fail the whole sweep; remaining jobs
+stay in the queue.
 
 ## Out of scope
 

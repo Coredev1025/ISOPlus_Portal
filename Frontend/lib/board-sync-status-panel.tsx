@@ -21,6 +21,9 @@ const EMPTY_SCHEDULE: BoardSyncSchedule = {
   upcoming: null,
 };
 
+/** Match SyncStatusIndicator: refresh while the configuration page is open. */
+const POLL_INTERVAL_MS = 10_000;
+
 function isCanceled(error: unknown) {
   const name = (error as { name?: string } | undefined)?.name;
   return name === 'CanceledError' || name === 'AbortError';
@@ -50,7 +53,11 @@ export function BoardSyncStatusPanel({ boardId }: BoardSyncStatusPanelProps) {
     };
 
     fetchStatus();
-    return () => abortController.abort();
+    const intervalId = setInterval(fetchStatus, POLL_INTERVAL_MS);
+    return () => {
+      abortController.abort();
+      clearInterval(intervalId);
+    };
   }, [boardId]);
 
   const timezone = schedule.timezone;

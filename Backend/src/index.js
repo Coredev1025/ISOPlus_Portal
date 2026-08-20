@@ -35,7 +35,10 @@ import syncWorker, { checkAndRetryFailedJobs } from './workers/syncWorker.js'; /
 import { startAutomationWorker } from './workers/automationWorker.js';
 import { startEmailEventsWorker } from './workers/emailEventsWorker.js';
 import { registerSchedulerHandlers } from './services/scheduler/handlers.js';
-import { ensurePortalBoardSyncSchedule } from './services/scheduler/portalSchedule.js';
+import {
+  disableLeftoverPortalBoardSyncSchedule,
+  startBoardSyncCron,
+} from './services/scheduler/portalSchedule.js';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
@@ -195,12 +198,13 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(async () => {
     info('Bootstrap', 'Connected to MongoDB');
     try {
-      await ensurePortalBoardSyncSchedule();
+      await disableLeftoverPortalBoardSyncSchedule();
     } catch (err) {
-      warn('Bootstrap', 'Could not upsert the portal board_sync schedule', {
+      logError('Bootstrap', 'Failed to disable leftover portal board_sync schedule after retries', {
         error: err.message,
       });
     }
+    startBoardSyncCron();
   })
   .catch((err) => logError('Bootstrap', 'MongoDB connection error', err));
 
