@@ -44,11 +44,28 @@ export const STATEMENT_AMOUNT_RECEIVED = 'Amount Received($)';
  * renders. And a day is the finest granularity a statement row can claim,
  * which matches the sample.
  *
- * **What it means is still unconfirmed.** The name reads as easily as "the date
- * the payer received the invoice" as "the date we received the money". ISO+
- * attributes carry no description field — the edit dialog exposes only name,
- * format and the time toggle — and every row was empty on the board checked, so
- * neither the definition nor the data settles it. Masoud has been asked.
+ * **What it means is inferred, not confirmed.** The name reads as easily as
+ * "the date the payer received the invoice" as "the date we received the
+ * money", and nothing states which:
+ *
+ *   - ISO+ attributes carry no description. The edit dialog exposes name,
+ *     format and the time toggle, and nothing else.
+ *   - Every row on the Care Management shift board is empty for this field,
+ *     with `Amount Received($)` at $0.00 throughout, so there is no behaviour
+ *     to read it from.
+ *   - The client's requirement documents do not mention payments at all.
+ *
+ * What does point one way: the field is **absent from the 5 August 2026
+ * production dump**, which carries `Payment Status` throughout and no
+ * occurrence of `Invoice Received` anywhere. So it was added to ISO+ during
+ * this invoicing and statement work, sitting alongside `Amount Received($)`.
+ * A date field introduced next to a payment amount while building payment
+ * reporting is far more likely to record when the money arrived than when a
+ * participant received a PDF.
+ *
+ * That is why it is the default here rather than a blocker. It is still an
+ * inference: Masoud has been asked to confirm, and `datedPayments: false` is
+ * the escape hatch if the answer is no.
  *
  * It is a single named constant precisely so that answer costs one line to
  * apply. If it turns out not to be the payment date, the fallback is
