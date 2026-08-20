@@ -298,19 +298,31 @@ export async function generateParticipantTaxInvoicePdf({
     formatCurrencyValue,
   });
 
-  if (ordersArr.length === 0) {
-    await Promise.all(dbItems.map((item) =>
-      setIntegrationMessage(workspaceId, boardId, item.itemId, 'There is nothing to invoice!'),
-    ));
-    return res.status(400).json({ message: 'There is nothing to invoice!' });
-  }
-
   // Low Cat bills the full service amount; every other Age Care board bills
   // only the participant's contribution. Kept as a number alongside the
   // formatted string because the statement of account has to carry the figure
   // the invoice billed through unchanged rather than recompute it — and
   // recomputing would mean replicating this branch in a second place.
   const invoiceTotalRaw = isLowCatBoard ? totalAmountSum : totalParticipantContribution;
+
+  // Nothing to invoice means nothing to CHARGE, not merely no rows. This guard
+  // used to test `ordersArr.length` alone, so rows that existed but billed
+  // nothing passed straight through it — which is how INV-1005 reached a
+  // client as two "Service" lines at $0.00 and a TOTAL AUD of $0.00.
+  //
+  // The wasted PDF is the least of it. That run also claimed a real invoice
+  // number and marked its items invoiced, so those items are excluded from
+  // every future invoice and the participant is silently never billed for the
+  // work at all.
+  //
+  // Zero, not "not positive": a credit note is legitimately negative and must
+  // still be issued.
+  if (ordersArr.length === 0 || Number(invoiceTotalRaw) === 0) {
+    await Promise.all(dbItems.map((item) =>
+      setIntegrationMessage(workspaceId, boardId, item.itemId, 'There is nothing to invoice!'),
+    ));
+    return res.status(400).json({ message: 'There is nothing to invoice!' });
+  }
   const subtotalValue = formatCurrencyValue(invoiceTotalRaw);
   const totalAUDValue = subtotalValue;
 

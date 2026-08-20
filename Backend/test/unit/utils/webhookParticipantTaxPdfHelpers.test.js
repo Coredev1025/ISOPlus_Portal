@@ -899,6 +899,50 @@ describe('generateParticipantTaxInvoicePdf', () => {
       expect.anything(),
     );
   });
+  describe('a zero-value invoice is not an invoice', () => {
+    // INV-1005 on dev: two "Service" rows at quantity 0.00 and unit price $0.00,
+    // an empty "Invoiced to", and TOTAL AUD $0.00 — generated, numbered, marked
+    // against its items and emailed to a client.
+    //
+    // The guard checked row COUNT, not value, so rows that exist but bill
+    // nothing passed straight through it. The cost is not the wasted PDF: the
+    // items are marked invoiced by that run, so they are excluded from every
+    // future invoice and the participant is silently never billed for them.
+    const zeroRecord = () => ({
+      workspaceId: 'ws_1',
+      boardId: 'b_1',
+      itemId: 'item_zero',
+      data: {
+        'Transaction Status': [{ id: 'ts_del', name: 'Delivered - To be claimed and invoiced.' }],
+        'Scheduled Shift Start Date & Time': '2026-04-23T01:00:00Z',
+        'Actual Shift End Date & Time': '2026-04-23T05:00:00Z',
+        'Participant Profile': [{ id: 'pp_1', name: 'Jane Citizen' }],
+        'Service Plan': [{ id: 'sp_1', name: '01_011_0107_1_1' }],
+        Unit: '',
+        Quantity: 0,
+        'Unit Price ($)': 0,
+        'Total Amount ($)': 0,
+        'Participant Contribution ($)': 0,
+      },
+    });
+
+    it('refuses when every row bills nothing', async () => {
+      const { res, deps } = await run({ dbItems: [zeroRecord(), zeroRecord()] });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({ message: 'There is nothing to invoice!' });
+      // The three consequences that matter, in order of how bad they are.
+      expect(deps.uploadFileToS3).not.toHaveBeenCalled();
+      expect(isoplus.setGeneratedField).not.toHaveBeenCalled();
+      expect(deps.saveInvoiceNumber).not.toHaveBeenCalled();
+    });
+
+    it('still invoices when the rows total a real amount', async () => {
+      const { res } = await run({ dbItems: [deliveredRecord()] });
+      expect(res.statusCode).toBe(200);
+    });
+  });
+
 });
 
 describe('handleParticipantTaxInvoiceRoute', () => {
@@ -982,3 +1026,4 @@ describe('handleParticipantTaxInvoiceRoute', () => {
     )).rejects.toThrow('Item item_ghost not found');
   });
 });
+

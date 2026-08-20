@@ -129,7 +129,7 @@ export async function generateNdisInvoiceGeneratorPdf({
     });
   }
 
-  const { fileUrl, invoiceTotal } = await renderAndUploadNdisInvoice({
+  const rendered = await renderAndUploadNdisInvoice({
     business,
     workspaceId,
     boardId,
@@ -144,6 +144,8 @@ export async function generateNdisInvoiceGeneratorPdf({
     ),
     periodSuffix: invoicePeriodSuffix(period, timezone),
   });
+  if (rendered.empty) return { empty: true };
+  const { fileUrl, invoiceTotal } = rendered;
 
   await persistGeneratedInvoice({
     workspaceId, boardId, masterItems, invoiceNumber, fileUrl,
@@ -172,6 +174,11 @@ async function renderAndUploadNdisInvoice({
   // carries the figure the invoice billed through unchanged rather than
   // recomputing it from the source items.
   const invoiceTotal = Number(subTotal) + Number(gstTotal);
+  // Same guard as the Age Care path, for the same reason: rows can exist and
+  // still bill nothing, and a $0.00 invoice claims a number and marks its
+  // items invoiced — excluding them from every future run. Zero, not
+  // "not positive", so a credit note still issues.
+  if (invoiceTotal === 0) return { empty: true };
   const total = formatInvoiceMoney(invoiceTotal);
   const pdfBytes = await generate({
     template,
