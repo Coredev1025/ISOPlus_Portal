@@ -103,6 +103,19 @@ describe('the period uniqueness constraint', () => {
     ).resolves.toBeTruthy();
   });
 
+  it('leaves rows whose periodKey is explicitly null outside the index', async () => {
+    // `$exists: true` matches a field that is present and null, not only a
+    // field that holds a value. A filter written that way pulls null rows into
+    // the unique index, where two of them sharing an itemId collide — and the
+    // failure surfaces on whichever path wrote the null, which has nothing to
+    // do with automation. `$type: 'string'` is what actually expresses "has a
+    // period key".
+    await PDFLink.create({ ...BASE, itemId: 'i1', periodKey: null });
+    await expect(
+      PDFLink.create({ ...BASE, itemId: 'i1', periodKey: null }),
+    ).resolves.toBeTruthy();
+  });
+
   it('leaves rows with no periodKey alone, so legacy documents still insert', async () => {
     // Every PDF generated before the scheduler existed has no periodKey. The
     // index is partial so those rows are outside it entirely — without that,
