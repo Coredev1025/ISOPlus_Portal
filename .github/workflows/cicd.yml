@@ -153,47 +153,82 @@ jobs:
   #         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_BACKEND }}
   #         SONAR_SCANNER_OPTS: "-Xmx8192m"
 
-  sonarqube-frontend:
-    name: SonarQube - Frontend
-    needs: [detect-changes, test-frontend]
-    if: needs.detect-changes.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
-      - name: Download coverage report
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-unit-coverage
-          path: Frontend/coverage
-      - name: Confirm Sonar coverage input
-        working-directory: Frontend
-        run: |
-          test -f coverage/lcov.info
-          echo "Sonar will import:"
-          ls -la coverage/lcov.info
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
-        with:
-          projectBaseDir: Frontend
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_FRONTEND }}
-          SONAR_SCANNER_OPTS: "-Xmx2048m"
+  # DISABLED 2026-08-20 — SonarQube is off for BOTH apps while we are locked out
+  # of the Sonar project. The scanner fails auth, not a quality gate:
+  #
+  #   ERROR Not authorized or project not found. Please check the 'SONAR_TOKEN'
+  #   environment variable, the 'sonar.projectKey' and 'sonar.organization'
+  #   properties, or contact the project administrator to verify the token's
+  #   permissions.
+  #   Action failed: sonar-scanner failed with exit code 3
+  #
+  # Because the deploy job required this job to be success-or-skipped, a failing
+  # scan blocked every deploy to dev and prod whenever Frontend/ changed. Admin
+  # access has been requested from the client.
+  #
+  # TO RE-ENABLE once a working SONAR_TOKEN is in place: uncomment this job and
+  # the sonarqube-backend job above, then restore the two lines removed from
+  # package-backend and deploy-backend — `- sonarqube-frontend` under `needs:`
+  # and the trailing `&&` clause
+  #   (needs.sonarqube-frontend.result == 'success' || needs.sonarqube-frontend.result == 'skipped')
+  # in each `if:`. The coverage artifacts both test jobs upload are deliberately
+  # left in place, so re-enabling needs no change to them.
 
-  build-and-deploy:
+  # sonarqube-frontend:
+  #   name: SonarQube - Frontend
+  #   needs: [detect-changes, test-frontend]
+  #   if: needs.detect-changes.outputs.frontend == 'true'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+  #       with:
+  #         fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+  #     - name: Download coverage report
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         name: frontend-unit-coverage
+  #         path: Frontend/coverage
+  #     - name: Confirm Sonar coverage input
+  #       working-directory: Frontend
+  #       run: |
+  #         test -f coverage/lcov.info
+  #         echo "Sonar will import:"
+  #         ls -la coverage/lcov.info
+  #     - name: SonarQube Scan
+  #       uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
+  #       with:
+  #         projectBaseDir: Frontend
+  #       env:
+  #         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_FRONTEND }}
+  #         SONAR_SCANNER_OPTS: "-Xmx2048m"
+
+  # The backend package is Backend/ including node_modules (~743M unzipped), far
+  # too large to hand between jobs as an upload/download artifact. So the two jobs
+  # below each build their own zip and are mutually exclusive on the trigger event:
+  # exactly one of them runs per event, and neither duplicates the other's work.
+  #
+  #   pull_request     -> package-backend only  (build check, no AWS)
+  #   workflow_dispatch-> package-backend only  (build check, no AWS)
+  #   push main/develop-> deploy-backend only   (build + deploy)
+  #
+  # They were previously one job named "build-and-deploy" whose AWS steps carried
+  # `if: github.event_name == 'push'`. Nothing ever deployed from a PR, but the job
+  # name and its six skipped steps read like a deployment had run, which repeatedly
+  # led people to think preview PRs were shipping to Elastic Beanstalk.
+
+  package-backend:
+    name: Package Backend (build check)
     needs:
       - detect-changes
       - test-backend
       - test-frontend
-      - sonarqube-frontend
     if: >
       always() &&
+      github.event_name != 'push' &&
       needs.detect-changes.result == 'success' &&
       needs.detect-changes.outputs.backend == 'true' &&
       needs.test-backend.result == 'success' &&
-      (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped') &&
-      (needs.sonarqube-frontend.result == 'success' || needs.sonarqube-frontend.result == 'skipped')
+      (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped')
     runs-on: [ ubuntu-latest ]
     steps:
       - name: Checkout Source
@@ -215,6 +250,45 @@ jobs:
           # went red on every backend PR while nothing was actually wrong.
           SAFE_REF="${GITHUB_REF_NAME//\//-}"
           FILE_NAME="$TIMESTAMP-isoplus-backend-package-$SAFE_REF-${{ github.sha }}.zip"
+          echo "PACKAGE_FILE_NAME=$FILE_NAME" >> $GITHUB_ENV
+
+      - name: Generate Deployment Package
+        working-directory: Backend
+        run: zip -r $PACKAGE_FILE_NAME .
+
+  deploy-backend:
+    name: Deploy Backend
+    needs:
+      - detect-changes
+      - test-backend
+      - test-frontend
+    if: >
+      always() &&
+      github.event_name == 'push' &&
+      needs.detect-changes.result == 'success' &&
+      needs.detect-changes.outputs.backend == 'true' &&
+      needs.test-backend.result == 'success' &&
+      (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped')
+    runs-on: [ ubuntu-latest ]
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+      - name: Setup NodeJS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Dependencies
+        working-directory: Backend
+        run: npm install
+      - name: Set file name variable
+        id: set_var
+        run: |
+          TIMESTAMP=$(date +'%Y%m%d%H%M%S')
+          # Kept in sync with package-backend above. On push github.ref_name is a
+          # plain branch name, but the substitution is harmless and keeps the two
+          # jobs producing identically-named packages.
+          SAFE_REF="${GITHUB_REF_NAME//\//-}"
+          FILE_NAME="$TIMESTAMP-isoplus-backend-package-$SAFE_REF-${{ github.sha }}.zip"
           VERSION_LABEL="$TIMESTAMP-${{ github.sha }}"
           echo "PACKAGE_FILE_NAME=$FILE_NAME" >> $GITHUB_ENV
           echo "VERSION_LABEL=$VERSION_LABEL" >> $GITHUB_ENV
@@ -223,10 +297,7 @@ jobs:
         working-directory: Backend
         run: zip -r $PACKAGE_FILE_NAME .
 
-      # --- Everything below only runs on an actual push to main/develop (post-merge), not on pull_request ---
-
       - name: Configure AWS credentials
-        if: github.event_name == 'push'
         uses: aws-actions/configure-aws-credentials@v4.1.0
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -234,26 +305,25 @@ jobs:
           aws-region: ap-southeast-2
 
       - name: Upload to S3
-        if: github.event_name == 'push'
         working-directory: Backend
         run: aws s3 cp $PACKAGE_FILE_NAME s3://isoplus-backend-deploy-bucket-isoplus-v1/$PACKAGE_FILE_NAME
 
       - name: Create a new version on EBS from package on S3 - PROD
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
         run: |
           aws elasticbeanstalk create-application-version --application-name "isoplus-be-prod" --version-label $VERSION_LABEL --source-bundle S3Bucket="isoplus-backend-deploy-bucket-isoplus-v1",S3Key="$PACKAGE_FILE_NAME"
 
       - name: Update environment with the new vesion - PROD
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
         run: |
           aws elasticbeanstalk update-environment --environment-name isoplus-be-prod-blue --version-label $VERSION_LABEL
 
       - name: Create a new version on EBS from package on S3 - DEV
-        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        if: github.ref == 'refs/heads/develop'
         run: |
           aws elasticbeanstalk create-application-version --application-name "isoplus-be-dev" --version-label $VERSION_LABEL --source-bundle S3Bucket="isoplus-backend-deploy-bucket-isoplus-v1",S3Key="$PACKAGE_FILE_NAME"
 
       - name: Update environment with the new vesion - DEV
-        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        if: github.ref == 'refs/heads/develop'
         run: |
           aws elasticbeanstalk update-environment --environment-name isoplus-be-dev-blue --version-label $VERSION_LABEL
