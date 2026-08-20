@@ -854,6 +854,47 @@ describe('generateParticipantTaxInvoicePdf', () => {
     expect(deps.uploadFileToS3).not.toHaveBeenCalled();
   });
 
+  it('answers 400 when the rows exist but bill nothing', async () => {
+    // INV-1005: two "Service" lines and a TOTAL AUD of $0.00, sent to a client.
+    // The guard counted rows rather than weighing them, so records that existed
+    // and charged nothing passed straight through it.
+    //
+    // The wasted PDF was the least of it — that run claimed a real invoice
+    // number and marked its items invoiced, which excludes them from every
+    // later run and silently never bills the work.
+    const zeroContribution = () => {
+      const record = deliveredRecord();
+      record.data['Participant Contribution ($)'] = 0;
+      return record;
+    };
+
+    const { res, deps } = await run({ dbItems: [zeroContribution()] });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ message: 'There is nothing to invoice!' });
+    expect(generate).not.toHaveBeenCalled();
+    expect(deps.uploadFileToS3).not.toHaveBeenCalled();
+    // Marked, so the board says why nothing arrived.
+    expect(isoplus.setIntegrationMessage).toHaveBeenCalledWith(
+      'ws_1', 'b_1', 'item_1', 'There is nothing to invoice!',
+    );
+  });
+
+  it('still issues a credit note, which is legitimately negative', async () => {
+    // The guard tests for zero, not "not positive", precisely so this case
+    // survives it. A refund owed to a participant is a real document.
+    const refund = () => {
+      const record = deliveredRecord();
+      record.data['Participant Contribution ($)'] = -40;
+      return record;
+    };
+
+    const { res } = await run({ dbItems: [refund()] });
+
+    expect(res.statusCode).toBe(200);
+    expect(generate).toHaveBeenCalled();
+  });
+
   it('throws instead of reporting success when the S3 upload does not return 200', async () => {
     await expect(run({ deps: { uploadFileToS3: vi.fn().mockResolvedValue({ $metadata: { httpStatusCode: 500 } }) } }))
       .rejects.toThrow('Upload of PDF failed, please provide correct information.');
