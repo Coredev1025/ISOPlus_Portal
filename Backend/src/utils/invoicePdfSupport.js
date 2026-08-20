@@ -7,6 +7,7 @@
 // and (via injected deps built in routes/webhook.js) utils/webhookNdisPdfHandlers.js,
 // utils/webhookParticipantTaxPdfHelpers.js, utils/webhookMonthlyStatementPdfHelpers.js.
 import InvoiceNumber from '../models/InvoiceNumber.js';
+import { claimItemsForInvoice } from './invoicedMarker.js';
 import { getS3File } from './uploadS3.js';
 import { info, warn } from './logger.js';
 import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
@@ -44,6 +45,26 @@ export async function getLogoData(business, req = null) {
   return `data:image/${type};base64,${buffer.toString('base64')}`;
 }
 
+/**
+ * Record an invoice number against an item, and mark the item as invoiced.
+ *
+ * The marking is section 3.3 of the invoice selection spec: manual invoice
+ * generation must set the same marker as the automated run, or the next
+ * scheduled run finds those items unmarked and bills them again. This function
+ * is where it belongs because it is the single point every path that allocates
+ * an invoice number already passes through — the manual NDIS and SaH webhook
+ * generators, the Xero routes, and the scheduled generator.
+ *
+ * `claimItemsForInvoice` rather than an unconditional set, so a second document
+ * covering the same item (typically the Xero push following the PDF run) does
+ * not overwrite the claim naming the invoice the participant received. Either
+ * marker excludes the item from selection, so the guard holds either way.
+ *
+ * The marker write is best-effort, matching what this function has always done
+ * with its own write. A failure here means an item that was invoiced is not
+ * marked, and the next run would bill it again — so it is warned separately and
+ * explicitly rather than folded into the invoice-number warning.
+ */
 export async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, type, pdfLink = null) {
   try {
     await InvoiceNumber.findOneAndUpdate(
@@ -58,6 +79,16 @@ export async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNum
     );
   } catch (err) {
     warn('Webhook-Service', 'Failed to save invoice number to database', {
+      workspaceId, boardId, itemId, invoiceNumber, type, error: err.message,
+    }, {});
+  }
+
+  try {
+    await claimItemsForInvoice({
+      workspaceId, boardId, itemIds: [itemId], invoiceNumber, periodKey: null,
+    });
+  } catch (err) {
+    warn('Webhook-Service', 'Failed to mark item as invoiced; it may be billed again', {
       workspaceId, boardId, itemId, invoiceNumber, type, error: err.message,
     }, {});
   }
