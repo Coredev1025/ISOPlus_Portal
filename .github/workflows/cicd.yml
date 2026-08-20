@@ -153,33 +153,54 @@ jobs:
   #         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_BACKEND }}
   #         SONAR_SCANNER_OPTS: "-Xmx8192m"
 
-  sonarqube-frontend:
-    name: SonarQube - Frontend
-    needs: [detect-changes, test-frontend]
-    if: needs.detect-changes.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
-      - name: Download coverage report
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-unit-coverage
-          path: Frontend/coverage
-      - name: Confirm Sonar coverage input
-        working-directory: Frontend
-        run: |
-          test -f coverage/lcov.info
-          echo "Sonar will import:"
-          ls -la coverage/lcov.info
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
-        with:
-          projectBaseDir: Frontend
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_FRONTEND }}
-          SONAR_SCANNER_OPTS: "-Xmx2048m"
+  # DISABLED 2026-08-20 — SonarQube is off for BOTH apps while we are locked out
+  # of the Sonar project. The scanner fails auth, not a quality gate:
+  #
+  #   ERROR Not authorized or project not found. Please check the 'SONAR_TOKEN'
+  #   environment variable, the 'sonar.projectKey' and 'sonar.organization'
+  #   properties, or contact the project administrator to verify the token's
+  #   permissions.
+  #   Action failed: sonar-scanner failed with exit code 3
+  #
+  # Because the deploy job required this job to be success-or-skipped, a failing
+  # scan blocked every deploy to dev and prod whenever Frontend/ changed. Admin
+  # access has been requested from the client.
+  #
+  # TO RE-ENABLE once a working SONAR_TOKEN is in place: uncomment this job and
+  # the sonarqube-backend job above, then restore the two lines removed from
+  # package-backend and deploy-backend — `- sonarqube-frontend` under `needs:`
+  # and the trailing `&&` clause
+  #   (needs.sonarqube-frontend.result == 'success' || needs.sonarqube-frontend.result == 'skipped')
+  # in each `if:`. The coverage artifacts both test jobs upload are deliberately
+  # left in place, so re-enabling needs no change to them.
+
+  # sonarqube-frontend:
+  #   name: SonarQube - Frontend
+  #   needs: [detect-changes, test-frontend]
+  #   if: needs.detect-changes.outputs.frontend == 'true'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+  #       with:
+  #         fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+  #     - name: Download coverage report
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         name: frontend-unit-coverage
+  #         path: Frontend/coverage
+  #     - name: Confirm Sonar coverage input
+  #       working-directory: Frontend
+  #       run: |
+  #         test -f coverage/lcov.info
+  #         echo "Sonar will import:"
+  #         ls -la coverage/lcov.info
+  #     - name: SonarQube Scan
+  #       uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
+  #       with:
+  #         projectBaseDir: Frontend
+  #       env:
+  #         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_FRONTEND }}
+  #         SONAR_SCANNER_OPTS: "-Xmx2048m"
 
   # The backend package is Backend/ including node_modules (~743M unzipped), far
   # too large to hand between jobs as an upload/download artifact. So the two jobs
@@ -201,15 +222,13 @@ jobs:
       - detect-changes
       - test-backend
       - test-frontend
-      - sonarqube-frontend
     if: >
       always() &&
       github.event_name != 'push' &&
       needs.detect-changes.result == 'success' &&
       needs.detect-changes.outputs.backend == 'true' &&
       needs.test-backend.result == 'success' &&
-      (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped') &&
-      (needs.sonarqube-frontend.result == 'success' || needs.sonarqube-frontend.result == 'skipped')
+      (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped')
     runs-on: [ ubuntu-latest ]
     steps:
       - name: Checkout Source
@@ -243,15 +262,13 @@ jobs:
       - detect-changes
       - test-backend
       - test-frontend
-      - sonarqube-frontend
     if: >
       always() &&
       github.event_name == 'push' &&
       needs.detect-changes.result == 'success' &&
       needs.detect-changes.outputs.backend == 'true' &&
       needs.test-backend.result == 'success' &&
-      (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped') &&
-      (needs.sonarqube-frontend.result == 'success' || needs.sonarqube-frontend.result == 'skipped')
+      (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped')
     runs-on: [ ubuntu-latest ]
     steps:
       - name: Checkout Source
