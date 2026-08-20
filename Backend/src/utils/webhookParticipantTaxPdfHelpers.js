@@ -15,6 +15,7 @@ import { claimDocumentNumber } from '../utils/documentNumberAllocator.js';
 import { extractRefId as extractNdisRefId } from '../utils/ndisServiceRecords.js';
 import { mongoEq } from '../utils/securityHelpers.js';
 import { invoicePeriodSuffix } from '../utils/invoicePeriodSuffix.js';
+import { isMissingPaymentDetails, missingDocumentBranding } from '../utils/businessDocumentReadiness.js';
 import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
 import {
   GENERATED_DOCUMENT_PUBLIC_READ,
@@ -367,6 +368,16 @@ export async function generateParticipantTaxInvoicePdf({
 
   // '' for manual generation, which carries no period — so those keys are
   // byte-identical to before and the PDFLink rows storing them stay valid.
+  const missingBranding = missingDocumentBranding(business);
+  if (missingBranding.length > 0) {
+    info('Webhook-Service', 'Generating an invoice with branding missing from the business profile', {
+      workspaceId,
+      boardId,
+      missing: missingBranding,
+      unpayable: isMissingPaymentDetails(business),
+    });
+  }
+
   const periodSuffix = invoicePeriodSuffix(
     req.body?.period, business?.headOfficeTimezone || DEFAULT_TIMEZONE,
   );

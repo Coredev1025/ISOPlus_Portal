@@ -38,6 +38,8 @@ import {
 } from '../../utils/invoicePdfSupport.js';
 import { DEFAULT_TIMEZONE } from '../../constants/scheduler.js';
 import { invoicePeriodSuffix } from '../../utils/invoicePeriodSuffix.js';
+import { isMissingPaymentDetails, missingDocumentBranding } from '../../utils/businessDocumentReadiness.js';
+import { warn } from '../../utils/logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -111,6 +113,21 @@ export async function generateNdisInvoiceGeneratorPdf({
   const invoiceDateRaw = invoiceDateInput || new Date().toISOString();
   const invoiceDate = invoiceDateRaw ? String(invoiceDateRaw).replace('Z', '') : '';
   const dueDate = resolveDueDate(invoiceDateRaw, dueDateInput);
+
+  // Not a refusal. The document is correct in every other respect, and
+  // refusing to invoice over a missing logo would be worse than the blank
+  // corner. But an invoice with no bank details cannot be paid, and until now
+  // the only signal was somebody noticing the empty space after it had reached
+  // a client.
+  const missingBranding = missingDocumentBranding(business);
+  if (missingBranding.length > 0) {
+    warn('Automation', 'Generating an invoice with branding missing from the business profile', {
+      workspaceId,
+      boardId,
+      missing: missingBranding,
+      unpayable: isMissingPaymentDetails(business),
+    });
+  }
 
   const { fileUrl, invoiceTotal } = await renderAndUploadNdisInvoice({
     business,
