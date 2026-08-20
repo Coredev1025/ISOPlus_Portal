@@ -11,7 +11,23 @@
  * app.isoplus.online, where these sit together as a group.
  */
 
-/** `Paid`, `Awaiting Payment`, `Unpaid`, `Written Off`. */
+/**
+ * The payment state of a service record.
+ *
+ * **The value set is not the same on every board**, which the fixtures in this
+ * repo do not show. The NDIS side uses `Paid`, `Awaiting Payment`, `Unpaid`
+ * and `Written Off` — those are what `test/fixtures` carry and what the
+ * portal's Invoice Generator renders. The Care Management shift board in the
+ * running product instead carries claim-workflow values: every one of its 46
+ * rows reads `Gov Claim Submitted`, and `Participant Invoiced` also appears.
+ *
+ * So this attribute cannot be treated as a two-state paid/unpaid flag. The
+ * statement does not currently branch on it — money comes from
+ * STATEMENT_AMOUNT_RECEIVED, which is a number and means the same thing on
+ * every board — and that is deliberate. Anything that starts reading this
+ * field has to handle both vocabularies, or enumerate them per board type the
+ * way constants/invoiceSelection.js does for the selection statuses.
+ */
 export const STATEMENT_PAYMENT_STATUS = 'Payment Status';
 
 /** How much has been received against this service record, in dollars. */
