@@ -48,7 +48,7 @@ function requireSlot({ scheduledFor, nextRunAt }) {
  * dead schedule would be retried on every tick, forever.
  */
 export async function runAutomationKind(kind, job) {
-  const { targetId, workspaceId, timezone, schedule } = job;
+  const { targetId, workspaceId, timezone, schedule, bypassEmail = null } = job;
 
   // Defence in depth. The tick now holds automation kinds back before claiming
   // them (services/scheduler/tick.js), so this is not the path a disabled
@@ -92,6 +92,7 @@ export async function runAutomationKind(kind, job) {
     slot: requireSlot(job),
     timezone,
     schedule,
+    bypassEmail,
   });
   await getAutomationQueue().addBulk(specs);
 

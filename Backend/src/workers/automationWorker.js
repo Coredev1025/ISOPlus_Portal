@@ -120,7 +120,9 @@ function composeBlock(block, vars) {
   };
 }
 
-async function deliverGroup({ kind, workspaceId, boardId, periodKey, block, businessName, group }) {
+async function deliverGroup({
+  kind, workspaceId, boardId, periodKey, block, businessName, group, bypassEmail = null,
+}) {
   const vars = buildTemplateVars({ businessName, results: group.results });
   const attachments = group.results.map((doc) => doc.pdfUrl);
 
@@ -132,6 +134,9 @@ async function deliverGroup({ kind, workspaceId, boardId, periodKey, block, busi
     recipientKey: group.participant,
     block: composeBlock(block, vars),
     attachments,
+    // Absent on an ordinary run; when the tick set it, the backend sends here
+    // instead of resolving the participant's billing address.
+    ...(bypassEmail ? { bypassEmail } : {}),
   });
   // A backend that refuses names a reason, and every reason here is data an
   // operator has to go and fix on a profile — so it is an error, not the info
@@ -261,7 +266,14 @@ async function composeAndDeliver(job) {
 
   for (const group of deliveryGroups(results)) {
     await deliverGroup({
-      kind, workspaceId, boardId, periodKey, block, businessName: business?.name, group,
+      kind,
+      workspaceId,
+      boardId,
+      periodKey,
+      block,
+      businessName: business?.name,
+      group,
+      bypassEmail: job.data.bypassEmail ?? null,
     });
   }
 }
