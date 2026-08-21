@@ -4,7 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
-import { deliverEmail, outboxKeyFor } from '../../../src/services/email/outbox.js';
+import {
+  activeEmailBackendName,
+  deliverEmail,
+  outboxKeyFor,
+} from '../../../src/services/email/outbox.js';
 
 // The delivery seam for Epic 5 part 4. Offline it writes the composed message
 // to a file a person can open and check; online it refuses loudly, because a
@@ -25,20 +29,36 @@ const MESSAGE = {
   },
 };
 
+// Every variable that decides which backend runs, saved and restored around
+// each test. utils/logger.js calls dotenv.config() at import and outbox.js
+// imports it, so a developer's Backend/.env is loaded into this suite while CI
+// has none of these set. Anything left unsaved here is a test that passes on
+// the PR and fails on a working machine, or the reverse.
+const BACKEND_ENV = [
+  'ISOPLUS_OFFLINE',
+  'LOCAL_FILE_ROOT',
+  'EMAIL_BACKEND',
+  'EMAIL_FROM',
+  'AWS_ACCESS_KEY_ID',
+  'AWS_SECRET_ACCESS_KEY',
+  'AWS_REGION',
+];
+
 describe('emailOutbox', () => {
   const saved = {};
   let root;
 
   beforeEach(() => {
-    saved.ISOPLUS_OFFLINE = process.env.ISOPLUS_OFFLINE;
-    saved.LOCAL_FILE_ROOT = process.env.LOCAL_FILE_ROOT;
+    for (const key of BACKEND_ENV) saved[key] = process.env[key];
     root = mkdtempSync(join(tmpdir(), 'email-outbox-'));
     process.env.LOCAL_FILE_ROOT = root;
   });
 
   afterEach(() => {
-    process.env.ISOPLUS_OFFLINE = saved.ISOPLUS_OFFLINE;
-    process.env.LOCAL_FILE_ROOT = saved.LOCAL_FILE_ROOT;
+    for (const key of BACKEND_ENV) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -111,15 +131,37 @@ describe('emailOutbox', () => {
     // the property it protected has to hold: an environment that is online
     // with no sending configuration must not quietly write a preview nobody
     // reads while a client waits for an invoice.
+    //
+    // "No sending configuration" means no AWS credential, not merely no
+    // EMAIL_FROM. A workspace's own Email From is a sending identity now, and
+    // MESSAGE carries one — clearing the default alone leaves this environment
+    // perfectly able to send, which is exactly how this test used to pass on a
+    // credential-free CI runner and fail on a developer's machine.
     process.env.ISOPLUS_OFFLINE = '0';
-    const savedFrom = process.env.EMAIL_FROM;
+    delete process.env.EMAIL_BACKEND;
     delete process.env.EMAIL_FROM;
+    delete process.env.AWS_ACCESS_KEY_ID;
+    delete process.env.AWS_SECRET_ACCESS_KEY;
+    delete process.env.AWS_REGION;
 
-    try {
-      await expect(deliverEmail(MESSAGE)).rejects.toThrow(/not configured/i);
-    } finally {
-      if (savedFrom === undefined) delete process.env.EMAIL_FROM;
-      else process.env.EMAIL_FROM = savedFrom;
-    }
+    await expect(deliverEmail(MESSAGE)).rejects.toThrow(/not configured/i);
+  });
+
+  // The other half of that rule, and the reason the one above had to change:
+  // a workspace that has configured its own Email From can send on an
+  // environment with no EMAIL_FROM default. Asserted through
+  // activeEmailBackendName rather than deliverEmail because this is the
+  // question the worker asks BEFORE generating, and answering it must not
+  // depend on a recipient resolving or on SES being reachable.
+  it('online: a workspace Email From is a sending identity of its own', () => {
+    process.env.ISOPLUS_OFFLINE = '0';
+    delete process.env.EMAIL_BACKEND;
+    delete process.env.EMAIL_FROM;
+    process.env.AWS_ACCESS_KEY_ID = 'AKIAEXAMPLE';
+    process.env.AWS_SECRET_ACCESS_KEY = 'example-secret';
+    process.env.AWS_REGION = 'ap-southeast-2';
+
+    expect(activeEmailBackendName()).toBeNull();
+    expect(activeEmailBackendName({ from: MESSAGE.block.emailFrom })).toBe('ses');
   });
 });
