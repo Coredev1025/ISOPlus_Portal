@@ -21,7 +21,6 @@ import { markRunFailed, markRunSkipped, markRunSucceeded } from '../services/aut
 import {
   SKIP_ACCOUNTING_NOT_CONNECTED,
   SKIP_NO_EMAIL_BACKEND,
-  SKIP_NO_RECIPIENT,
   SKIP_SETTINGS_DISABLED,
 } from '../constants/systemHealth.js';
 import { info, warn, error } from '../utils/logger.js';
