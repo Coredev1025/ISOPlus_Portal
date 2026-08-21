@@ -9,7 +9,7 @@ import { validateBoard } from '../services/sync/validator.js';
 import { registerBoardWebhooks, unregisterBoardWebhooks, getBoardHooks } from '../services/webhookService.js';
 import { info, error, warn } from '../utils/logger.js';
 import { syncQueue } from '../services/sync/queue.js';
-import { SYNC_WORKER_CONCURRENCY, SCHEDULED_SYNC_JOB_TYPE } from '../constants/sync.js';
+import { SCHEDULED_SYNC_JOB_TYPE } from '../constants/sync.js';
 import { invalidateCacheForBoard } from '../utils/transformCache.js';
 import { transformItemData } from '../utils/itemTransform.js';
 import { syncTimeTrackingFromItem } from '../utils/timeTrackSync.js';
@@ -145,13 +145,15 @@ async function deleteHooksFromApiList(authorization, workspaceId, boardId, hooks
   }
 }
 
-function resolveRetryJobName(jobType, fallbackName) {
-  if (jobType === 'board_validation') return 'board_validation';
-  if (jobType === 'data_backlog_sync') return 'backlog_sync';
-  if (jobType === 'manual_triggered_sync') return 'manual_sync';
-  if (jobType === SCHEDULED_SYNC_JOB_TYPE) return SCHEDULED_SYNC_JOB_TYPE;
-  return fallbackName || 'retry';
-}
+const RETRY_JOB_NAMES = {
+  board_validation: 'board_validation',
+  data_backlog_sync: 'backlog_sync',
+  manual_triggered_sync: 'manual_sync',
+  [SCHEDULED_SYNC_JOB_TYPE]: SCHEDULED_SYNC_JOB_TYPE,
+};
+
+const resolveRetryJobName = (jobType, fallbackName) =>
+  RETRY_JOB_NAMES[jobType] ?? fallbackName ?? 'retry';
 
 async function disableWebhooksForBoard(authorization, workspaceId, boardId) {
   try {
@@ -687,9 +689,12 @@ async function processJob(job) {
 // For Redis Cluster, use hash tags to ensure all keys are in the same hash slot
 // Must match the queue name used in queue.js
 const queueName = useCluster ? '{board-sync}' : 'board-sync';
+// Concurrency 1 is the traffic cap for scheduled catch-up, manual Resync, and
+// backlog sharing this worker. Per Node process (each EB instance runs its own
+// worker); multi-instance fan-out still dedupes via BullMQ jobIds from the cron slot.
 export const syncWorker = new Worker(queueName, processJob, {
   connection: redisConnection,
-  concurrency: SYNC_WORKER_CONCURRENCY,
+  concurrency: 1,
   limiter: {
     max: 10, // Max 10 jobs
     duration: 1000 // per second
@@ -726,7 +731,7 @@ syncWorker.on('error', (err) => {
 });
 
 info('Sync-Worker', 'Sync worker initialized and ready', {
-  concurrency: SYNC_WORKER_CONCURRENCY,
+  concurrency: 1,
   queueName: queueName
 });
 

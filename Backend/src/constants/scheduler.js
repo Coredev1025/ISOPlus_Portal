@@ -113,13 +113,6 @@ export const AT_LEAST_ONCE_MIN_INTERVAL_MINUTES = 5;
 export const BOARD_SYNC_KIND = 'board_sync';
 
 /**
- * Sentinel formerly used as ScheduledJob.targetId for the portal sweep.
- * Still passed on the sweep job payload for log correlation.
- * Touchpoints: portalSchedule.js, handlers.js (runBoardSyncSweep).
- */
-export const BOARD_SYNC_TARGET_ID = 'portal';
-
-/**
  * Daily 02:00. Used when BOARD_SYNC_CRON is unset.
  * Touchpoints: boardSyncSweepHelpers.js (resolveBoardSyncCron), portalSchedule.js.
  */

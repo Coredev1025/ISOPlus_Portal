@@ -55,9 +55,7 @@ describe('board_sync sweep handler', () => {
     const slot = new Date('2026-08-11T16:00:00Z');
 
     await runBoardSyncSweep({
-      targetId: 'portal',
-      workspaceId: null,
-      scheduledFor: slot,
+      slot,
       timezone: 'Australia/Sydney',
     });
 
@@ -82,7 +80,7 @@ describe('board_sync sweep handler', () => {
     });
 
     await runBoardSyncSweep({
-      scheduledFor: new Date('2026-08-11T16:00:00Z'),
+      slot: new Date('2026-08-11T16:00:00Z'),
       timezone: 'Australia/Sydney',
     });
 
@@ -94,7 +92,7 @@ describe('board_sync sweep handler', () => {
   it('resolves without enqueueing when no board has sync enabled', async () => {
     await Board.create({ boardId: 'off-1', name: 'B', workspaceId: 'ws-1', syncData: false });
     await runBoardSyncSweep({
-      scheduledFor: new Date('2026-08-11T16:00:00Z'),
+      slot: new Date('2026-08-11T16:00:00Z'),
       timezone: 'Australia/Sydney',
     });
     expect(recordedBulkJobs()).toEqual([]);
@@ -104,7 +102,7 @@ describe('board_sync sweep handler', () => {
     isOfflineMode.mockReturnValue(true);
     await Board.create({ boardId: 'on-1', name: 'A', workspaceId: 'ws-1', syncData: true });
     await expect(runBoardSyncSweep({
-      scheduledFor: new Date('2026-08-11T16:00:00Z'),
+      slot: new Date('2026-08-11T16:00:00Z'),
       timezone: 'Australia/Sydney',
     })).resolves.toBeUndefined();
     expect(recordedBulkJobs()).toEqual([]);

@@ -1,64 +1,53 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
-import { server } from '../../msw/server';
+import { describe, it, expect } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import { BoardSyncStatusPanel } from '@/lib/board-sync-status-panel';
+import { Context } from '@/app/context';
+import type { ContextProps, WorkspaceBoardStatus } from '@/app/context';
+
+function renderPanel(
+  boardId: string,
+  boards: WorkspaceBoardStatus[],
+) {
+  const value = {
+    user: { id: '', name: '', email: '', role: 'isoplus_user' },
+    setUser: () => {},
+    workspaces: [],
+    setWorkspaces: () => {},
+    syncStatuses: [],
+    setSyncStatuses: () => {},
+    workspaceBoardStatuses: boards,
+    setWorkspaceBoardStatuses: () => {},
+    currentWorkspaceId: 'ws-1',
+    setCurrentWorkspaceId: () => {},
+  } as unknown as ContextProps;
+
+  return render(
+    <Context.Provider value={value}>
+      <BoardSyncStatusPanel boardId={boardId} />
+    </Context.Provider>,
+  );
+}
 
 describe('BoardSyncStatusPanel', () => {
-  beforeEach(() => {
-    process.env.NEXT_PUBLIC_BACKEND_URL = 'http://localhost:4001';
+  it('renders schedule from the shared workspace status payload', () => {
+    renderPanel('b-1', [{
+      boardId: 'b-1',
+      schedule: {
+        cron: '0 2 * * *',
+        timezone: 'Australia/Sydney',
+        previous: null,
+        current: { state: 'waiting', syncType: 'scheduled_sync' },
+        upcoming: { at: '2026-08-20T16:00:00.000Z' },
+      },
+    }]);
+
+    expect(screen.getByText('Queued')).toBeInTheDocument();
+    expect(screen.getByText('None yet')).toBeInTheDocument();
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('polls board sync status while mounted', async () => {
-    let hits = 0;
-    server.use(
-      http.get('*/api/sync/board/status/b-1', () => {
-        hits += 1;
-        return HttpResponse.json({
-          schedule: {
-            cron: '0 2 * * *',
-            timezone: 'Australia/Sydney',
-            previous: null,
-            current: hits === 1
-              ? { state: 'waiting', syncType: 'scheduled_sync' }
-              : null,
-            upcoming: { at: '2026-08-20T16:00:00.000Z' },
-          },
-        });
-      }),
-    );
-
-    const pollCallbacks: Array<() => void> = [];
-    const realSetInterval = global.setInterval.bind(global);
-    vi.spyOn(global, 'setInterval').mockImplementation(((
-      handler: TimerHandler,
-      timeout?: number,
-      ...args: unknown[]
-    ) => {
-      if (timeout === 10_000 && typeof handler === 'function') {
-        pollCallbacks.push(handler as () => void);
-        return 1 as unknown as ReturnType<typeof setInterval>;
-      }
-      return realSetInterval(handler, timeout, ...args);
-    }) as typeof setInterval);
-
-    render(<BoardSyncStatusPanel boardId="b-1" />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Queued')).toBeInTheDocument();
-    });
-    expect(hits).toBe(1);
-
-    expect(pollCallbacks.length).toBeGreaterThan(0);
-    await pollCallbacks[0]();
-
-    await waitFor(() => {
-      expect(screen.getByText('Idle')).toBeInTheDocument();
-    });
-    expect(hits).toBe(2);
+  it('falls back to empty copy when the board is not in the workspace poll', () => {
+    renderPanel('missing', []);
+    expect(screen.getByText('Idle')).toBeInTheDocument();
+    expect(screen.getByText('Not scheduled')).toBeInTheDocument();
   });
 });

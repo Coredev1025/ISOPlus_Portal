@@ -1,13 +1,4 @@
 /**
- * How many board-sync jobs may run at once. 1 is the traffic cap for
- * scheduled catch-up, manual Resync, and backlog sharing this worker.
- * Per Node process (each EB instance runs its own worker); multi-instance
- * fan-out still dedupes via BullMQ jobIds from the cron slot.
- * Touchpoints: workers/syncWorker.js.
- */
-export const SYNC_WORKER_CONCURRENCY = 1;
-
-/**
  * BullMQ jobType / Board.syncStatus / SyncExecution.syncType for a
  * scheduled catch-up. Same work as manual_triggered_sync, distinct label.
  * Touchpoints: boardSyncSweepHelpers.js, syncWorker.js, models/Board.js,

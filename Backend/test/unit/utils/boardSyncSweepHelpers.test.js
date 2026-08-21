@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   BOARD_SYNC_CRON_DEFAULT,
   BOARD_SYNC_KIND,
-  BOARD_SYNC_TARGET_ID,
 } from '../../../src/constants/scheduler.js';
 import { SCHEDULED_SYNC_JOB_TYPE } from '../../../src/constants/sync.js';
 import {
@@ -104,7 +103,7 @@ describe('scheduledSyncPeriodKey', () => {
 });
 
 describe('buildScheduledSyncBoardWrites', () => {
-  it('flips queueable boards to scheduled_sync and only stamps job id otherwise', () => {
+  it('emits one pipeline update per board that stamps job id and conditionally flips status', () => {
     const specs = buildScheduledSyncSpecs({
       boards: [
         { syncData: true, boardId: 'live', workspaceId: 'ws-1' },
@@ -114,26 +113,26 @@ describe('buildScheduledSyncBoardWrites', () => {
       timezone: TZ,
       authorization: 'Bearer t',
     });
-    // Helper does not know status — writes cover both branches per board.
     const writes = buildScheduledSyncBoardWrites(specs);
-    expect(writes).toHaveLength(4);
-    expect(writes[0].updateOne.filter).toEqual({
-      boardId: 'live',
-      syncStatus: { $in: expect.any(Array) },
-    });
-    expect(writes[0].updateOne.update.$set).toEqual({
-      syncStatus: SCHEDULED_SYNC_JOB_TYPE,
-      syncJobId: 'sched:live:20260812-0200',
-    });
-    expect(writes[1].updateOne.update.$set).toEqual({
-      syncJobId: 'sched:live:20260812-0200',
-    });
+    expect(writes).toHaveLength(2);
+    expect(writes[0].updateOne.filter).toEqual({ boardId: 'live' });
+    expect(writes[0].updateOne.update).toEqual([{
+      $set: {
+        syncJobId: 'sched:live:20260812-0200',
+        syncStatus: {
+          $cond: [
+            { $in: ['$syncStatus', expect.any(Array)] },
+            SCHEDULED_SYNC_JOB_TYPE,
+            '$syncStatus',
+          ],
+        },
+      },
+    }]);
   });
 });
 
 describe('portal identifiers', () => {
-  it('uses the existing kind with a sentinel target, not a board id', () => {
+  it('uses the existing kind for the portal-wide sweep', () => {
     expect(BOARD_SYNC_KIND).toBe('board_sync');
-    expect(BOARD_SYNC_TARGET_ID).toBe('portal');
   });
 });

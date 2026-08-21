@@ -20,16 +20,14 @@ import syncQueue from '../sync/queue.js';
 
 const BLOCK_FOR_KIND = { [KIND_INVOICE]: 'invoice', [KIND_STATEMENT]: 'statement' };
 
-export async function runBoardSyncSweep(job) {
+export async function runBoardSyncSweep({ slot, timezone = DEFAULT_TIMEZONE } = {}) {
   if (isOfflineMode()) {
     warn(LOG_SCOPE, 'board_sync skipped: backend is in offline mode', {
       kind: BOARD_SYNC_KIND,
-      targetId: job.targetId,
     });
     return;
   }
 
-  const slot = job.scheduledFor ?? job.nextRunAt;
   if (!slot) {
     throw new Error('board_sync: dispatched without a slot; refusing to fan out');
   }
@@ -41,7 +39,7 @@ export async function runBoardSyncSweep(job) {
   const specs = buildScheduledSyncSpecs({
     boards,
     slot,
-    timezone: job.timezone || DEFAULT_TIMEZONE,
+    timezone,
     authorization: getSchedulerAuthorization(),
   });
 
@@ -148,8 +146,9 @@ export function registerAutomationHandlers() {
  * A handler enqueues and returns — it must never await the work itself, or a
  * tick stops being bounded.
  *
- * Portal board catch-up is driven by node-cron (`startBoardSyncCron`), not by
- * the EventBridge tick — do not register `board_sync` here.
+ * Portal board catch-up is driven by `startBoardSyncCron` (in-process
+ * setTimeout + cron-parser), not by the EventBridge tick — do not register
+ * `board_sync` here.
  */
 export function registerSchedulerHandlers() {
   registerAutomationHandlers();

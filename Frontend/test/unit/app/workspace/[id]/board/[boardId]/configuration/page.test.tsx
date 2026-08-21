@@ -63,16 +63,13 @@ let boardPuts: Array<Record<string, unknown>> = [];
 let automationPutUrls: string[] = [];
 
 const BOARD_SYNC_STATUS = {
+  boardId: 'b-1',
   syncData: true,
   syncStatus: 'realtime_sync',
   schedule: {
     cron: '0 2 * * *',
     timezone: 'Australia/Sydney',
-    previous: {
-      at: '2026-08-18T16:00:00.000Z',
-      status: 'completed',
-      syncType: 'scheduled_sync',
-    },
+    previous: { at: '2026-08-18T16:00:00.000Z' },
     current: null,
     upcoming: { at: '2026-08-20T16:00:00.000Z' },
   },
@@ -109,8 +106,9 @@ function stubConfigurationData(
       }
       return HttpResponse.json(options.board ?? BOARD);
     }),
-    http.get('*/api/sync/board/status/b-1', () => {
-      return HttpResponse.json(options.syncStatus ?? BOARD_SYNC_STATUS);
+    http.get('*/api/sync/workspace/status/*', () => {
+      const row = options.syncStatus ?? BOARD_SYNC_STATUS;
+      return HttpResponse.json({ boards: [row] });
     }),
     http.put('*/api/boards', async ({ request }) => {
       boardPuts.push((await request.json()) as Record<string, unknown>);

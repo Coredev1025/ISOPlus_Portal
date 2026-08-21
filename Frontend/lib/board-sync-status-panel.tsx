@@ -1,11 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import axios from '@/app/utils/axiosConfig';
+import { useMemo } from 'react';
+import { useAppContext } from '@/app/context';
 import {
   labelCurrentSync,
-  labelPreviousSync,
-  labelUpcomingSync,
+  labelInstant,
   type BoardSyncSchedule,
 } from '@/lib/board-sync-status-helpers';
 
@@ -21,44 +20,17 @@ const EMPTY_SCHEDULE: BoardSyncSchedule = {
   upcoming: null,
 };
 
-/** Match SyncStatusIndicator: refresh while the configuration page is open. */
-const POLL_INTERVAL_MS = 10_000;
-
-function isCanceled(error: unknown) {
-  const name = (error as { name?: string } | undefined)?.name;
-  return name === 'CanceledError' || name === 'AbortError';
-}
-
+/**
+ * Reads schedule from the workspace status poll already driven by
+ * SyncStatusIndicator — no second 10s poller on Configuration.
+ */
 export function BoardSyncStatusPanel({ boardId }: BoardSyncStatusPanelProps) {
-  const [schedule, setSchedule] = useState<BoardSyncSchedule>(EMPTY_SCHEDULE);
+  const { workspaceBoardStatuses } = useAppContext();
 
-  useEffect(() => {
-    if (!boardId) return;
-    const abortController = new AbortController();
-
-    const fetchStatus = async () => {
-      try {
-        const response = await axios.get(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/sync/board/status/${boardId}`,
-          { signal: abortController.signal },
-        );
-        if (response.data?.schedule) {
-          setSchedule(response.data.schedule);
-        }
-      } catch (error) {
-        if (!isCanceled(error)) {
-          setSchedule(EMPTY_SCHEDULE);
-        }
-      }
-    };
-
-    fetchStatus();
-    const intervalId = setInterval(fetchStatus, POLL_INTERVAL_MS);
-    return () => {
-      abortController.abort();
-      clearInterval(intervalId);
-    };
-  }, [boardId]);
+  const schedule = useMemo(() => {
+    const board = workspaceBoardStatuses.find((row) => row.boardId === boardId);
+    return board?.schedule ?? EMPTY_SCHEDULE;
+  }, [workspaceBoardStatuses, boardId]);
 
   const timezone = schedule.timezone;
 
@@ -68,7 +40,7 @@ export function BoardSyncStatusPanel({ boardId }: BoardSyncStatusPanelProps) {
       <dl className="grid gap-3 text-sm">
         <div>
           <dt className="text-muted-foreground">Previous</dt>
-          <dd>{labelPreviousSync(schedule.previous, timezone)}</dd>
+          <dd>{labelInstant(schedule.previous, timezone, 'None yet')}</dd>
         </div>
         <div>
           <dt className="text-muted-foreground">Current</dt>
@@ -76,7 +48,7 @@ export function BoardSyncStatusPanel({ boardId }: BoardSyncStatusPanelProps) {
         </div>
         <div>
           <dt className="text-muted-foreground">Next scheduled run</dt>
-          <dd>{labelUpcomingSync(schedule.upcoming, timezone)}</dd>
+          <dd>{labelInstant(schedule.upcoming, timezone, 'Not scheduled')}</dd>
         </div>
       </dl>
     </section>

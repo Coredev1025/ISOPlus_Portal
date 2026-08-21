@@ -588,11 +588,6 @@ export async function getBoardSyncStatus(boardId) {
       }
     }
 
-    const lastCompleted = await SyncExecution.findOne({ boardId, status: 'completed' })
-      .sort({ endTime: -1 })
-      .select('endTime status syncType')
-      .lean();
-
     return {
       boardId: board.boardId,
       boardName: board.name,
@@ -608,7 +603,6 @@ export async function getBoardSyncStatus(boardId) {
         board,
         jobStatus,
         syncExecution,
-        lastCompleted,
         portalSchedule: buildPortalBoardSyncMeta(),
       }),
     };

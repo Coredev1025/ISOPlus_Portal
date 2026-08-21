@@ -341,7 +341,12 @@ function SyncStatusCard({ sync, currentTime }: SyncStatusCardProps) {
 }
 
 export function SyncStatusIndicator() {
-  const { syncStatuses, setSyncStatuses, currentWorkspaceId } = useAppContext();
+  const {
+    syncStatuses,
+    setSyncStatuses,
+    setWorkspaceBoardStatuses,
+    currentWorkspaceId,
+  } = useAppContext();
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
 
@@ -354,6 +359,7 @@ export function SyncStatusIndicator() {
       );
 
       if (response.data?.boards) {
+        setWorkspaceBoardStatuses(response.data.boards);
         const activeSyncs = response.data.boards
           .filter((board: any) => isActiveSyncBoard(board))
           .map((board: any) => mapSyncBoardFromPoll(board));
@@ -371,6 +377,7 @@ export function SyncStatusIndicator() {
       pollingIntervalRef.current = setInterval(pollSyncStatus, 10000);
     } else {
       setSyncStatuses([]);
+      setWorkspaceBoardStatuses([]);
     }
 
     return () => {
@@ -379,7 +386,7 @@ export function SyncStatusIndicator() {
         pollingIntervalRef.current = null;
       }
     };
-  }, [currentWorkspaceId, setSyncStatuses]);
+  }, [currentWorkspaceId, setSyncStatuses, setWorkspaceBoardStatuses]);
 
   useEffect(() => {
     if (syncStatuses.length === 0) return;

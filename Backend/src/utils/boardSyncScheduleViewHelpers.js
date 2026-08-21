@@ -1,29 +1,7 @@
 const CATCH_UP_STATUSES = new Set(['scheduled_sync', 'manual_triggered_sync']);
 
-/** BullMQ states that mean the catch-up is still live (not finished). */
-const LIVE_JOB_STATES = new Set([
-  'waiting',
-  'wait',
-  'delayed',
-  'active',
-  'paused',
-  'prioritized',
-  'waiting-children',
-]);
-
-function previousFrom({ lastCompleted, lastSyncedAt }) {
-  if (lastCompleted?.endTime) {
-    return {
-      at: lastCompleted.endTime,
-      status: lastCompleted.status,
-      syncType: lastCompleted.syncType,
-    };
-  }
-  if (lastSyncedAt) {
-    return { at: lastSyncedAt, status: 'completed', syncType: null };
-  }
-  return null;
-}
+/** BullMQ states this queue actually produces while a catch-up is live. */
+const LIVE_JOB_STATES = new Set(['waiting', 'active', 'delayed']);
 
 function currentFrom({ board, jobStatus, syncExecution }) {
   if (jobStatus?.state && LIVE_JOB_STATES.has(jobStatus.state)) {
@@ -45,13 +23,12 @@ export function buildBoardSyncScheduleView({
   board,
   jobStatus,
   syncExecution,
-  lastCompleted,
   portalSchedule,
 }) {
   return {
     cron: portalSchedule?.cron ?? null,
     timezone: portalSchedule?.timezone ?? null,
-    previous: previousFrom({ lastCompleted, lastSyncedAt: board.lastSyncedAt }),
+    previous: board.lastSyncedAt ? { at: board.lastSyncedAt } : null,
     current: currentFrom({ board, jobStatus, syncExecution }),
     upcoming: portalSchedule?.nextRunAt ? { at: portalSchedule.nextRunAt } : null,
   };

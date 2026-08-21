@@ -61,33 +61,25 @@ export function buildScheduledSyncSpecs({ boards, slot, timezone, authorization 
  * validation/backlog (those keep their own status labels).
  */
 export function buildScheduledSyncBoardWrites(specs) {
-  return specs.flatMap((spec) => {
+  return specs.map((spec) => {
     const boardId = spec.data.boardId;
     const syncJobId = String(spec.opts.jobId);
-    return [
-      {
-        updateOne: {
-          filter: {
-            boardId,
-            syncStatus: { $in: SCHEDULED_SYNC_QUEUEABLE_STATUSES },
-          },
-          update: {
-            $set: {
-              syncStatus: SCHEDULED_SYNC_JOB_TYPE,
-              syncJobId,
+    return {
+      updateOne: {
+        filter: { boardId },
+        update: [{
+          $set: {
+            syncJobId,
+            syncStatus: {
+              $cond: [
+                { $in: ['$syncStatus', SCHEDULED_SYNC_QUEUEABLE_STATUSES] },
+                SCHEDULED_SYNC_JOB_TYPE,
+                '$syncStatus',
+              ],
             },
           },
-        },
+        }],
       },
-      {
-        updateOne: {
-          filter: {
-            boardId,
-            syncStatus: { $nin: SCHEDULED_SYNC_QUEUEABLE_STATUSES },
-          },
-          update: { $set: { syncJobId } },
-        },
-      },
-    ];
+    };
   });
 }

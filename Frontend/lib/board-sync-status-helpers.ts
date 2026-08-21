@@ -2,8 +2,6 @@ import { DEFAULT_BUSINESS_TIMEZONE } from '@/constants/timezone';
 
 export type SchedulePrevious = {
   at: string;
-  status?: string;
-  syncType?: string | null;
 } | null;
 
 export type ScheduleCurrent = {
@@ -42,23 +40,17 @@ export function formatScheduleInstant(
   }).format(new Date(iso));
 }
 
-export function labelPreviousSync(
-  previous: SchedulePrevious,
-  timezone?: string | null,
+export function labelInstant(
+  entry: { at: string } | null | undefined,
+  timezone: string | null | undefined,
+  fallback: string,
 ) {
-  if (!previous?.at) return 'None yet';
-  return formatScheduleInstant(previous.at, timezone ?? DEFAULT_BUSINESS_TIMEZONE);
+  return entry?.at
+    ? formatScheduleInstant(entry.at, timezone ?? DEFAULT_BUSINESS_TIMEZONE)
+    : fallback;
 }
 
 export function labelCurrentSync(current: ScheduleCurrent) {
   if (!current) return 'Idle';
   return CURRENT_LABELS[current.state] ?? current.state;
-}
-
-export function labelUpcomingSync(
-  upcoming: ScheduleUpcoming,
-  timezone?: string | null,
-) {
-  if (!upcoming?.at) return 'Not scheduled';
-  return formatScheduleInstant(upcoming.at, timezone ?? DEFAULT_BUSINESS_TIMEZONE);
 }
