@@ -1,6 +1,5 @@
 'use client';
 
-import { useMemo } from 'react';
 import { useAppContext } from '@/app/context';
 import {
   labelCurrentSync,
@@ -26,12 +25,8 @@ const EMPTY_SCHEDULE: BoardSyncSchedule = {
  */
 export function BoardSyncStatusPanel({ boardId }: BoardSyncStatusPanelProps) {
   const { workspaceBoardStatuses } = useAppContext();
-
-  const schedule = useMemo(() => {
-    const board = workspaceBoardStatuses.find((row) => row.boardId === boardId);
-    return board?.schedule ?? EMPTY_SCHEDULE;
-  }, [workspaceBoardStatuses, boardId]);
-
+  const board = workspaceBoardStatuses.find((row) => row.boardId === boardId);
+  const schedule = board?.schedule ?? EMPTY_SCHEDULE;
   const timezone = schedule.timezone;
 
   return (

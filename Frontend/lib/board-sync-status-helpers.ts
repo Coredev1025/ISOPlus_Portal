@@ -46,7 +46,7 @@ export function labelInstant(
   fallback: string,
 ) {
   return entry?.at
-    ? formatScheduleInstant(entry.at, timezone ?? DEFAULT_BUSINESS_TIMEZONE)
+    ? formatScheduleInstant(entry.at, timezone || undefined)
     : fallback;
 }
 

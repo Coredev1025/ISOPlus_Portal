@@ -8,21 +8,6 @@ export function computeNextRun(cron, timezone, from) {
 }
 
 /**
- * The cron occurrence at or before `now` — the slot identity for a fire that
- * just happened (or the most recent past fire). Used as BullMQ period keys so
- * two instances that wake seconds apart still share one jobId.
- */
-export function computeCurrentCronSlot(cron, timezone, now = new Date()) {
-  const upcoming = computeNextRun(cron, timezone, now);
-  return CronExpressionParser.parse(cron, {
-    currentDate: upcoming,
-    tz: timezone,
-  })
-    .prev()
-    .toDate();
-}
-
-/**
  * How many slots were skipped between `scheduledFor` and `now`, excluding
  * `scheduledFor` itself — that one is about to run. `max` bounds the walk so a
  * schedule left disabled for years cannot stall a tick.

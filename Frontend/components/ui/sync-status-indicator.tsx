@@ -10,7 +10,8 @@ import { Progress } from "@/components/ui/progress";
 const MANUAL_SYNC_STATES = new Set(['active', 'waiting', 'failed']);
 const FAILED_EXECUTION_STATUSES = new Set(['failed', 'timeout']);
 const ACTIVE_EXECUTION_STATUSES = new Set(['started', 'in-progress']);
-/** Catch-up from the portal cron — no floating progress card. */
+/** Catch-up from the portal cron — no floating progress card while in flight.
+ * Failures still surface (see hasFailedSyncExecution / hasFailedJobStatus). */
 const HIDDEN_INDICATOR_SYNC_TYPES = new Set(['scheduled_sync', 'realtime_sync']);
 
 function buildSyncError(board: any, message: string) {
@@ -96,12 +97,6 @@ function mapExecutionSyncBoard(board: any) {
   };
 }
 
-function mapSyncBoardFromPoll(board: any) {
-  return isManualSyncBoard(board)
-    ? mapManualSyncBoard(board)
-    : mapExecutionSyncBoard(board);
-}
-
 function isRecentFailure(timestamp: string | number | undefined, windowMs: number) {
   if (!timestamp) return false;
   return (Date.now() - new Date(timestamp).getTime()) < windowMs;
@@ -118,7 +113,6 @@ function hasFailedSyncExecution(board: any) {
   const execution = board.syncExecution;
   return execution
     && FAILED_EXECUTION_STATUSES.has(execution.status)
-    && !HIDDEN_INDICATOR_SYNC_TYPES.has(execution.syncType)
     && isRecentFailure(execution.endTime, 60 * 1000);
 }
 
@@ -133,15 +127,42 @@ function hasFailedJobStatus(board: any) {
   const jobStatus = board.jobStatus;
   return jobStatus
     && jobStatus.state === 'failed'
-    && !isHiddenFromIndicator(board)
     && isRecentFailure(jobStatus.finishedOn, 5 * 60 * 1000);
+}
+
+/** Overnight / finished failures survive on the board after SyncExecution leaves the poll. */
+function hasStickyLastSyncError(board: any) {
+  if (!board?.lastSyncError) return false;
+  if (hasActiveSyncExecution(board) || hasActiveJobStatus(board)) return false;
+  return true;
+}
+
+function mapStickyErrorBoard(board: any) {
+  return {
+    boardId: board.boardId,
+    boardName: board.boardName || board.boardId,
+    status: 'failed' as const,
+    syncType: board.syncStatus || 'scheduled_sync',
+    startTime: board.lastSyncedAt
+      ? new Date(board.lastSyncedAt).toISOString()
+      : new Date().toISOString(),
+    isManualSync: false,
+    error: buildSyncError(board, board.lastSyncError),
+  };
+}
+
+function mapSyncBoardFromPoll(board: any) {
+  if (isManualSyncBoard(board)) return mapManualSyncBoard(board);
+  if (board.syncExecution) return mapExecutionSyncBoard(board);
+  return mapStickyErrorBoard(board);
 }
 
 function isActiveSyncBoard(board: any) {
   return hasActiveSyncExecution(board)
     || hasFailedSyncExecution(board)
     || hasActiveJobStatus(board)
-    || hasFailedJobStatus(board);
+    || hasFailedJobStatus(board)
+    || hasStickyLastSyncError(board);
 }
 
 function getElapsedTime(startTime: string, currentTime: number): number {

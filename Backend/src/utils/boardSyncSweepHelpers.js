@@ -51,7 +51,11 @@ export function buildScheduledSyncSpecs({ boards, slot, timezone, authorization 
       workspaceId: board.workspaceId,
       boardId: board.boardId,
     },
-    opts: { jobId: `sched:${board.boardId}:${periodKey}` },
+    opts: {
+      jobId: `sched:${board.boardId}:${periodKey}`,
+      // Below manual Resync (priority 2). BullMQ processes higher numbers first.
+      priority: 1,
+    },
   }));
 }
 

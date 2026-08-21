@@ -1,4 +1,4 @@
-import { computeNextRun, computeCurrentCronSlot, isValidSchedule } from './nextRun.js';
+import { computeNextRun, isValidSchedule } from './nextRun.js';
 import { runBoardSyncSweep } from './handlers.js';
 import { resolveBoardSyncCron } from '../../utils/boardSyncSweepHelpers.js';
 import {
@@ -25,9 +25,7 @@ export function buildPortalBoardSyncMeta({ now = new Date() } = {}) {
   };
 }
 
-async function fireBoardSyncSweep({ now = new Date() } = {}) {
-  const expression = resolveBoardSyncCron();
-  const slot = computeCurrentCronSlot(expression, DEFAULT_TIMEZONE, now);
+async function fireBoardSyncSweep({ slot }) {
   try {
     await runBoardSyncSweep({ slot, timezone: DEFAULT_TIMEZONE });
   } catch (err) {
@@ -42,6 +40,11 @@ async function fireBoardSyncSweep({ now = new Date() } = {}) {
  * Starts the in-process board catch-up clock. Returns `{ stop }` or null when
  * skipped (test env / invalid cron). Uses cron-parser + setTimeout rather than
  * a third scheduling library — computeNextRun already exists for the same expr.
+ *
+ * The slot is captured when the timer is armed and passed into the fire
+ * callback. Re-deriving it from Date.now() inside the callback is unsafe:
+ * setTimeout can run a millisecond early and would resolve to the previous
+ * cron occurrence — a silent skipped day.
  */
 export function startBoardSyncCron({ env = process.env } = {}) {
   if (env.NODE_ENV === 'test') return null;
@@ -59,17 +62,13 @@ export function startBoardSyncCron({ env = process.env } = {}) {
 
   const arm = () => {
     if (stopped) return;
-    const delay = Math.max(
-      0,
-      computeNextRun(expression, DEFAULT_TIMEZONE, new Date()) - Date.now(),
-    );
-    timeoutId = setTimeout(fire, delay);
+    const slot = computeNextRun(expression, DEFAULT_TIMEZONE, new Date());
+    const delay = Math.max(0, slot.getTime() - Date.now());
+    timeoutId = setTimeout(() => {
+      void fireBoardSyncSweep({ slot });
+      arm();
+    }, delay);
     timeoutId.unref?.();
-  };
-
-  const fire = () => {
-    void fireBoardSyncSweep();
-    arm();
   };
 
   arm();

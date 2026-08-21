@@ -17,13 +17,15 @@ Ticket: KAN-15.
   a handler registered for its `kind`.
 - A handler's job is to **enqueue and return**. For invoice/statement
   automation that means fan-out onto the automation queue. Portal board
-  catch-up uses the same enqueue-and-return pattern from `node-cron`
-  (`runBoardSyncSweep` → `scheduled_sync` on `board-sync`), not from the tick.
+  catch-up uses the same enqueue-and-return pattern from the in-process
+  board-sync clock (`runBoardSyncSweep` → `scheduled_sync` on `board-sync`),
+  not from the tick.
 - The scheduler holds no business logic for any feature. It does not know what
   a board sync or an invoice is — only that a `kind` has a handler and a
   policy.
-- One HTTP endpoint, driven externally. The application has no in-process
-  timer — see "Why not `node-schedule`" below for why that matters.
+- One HTTP endpoint for invoice/statement automation, driven externally.
+  Portal board catch-up uses a separate in-process timer (see below) — see
+  "Why not `node-schedule`" for why the shared tick stays external.
 
 ## The endpoint
 
@@ -241,10 +243,6 @@ distinction matters, see the next section.
 
 ## Why not `node-schedule`
 
-`node-schedule` is a declared dependency in `Backend/package.json` and is
-**not used anywhere in `src/`.** It was evaluated and rejected for this
-feature, deliberately, not overlooked:
-
 An in-process timer (`node-schedule`, `node-cron`, or anything similar) fires
 once **per running instance** of the app. Elastic Beanstalk can and does run
 more than one instance. The moment it scales past one, an in-process timer
@@ -255,12 +253,11 @@ exactly one of them handles a given tick request, and the claim logic in
 `Backend/src/services/scheduler/tick.js` makes concurrent ticks from multiple
 instances safe regardless.
 
-Do not add a `node-schedule` call to wire the **shared** tick up "just for
-now." Portal board catch-up (Epic 12) is an intentional exception: it uses
-in-process `node-cron` and relies on BullMQ jobId collapse when multiple
-instances fire. Invoice/statement automation stay on EventBridge. If the
-unused `node-schedule` dependency is ever removed, that is a separate,
-deliberate cleanup — not something to route around here.
+Do not add a `node-schedule` (or `node-cron`) call to wire the **shared** tick
+up "just for now." Portal board catch-up (Epic 12) is an intentional exception:
+it uses in-process `setTimeout` + `cron-parser` (`startBoardSyncCron`) and
+relies on BullMQ jobId collapse when multiple instances fire.
+Invoice/statement automation stay on EventBridge.
 
 ## Trap: a route in this repo must be mounted twice
 
@@ -328,22 +325,22 @@ Handlers live in `Backend/src/services/scheduler/handlers.js`, imported for
 its side effects at boot (`registerSchedulerHandlers()`, called once from
 `Backend/src/index.js`, before any tick can arrive). Invoice and statement
 automation register here under `AT_LEAST_ONCE`. Portal board catch-up does
-**not** — it is driven by `node-cron` (see below).
+**not** — it is driven by `startBoardSyncCron` (see below).
 
 ## Portal board catch-up (`board_sync`)
 
-An in-process `node-cron` timer (`startBoardSyncCron` in
+An in-process `setTimeout` + `cron-parser` timer (`startBoardSyncCron` in
 `portalSchedule.js`) fires on `BOARD_SYNC_CRON` (default `0 2 * * *`) in
 `DEFAULT_TIMEZONE` and calls `runBoardSyncSweep`. That fans out
 `scheduled_sync` jobs for every `syncData: true` board onto `board-sync`.
 The worker runs them at concurrency 1. Enable-time backlog and ISO+
 webhooks are unchanged. Board Configuration reads previous / current /
-next from `GET /api/sync/board/status/:boardId` (next run is computed from
-the cron, not from a `ScheduledJob` row).
+next from the workspace sync status poll (next run is computed from the
+cron, not from a `ScheduledJob` row).
 
-Boot also disables any leftover portal `ScheduledJob`
-(`kind: board_sync`, `targetId: portal`) so EventBridge ticks cannot claim
-it. Invoice/statement automation remain on the tick.
+Leftover portal `ScheduledJob` rows (`kind: board_sync`, `targetId: portal`)
+are disabled by migration so EventBridge ticks cannot claim them.
+Invoice/statement automation remain on the tick.
 
 Multi-instance duplicate fires are accepted: BullMQ jobIds
 `sched:{boardId}:{periodKey}` collapse them.

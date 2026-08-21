@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeNextRun,
-  computeCurrentCronSlot,
   countMissedSlots,
   isValidSchedule,
   minIntervalMinutes,
@@ -32,23 +31,6 @@ describe('computeNextRun', () => {
   it('handles a simple interval expression', () => {
     const next = computeNextRun('*/30 * * * *', TZ, new Date('2026-08-11T04:05:00Z'));
     expect(next.toISOString()).toBe('2026-08-11T04:30:00.000Z');
-  });
-});
-
-describe('computeCurrentCronSlot', () => {
-  it('returns the fire that just occurred, not wall-clock now', () => {
-    const slot = computeCurrentCronSlot(
-      '0 2 * * *',
-      TZ,
-      new Date('2026-08-11T16:00:05Z'),
-    );
-    expect(slot.toISOString()).toBe('2026-08-11T16:00:00.000Z');
-  });
-
-  it('is identical for two instances that wake seconds apart', () => {
-    const a = computeCurrentCronSlot('0 2 * * *', TZ, new Date('2026-08-11T16:00:01Z'));
-    const b = computeCurrentCronSlot('0 2 * * *', TZ, new Date('2026-08-11T16:00:45Z'));
-    expect(a.toISOString()).toBe(b.toISOString());
   });
 });
 

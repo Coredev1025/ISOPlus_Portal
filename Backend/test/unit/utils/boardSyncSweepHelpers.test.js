@@ -65,6 +65,9 @@ describe('buildScheduledSyncSpecs', () => {
       },
     });
     expect(specs[0].opts.jobId).toBe('sched:b1:20260812-0200');
+    // Below manual Resync (priority 2) so an operator click is not stuck behind
+    // a portal-wide waiting wave. BullMQ: higher number = processed first.
+    expect(specs[0].opts.priority).toBe(1);
     expect(specs[1].opts.jobId).toBe('sched:b3:20260812-0200');
   });
 

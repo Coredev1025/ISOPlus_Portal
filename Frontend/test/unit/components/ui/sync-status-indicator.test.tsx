@@ -177,6 +177,64 @@ describe('SyncStatusIndicator', () => {
     });
   });
 
+  it('surfaces a failed nightly scheduled_sync (hidden only while in progress)', async () => {
+    server.use(
+      http.get(`*/api/sync/workspace/status/ws-1`, () =>
+        HttpResponse.json({
+          boards: [
+            inProgressBoard({
+              syncStatus: 'scheduled_sync',
+              syncExecution: {
+                status: 'failed',
+                syncType: 'scheduled_sync',
+                startTime: '2026-08-10T00:00:00.000Z',
+                endTime: new Date().toISOString(),
+                progress: {},
+                counters: {},
+                error: { message: 'Nightly catch-up failed' },
+              },
+            }),
+          ],
+        }),
+      ),
+    );
+
+    const { container } = renderIndicator('ws-1');
+
+    expect(await screen.findByText('Sync Failed')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(container.textContent).toContain('Nightly catch-up failed');
+    });
+  });
+
+  it('keeps an overnight catch-up failure visible via lastSyncError after the short window', async () => {
+    server.use(
+      http.get(`*/api/sync/workspace/status/ws-1`, () =>
+        HttpResponse.json({
+          boards: [
+            {
+              boardId: 'b-1',
+              boardName: 'NDIS Services',
+              // Worker sets syncStatus to failed and stamps lastSyncError; the
+              // in-progress SyncExecution is gone from the poll by morning.
+              syncStatus: 'failed',
+              lastSyncError: 'ISO+ returned 429 at 02:00',
+              jobStatus: null,
+              syncExecution: null,
+            },
+          ],
+        }),
+      ),
+    );
+
+    const { container } = renderIndicator('ws-1');
+
+    expect(await screen.findByText('Sync Failed')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(container.textContent).toContain('ISO+ returned 429 at 02:00');
+    });
+  });
+
   it('prefers the manual job payload when a manual sync is running', async () => {
     server.use(
       http.get(`*/api/sync/workspace/status/ws-1`, () =>

@@ -47,6 +47,7 @@ describe('startBoardSyncCron', () => {
     else process.env.BOARD_SYNC_CRON = original;
     process.env.NODE_ENV = originalEnv;
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('arms a timeout for the next cron slot and fires the sweep', async () => {
@@ -62,7 +63,34 @@ describe('startBoardSyncCron', () => {
     expect(runBoardSyncSweep).toHaveBeenCalledWith(
       expect.objectContaining({
         timezone: DEFAULT_TIMEZONE,
-        slot: expect.any(Date),
+        slot: new Date('2026-08-12T16:00:00.000Z'),
+      }),
+    );
+
+    task.stop();
+  });
+
+  it('passes the armed slot even when the timer fires a millisecond early', async () => {
+    process.env.BOARD_SYNC_CRON = '0 2 * * *';
+    vi.useFakeTimers();
+    // One millisecond before the 02:00 Sydney fire (16:00Z on the 12th).
+    vi.setSystemTime(new Date('2026-08-12T15:59:59.999Z'));
+
+    let scheduledFire = null;
+    vi.spyOn(global, 'setTimeout').mockImplementation((fn) => {
+      scheduledFire = fn;
+      return { unref() {} };
+    });
+
+    const task = startBoardSyncCron();
+    expect(scheduledFire).toBeTypeOf('function');
+    // Fire while still early — re-deriving the slot from Date.now() would pick
+    // yesterday's occurrence and collapse onto a spent period key.
+    await scheduledFire();
+
+    expect(runBoardSyncSweep).toHaveBeenCalledWith(
+      expect.objectContaining({
+        slot: new Date('2026-08-12T16:00:00.000Z'),
       }),
     );
 
