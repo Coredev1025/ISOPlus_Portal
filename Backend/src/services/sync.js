@@ -334,7 +334,7 @@ export async function triggerManualSync(authorization, workspaceId, boardId) {
       boardId
     }, {
       jobId: `manual-sync-${boardId}-${Date.now()}`,
-      priority: 2 // Higher priority than regular sync
+      priority: 2 // Lower number than sweep (10); BullMQ runs lower first
     });
 
     await Board.findOneAndUpdate(

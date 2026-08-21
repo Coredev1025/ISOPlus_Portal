@@ -17,7 +17,7 @@ before this design. Do not implement per-board `ScheduledJob` rows.
 | Next run from portal `ScheduledJob.nextRunAt` | Next run from `computeNextRun(BOARD_SYNC_CRON, DEFAULT_TIMEZONE, now)` | No tick advances a board-sync row. Leftover portal `ScheduledJob` rows are disabled by migration so ticks cannot claim them. |
 | Cron fire re-derives the slot from `Date.now()` via `computeCurrentCronSlot` | Slot is captured when the timer is armed (`computeNextRun`) and passed into the fire callback | `setTimeout` can run a millisecond early; re-deriving would resolve to the previous occurrence and silently skip a day. |
 | Queued when a waiting BullMQ job exists | Sweep stamps `syncJobId` (and `scheduled_sync` when safe) on enqueue | Worker previously set those only when active, so Current stayed Idle while waiting. |
-| Waiting `scheduled_sync` blocks manual Resync | Waiting/delayed `scheduled_sync` is removed (re-checked before remove; remove failure refuses Resync). Active catch-up still blocks. Sweep jobs use `priority: 1` (below manual's `2`) | Operator Resync must not wait for a portal-wide wave to drain. |
+| Waiting `scheduled_sync` blocks manual Resync | Waiting/delayed `scheduled_sync` is removed (re-checked before remove; remove failure refuses Resync). Active catch-up still blocks. Sweep jobs use `priority: 10` (BullMQ: lower number first; yields to manual's `2`) | Operator Resync must not wait for a portal-wide wave to drain. |
 | Failed nightly catch-up hidden after 60s | Indicator also surfaces sticky `Board.lastSyncError` until the next successful sync clears it | Operators opening the app in the morning still see the overnight failure. |
 
 ## What already exists (do not rebuild)
@@ -60,7 +60,7 @@ runBoardSyncSweep({ slot, timezone })
       ▼
 find boards where syncData === true
       ▼
-board-sync queue addBulk (idempotent jobId per board + slot, priority 1)
+board-sync queue addBulk (idempotent jobId per board + slot, priority 10)
       ▼
 syncWorker concurrency 1  →  scheduled_sync catch-up
       ▼

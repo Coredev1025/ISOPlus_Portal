@@ -53,8 +53,9 @@ export function buildScheduledSyncSpecs({ boards, slot, timezone, authorization 
     },
     opts: {
       jobId: `sched:${board.boardId}:${periodKey}`,
-      // Below manual Resync (priority 2). BullMQ processes higher numbers first.
-      priority: 1,
+      // Yields to manual Resync (priority 2): BullMQ runs LOWER numbers first
+      // (0 = highest). Unprioritized jobs still beat both — see wait-list RPOP.
+      priority: 10,
     },
   }));
 }
