@@ -235,6 +235,31 @@ describe('SyncStatusIndicator', () => {
     });
   });
 
+  it('does not sticky-fail a board the user deliberately cancelled', async () => {
+    server.use(
+      http.get(`*/api/sync/workspace/status/ws-1`, () =>
+        HttpResponse.json({
+          boards: [
+            {
+              boardId: 'b-1',
+              boardName: 'NDIS Services',
+              syncStatus: 'sync_cancelled',
+              lastSyncError: 'Sync cancelled by user',
+              jobStatus: null,
+              syncExecution: null,
+            },
+          ],
+        }),
+      ),
+    );
+
+    const { container } = renderIndicator('ws-1');
+
+    await waitFor(() => {
+      expect(container.textContent).toBe('');
+    });
+  });
+
   it('prefers the manual job payload when a manual sync is running', async () => {
     server.use(
       http.get(`*/api/sync/workspace/status/ws-1`, () =>

@@ -133,6 +133,8 @@ function hasFailedJobStatus(board: any) {
 /** Overnight / finished failures survive on the board after SyncExecution leaves the poll. */
 function hasStickyLastSyncError(board: any) {
   if (!board?.lastSyncError) return false;
+  // cancelSync stamps lastSyncError with "Sync cancelled by user" — not a failure.
+  if (board.syncStatus === 'sync_cancelled') return false;
   if (hasActiveSyncExecution(board) || hasActiveJobStatus(board)) return false;
   return true;
 }
