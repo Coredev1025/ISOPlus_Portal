@@ -150,6 +150,41 @@ with one author, which is nearly all of them here — rebases.
 
 `npm run worktree -- new` also handles environment initialization: it allocates a port pair no other worktree has reserved, copies the gitignored `Backend/.env` / `Frontend/.env.local`, and **rewrites the copied `MONGODB_URI` to point at that worktree's own database**. Without that rewrite an `--isolated-db` worktree is only isolated inside Docker — anything run natively (`npm run migrate`, `npm run schema`, `npm run dev` in `Backend/`) reads the file directly and would silently hit the shared database.
 
+### Before you push: build and test the whole app, not the file you touched
+
+**Every push runs the full suite of each app you changed, and a real build of the
+Frontend if you changed it.** Not the one test file, not `-t 'the name'`. A
+scoped run answers "did my change work"; the full run answers "did my change
+break someone else's", and merging deploys, so nobody else gets to answer it
+for you.
+
+```bash
+npm test --prefix Backend                    # Backend/**  touched
+cd Frontend && npm run lint && npm run build # Frontend/** touched
+```
+
+`next.config.js` sets `eslint.ignoreDuringBuilds: true`, so the build will not
+fail on a lint error — run `lint` yourself or it is never run at all.
+
+**Run it with your `.env` files in place, the way your machine really is.**
+`Backend/src/utils/logger.js` calls `dotenv.config()` at import, and almost
+everything imports the logger, so `Backend/.env` is loaded into the test process
+— while CI has no `.env` and no AWS or ISO+ credentials at all. That gap runs
+both ways and both are real:
+
+- A test that passes in CI and fails locally is usually *the test* reading an
+  environment CI does not have. It found a genuine hole in the assertion.
+- A test that passes locally and fails in CI is usually the code depending on a
+  credential the deployed environment will not have either.
+
+Neither is "flaky" and neither is fixed by re-running. A test whose outcome
+depends on the machine must save and restore every variable it depends on, so
+it decides its own environment instead of inheriting one.
+
+Paste the actual output into the PR's Verification section. If something is
+genuinely unrunnable, say which part and why — that is a sentence, not a
+reason to skip the rest.
+
 ## Pull requests
 
 A PR description is written for the person who has to review it and for whoever reads it in a year wondering why the code looks like this. Because merging deploys, the reviewer's first question is always "what is the blast radius" — answer it before they ask.
