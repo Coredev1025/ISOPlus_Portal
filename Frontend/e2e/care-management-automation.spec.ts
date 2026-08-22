@@ -246,24 +246,25 @@ test.describe("Care Management automation (KAN-10 fixture)", () => {
   });
 
   /**
-   * KNOWN DEFECT — marked `fail` so it is recorded rather than hidden, and
-   * turns red the moment someone fixes it.
+   * Was a KNOWN DEFECT, marked `fail`: both NDIS boards minted an invoice
+   * number and wrote PDFLink rows for a PDF that was never rendered, then
+   * composed no email and logged nothing. A group that collected zero rows
+   * returned `{ empty: true }` and `generateNdisGeneratorInvoices` skipped it
+   * with a bare `continue`.
    *
-   * Both NDIS boards mint an invoice number and write PDFLink rows pointing at
-   * a PDF that is never rendered, then compose no email and log nothing at all.
-   * `ndisInvoiceGeneratorPdf.js` calls `allocateInvoiceNumberBase()` BEFORE
-   * `collectNdisInvoiceRows()`, so a group that collects zero rows returns
-   * `{ empty: true }` having already consumed a number, and
-   * `generateNdisGeneratorInvoices` skips it with a bare `continue`.
+   * Fixed by wiring section 2's selection conditions in front of generation
+   * (utils/automationItemSelection.js): items that cannot be billed are removed
+   * before participants are grouped, so a group that would collect zero rows is
+   * no longer formed and the boards produce their invoices and their email.
    *
-   * The same ordering mistake — irreversible work before the check that can
-   * abort it — was fixed for the delivery-backend gate; this is the copy that
-   * survived in the NDIS generator.
+   * Residual, narrower than what this test watches: `ndisInvoiceGeneratorPdf.js`
+   * still calls `allocateInvoiceNumberBase()` before `collectNdisInvoiceRows()`,
+   * so any group that still manages to collect zero rows burns a number. That
+   * is a gap in the sequence, not a missing email.
    */
   test("NDIS boards generate invoices and an email, like the Age Care board", async ({
     request,
   }) => {
-    test.fail();
     test.skip(
       !SCHEDULER_KEY,
       "set E2E_SCHEDULER_API_KEY to run the scheduler-tick journey",
