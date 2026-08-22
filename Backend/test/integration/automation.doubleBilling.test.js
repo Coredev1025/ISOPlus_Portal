@@ -78,7 +78,11 @@ const shift = (itemId) => ({
   data: {
     'Participant Full Name': 'Jane Smith',
     'Job Status': 'Completed',
-    'Actual Shift Start Date and Time': '2025-12-10T09:00:00.000000+11:00',
+    // Inside the slot's service-delivery window (2025-12-15 → 2026-01-15 UTC).
+    // It used to be 2025-12-10, which the mocked list happily returned and the
+    // real list never would have; selection reads the stored item, so the
+    // fixture has to be the row the period actually contains.
+    'Actual Shift Start Date and Time': '2025-12-20T09:00:00.000000+11:00',
   },
 });
 
@@ -253,5 +257,113 @@ describe('a claim left behind by a run that never finished', () => {
   it('says nothing on an ordinary run', async () => {
     await runOnce();
     expect(error.mock.calls.filter(([, m]) => /never completed/i.test(m))).toEqual([]);
+  });
+});
+
+describe('a ledger write that fails after the document exists', () => {
+  /**
+   * The window Arnold's review named: the items were marked with the REAL
+   * invoice number before the PDFLink rows were written, so a failure here left
+   * items that carry a finished-looking marker, have no ledger row, are invisible
+   * to the stale-claim alarm (which only knows the `pending:` prefix), and can
+   * never be re-claimed — the deterministic token no longer matches. Permanent,
+   * silent under-billing.
+   *
+   * The marker must therefore stay provisional until the ledger row exists.
+   */
+  it('leaves a pending: token rather than a finished-looking marker', async () => {
+    const create = vi.spyOn(PDFLink, 'create').mockRejectedValue(new Error('ledger write failed'));
+
+    await expect(runOnce()).rejects.toThrow('ledger write failed');
+    create.mockRestore();
+
+    expect(await markerOn('shift-1')).toMatch(/^pending:/);
+    expect(await markerOn('shift-2')).toMatch(/^pending:/);
+    expect(await PDFLink.countDocuments({ workspaceId: WS })).toBe(0);
+  });
+
+  it('is picked up by the stale-claim alarm once the cutoff passes', async () => {
+    const create = vi.spyOn(PDFLink, 'create').mockRejectedValue(new Error('ledger write failed'));
+    await expect(runOnce()).rejects.toThrow('ledger write failed');
+    create.mockRestore();
+
+    // Age the abandoned claim past the cutoff; the next run reports it.
+    await Item.updateMany({ workspaceId: WS }, { $set: { invoicedAt: new Date('2020-01-01T00:00:00.000Z') } });
+    listed.items = [];
+    listed.total = 0;
+    await runOnce();
+
+    const alarm = error.mock.calls.find(([, message]) => /never completed/i.test(message));
+    expect(alarm).toBeTruthy();
+    expect(alarm[2].itemIds.sort()).toEqual(['shift-1', 'shift-2']);
+  });
+
+  it('lets the retry reclaim its own items and bill them', async () => {
+    const create = vi.spyOn(PDFLink, 'create').mockRejectedValue(new Error('ledger write failed'));
+    await expect(runOnce()).rejects.toThrow('ledger write failed');
+    create.mockRestore();
+
+    const results = await runOnce();
+
+    expect(results).toHaveLength(1);
+    expect(await markerOn('shift-1')).toBe(results[0].invoiceNumber);
+    expect(await markerOn('shift-2')).toBe(results[0].invoiceNumber);
+    expect(await PDFLink.countDocuments({ workspaceId: WS })).toBe(2);
+  });
+});
+
+describe('selection decides what of the listed period is billable', () => {
+  /**
+   * Section 2 of the spec, reaching production. The Invoice Generator list
+   * decides what the period contains; the type's date-and-status conditions
+   * decide what of it is billable. Before this, the list was the only rule and
+   * `selectInvoiceableItems` was library code nothing called.
+   */
+  it('leaves off a listed item whose status does not qualify', async () => {
+    await Item.updateOne({ itemId: 'shift-2' }, { $set: { 'data.Job Status': 'In Progress' } });
+
+    await runOnce();
+
+    const { generateNdisInvoiceGeneratorPdf } = await import('../../src/services/automation/ndisInvoiceGeneratorPdf.js');
+    expect(generateNdisInvoiceGeneratorPdf).toHaveBeenCalledWith(
+      expect.objectContaining({ masterItemIds: ['shift-1'] }),
+    );
+    // Unbilled and unclaimed, so it is picked up when its status moves on.
+    expect(await markerOn('shift-2')).toBe(null);
+  });
+
+  it('leaves off a listed item dated outside the period', async () => {
+    await Item.updateOne(
+      { itemId: 'shift-2' },
+      { $set: { 'data.Actual Shift Start Date and Time': '2025-10-10T09:00:00.000000+11:00' } },
+    );
+
+    await runOnce();
+
+    const { generateNdisInvoiceGeneratorPdf } = await import('../../src/services/automation/ndisInvoiceGeneratorPdf.js');
+    expect(generateNdisInvoiceGeneratorPdf).toHaveBeenCalledWith(
+      expect.objectContaining({ masterItemIds: ['shift-1'] }),
+    );
+  });
+
+  it('produces no invoice at all when nothing in the period qualifies', async () => {
+    await Item.updateMany({ workspaceId: WS }, { $set: { 'data.Job Status': 'In Progress' } });
+
+    const results = await runOnce();
+
+    expect(renderedInvoices).toBe(0);
+    expect(results).toEqual([]);
+  });
+
+  it('counts what it removed, because the risk it carries is under-billing', async () => {
+    await Item.updateOne({ itemId: 'shift-2' }, { $set: { 'data.Job Status': 'In Progress' } });
+
+    await runOnce();
+
+    const { warn } = await import('../../src/utils/logger.js');
+    const line = warn.mock.calls.find(([, message]) => /selection removed/i.test(message));
+    expect(line[2]).toMatchObject({
+      boardId: BOARD, invoiceType: 'ndis-certification', listed: 2, selected: 1, dropped: 1,
+    });
   });
 });

@@ -22,6 +22,7 @@ import {
 import { invoiceDatesFromSlot } from '../../utils/automationInvoiceDates.js';
 import { generateUnderClaim } from '../../utils/automationInvoiceClaim.js';
 import { groupItemIdsByParticipant } from '../../utils/automationInvoiceGrouping.js';
+import { selectBillableItemIds } from '../../utils/automationItemSelection.js';
 import { invoiceTypeFromBoardLabel } from '../../utils/invoiceTypeFromLabel.js';
 import { reportStaleClaims } from '../../utils/staleInvoiceClaims.js';
 import { schedulePeriodServiceDeliveryWindow } from '../../utils/automationScheduleWindow.js';
@@ -76,6 +77,27 @@ export function assertListNotTruncated(listed, context) {
     );
   }
   return returned;
+}
+
+/**
+ * The listed rows that selection says are billable, in the order they were
+ * listed.
+ *
+ * The list query decides what the period CONTAINS; section 2's date-and-status
+ * conditions decide what of it is BILLABLE. Applied here, once, in front of
+ * both generators, so neither has to know the rule.
+ */
+async function billableRows({
+  workspaceId, boardId, rows, idKey, invoiceType, period,
+}) {
+  const billable = new Set(await selectBillableItemIds({
+    workspaceId,
+    boardId,
+    itemIds: rows.map((row) => row[idKey]),
+    invoiceType,
+    period,
+  }));
+  return rows.filter((row) => billable.has(row[idKey]));
 }
 
 function uniquePdfResults(links) {
@@ -217,7 +239,10 @@ async function generateNdisGeneratorInvoices({
     ndisInvoiceGeneratorListDeps(),
   );
   assertListNotTruncated(listed, { boardId, periodKey });
-  const groups = groupItemIdsByParticipant(listed.items || [], {
+  const selected = await billableRows({
+    workspaceId, boardId, rows: listed.items || [], idKey: 'sourceItemId', invoiceType, period,
+  });
+  const groups = groupItemIdsByParticipant(selected, {
     idKey: 'sourceItemId',
     participantKey: 'participant',
   });
@@ -244,24 +269,26 @@ async function generateNdisGeneratorInvoices({
         dueDate: dates.dueDate,
         period,
       }),
+      // Written while the provisional token is still held, so the marker never
+      // names a document the ledger has no row for.
+      record: (document, claimedItemIds) => recordPdfLinks({
+        workspaceId,
+        boardId,
+        itemIds: claimedItemIds,
+        periodKey,
+        period,
+        invoiceType,
+        invoiceNumber: document.invoiceNumber,
+        invoiceTotal: document.invoiceTotal,
+        participant: group.participant,
+        pdfUrl: document.fileUrl,
+        type: PDFLINK_TYPE_NDIS_INVOICE,
+      }),
     });
     // Null covers both "everything was already invoiced" and "the generator
     // found nothing billable". Section 3.5: no invoice, no email, and the run
     // still completes so the period is not retried forever.
     if (!generated) continue;
-    await recordPdfLinks({
-      workspaceId,
-      boardId,
-      itemIds: generated.itemIds,
-      periodKey,
-      period,
-      invoiceType,
-      invoiceNumber: generated.invoiceNumber,
-      invoiceTotal: generated.invoiceTotal,
-      participant: group.participant,
-      pdfUrl: generated.fileUrl,
-      type: PDFLINK_TYPE_NDIS_INVOICE,
-    });
     info('Automation', 'Scheduled Invoice Generator PDF written', {
       workspaceId, boardId, periodKey, invoiceNumber: generated.invoiceNumber,
     });
@@ -347,7 +374,10 @@ async function generateAgeCareGeneratorInvoices({
   }
   assertListNotTruncated(listed, { boardId, periodKey });
   const pending = (listed.items || []).filter((row) => !row.invoiceNumber);
-  const groups = groupItemIdsByParticipant(pending, { idKey: 'id', participantKey: 'participant' });
+  const selected = await billableRows({
+    workspaceId, boardId, rows: pending, idKey: 'id', invoiceType, period,
+  });
+  const groups = groupItemIdsByParticipant(selected, { idKey: 'id', participantKey: 'participant' });
   if (groups.length === 0) return existing;
 
   const results = [...existing];
@@ -363,21 +393,21 @@ async function generateAgeCareGeneratorInvoices({
       produce: (claimedItemIds) => produceAgeCareInvoice({
         workspaceId, boardId, business, dates, isLowCatBoard, itemIds: claimedItemIds, period,
       }),
+      record: (document, claimedItemIds) => recordPdfLinks({
+        workspaceId,
+        boardId,
+        itemIds: claimedItemIds,
+        periodKey,
+        period,
+        invoiceType,
+        invoiceNumber: document.invoiceNumber,
+        invoiceTotal: document.invoiceTotal,
+        participant: group.participant,
+        pdfUrl: document.fileUrl,
+        type: PDFLINK_TYPE_AGE_CARE_INVOICE,
+      }),
     });
     if (!generated) continue;
-    await recordPdfLinks({
-      workspaceId,
-      boardId,
-      itemIds: generated.itemIds,
-      periodKey,
-      period,
-      invoiceType,
-      invoiceNumber: generated.invoiceNumber,
-      invoiceTotal: generated.invoiceTotal,
-      participant: group.participant,
-      pdfUrl: generated.fileUrl,
-      type: PDFLINK_TYPE_AGE_CARE_INVOICE,
-    });
     results.push({
       itemId: generated.itemIds[0],
       invoiceNumber: generated.invoiceNumber,
