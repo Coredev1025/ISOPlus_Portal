@@ -978,6 +978,17 @@ describe('generateParticipantTaxInvoicePdf', () => {
       expect(deps.saveInvoiceNumber).not.toHaveBeenCalled();
     });
 
+    it('does not burn an invoice number on the refusal', async () => {
+      // The number was claimed before the total was known, so every refused
+      // run left a gap in a sequence a client reads off their invoices.
+      const before = await Business.findOne({ workspaceId: 'ws_1' }).lean();
+      await run({ dbItems: [zeroRecord(), zeroRecord()] });
+      const after = await Business.findOne({ workspaceId: 'ws_1' }).lean();
+
+      expect(after.documentNumbering?.invoice?.nextNumber)
+        .toBe(before.documentNumbering?.invoice?.nextNumber);
+    });
+
     it('still invoices when the rows total a real amount', async () => {
       const { res } = await run({ dbItems: [deliveredRecord()] });
       expect(res.statusCode).toBe(200);

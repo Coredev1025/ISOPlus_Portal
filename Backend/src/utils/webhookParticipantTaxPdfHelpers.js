@@ -244,7 +244,6 @@ export async function generateParticipantTaxInvoicePdf({
   enableRepeatHeadOnTables(template);
 
   const logoBase64 = await getLogoData(business);
-  const invoiceNumber = await claimInvoiceNumber(workspaceId);
   let invoiceDate = req.body?.invoiceDate || new Date().toISOString();
   let dueDate = req.body?.dueDate || '';
   if (!dueDate) {
@@ -323,6 +322,14 @@ export async function generateParticipantTaxInvoicePdf({
     ));
     return res.status(400).json({ message: 'There is nothing to invoice!' });
   }
+
+  // Claimed only once there is something to charge. A claim leaves a gap in the
+  // sequence if the run then fails, and claiming before the total was known
+  // meant every refused zero-value run left one — a gap in a sequence the
+  // client reads off their invoices, for a document that was never issued.
+  // Everything between here and the guard is a read, so nothing is lost by
+  // waiting.
+  const invoiceNumber = await claimInvoiceNumber(workspaceId);
   const subtotalValue = formatCurrencyValue(invoiceTotalRaw);
   const totalAUDValue = subtotalValue;
 
