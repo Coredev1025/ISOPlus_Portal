@@ -148,3 +148,42 @@ describe('the migration reverses cleanly', () => {
     expect(row.periodKey).toBe('2025-01');
   });
 });
+
+describe('the migration against data that already has duplicates', () => {
+  /**
+   * `periodKey` predates this migration — KAN-10's first pass already wrote it
+   * — so a deployed database can hold two rows for the same item and period.
+   * `createIndex` then fails with the driver's E11000, which names one pair and
+   * gives no way to find the rest. On a billing collection, on a manual
+   * migration run, that is the wrong thing to hand an operator.
+   */
+  it('names every offending key, not just the first one the driver hits', async () => {
+    await connection().collection('pdflinks').dropIndexes().catch(() => {});
+    const clash = (itemId) => ({
+      ...BASE, itemId, periodKey: '2026-01', createdBy: '', isDeleted: false,
+    });
+    await connection().collection('pdflinks').insertMany([
+      clash('i-dup-a'), clash('i-dup-a'), clash('i-dup-b'), clash('i-dup-b'),
+    ]);
+
+    // The driver's own E11000 names one pair. An operator running this by hand
+    // on a billing collection then fixes that one, re-runs, and finds the next
+    // — once per duplicate. One run should tell them the whole extent.
+    const failure = await up(connection()).catch((err) => err);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure.message).toMatch(/duplicate/i);
+    expect(failure.message).toContain('i-dup-a');
+    expect(failure.message).toContain('i-dup-b');
+    expect(failure.message).toContain('2026-01');
+  });
+
+  it('creates the index when the duplicates are outside the partial filter', async () => {
+    await connection().collection('pdflinks').dropIndexes().catch(() => {});
+    // No periodKey: legitimately repeatable, and the partial filter keeps these
+    // out of the index entirely.
+    const legacy = { ...BASE, itemId: 'i-legacy', createdBy: '', isDeleted: false };
+    await connection().collection('pdflinks').insertMany([{ ...legacy }, { ...legacy }]);
+
+    await expect(up(connection())).resolves.toBeUndefined();
+  });
+});
