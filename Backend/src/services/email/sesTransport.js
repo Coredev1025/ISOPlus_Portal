@@ -139,10 +139,15 @@ export async function sendEmail({ from, to, cc, replyTo, subject, html, text, at
   if (recipients.length === 0) {
     throw new Error('sendEmail requires at least one recipient — refusing to send a message to nobody.');
   }
-  if (!isEmailTransportConfigured()) {
+  // The same question the preflight gate asked, with the same argument. Asking
+  // it without `from` is how a workspace that had configured its own Email From
+  // passed the gate that decides whether to generate — burning a real invoice
+  // number off Business.documentNumbering — and was then refused here.
+  if (!isEmailTransportConfigured({ from })) {
     throw new Error(
-      'Email transport is not configured: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, '
-      + 'AWS_REGION and EMAIL_FROM must all be set.',
+      'Email transport is not configured: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and '
+      + 'AWS_REGION must all be set, and a From address must come from either the '
+      + "workspace's Email From or EMAIL_FROM.",
     );
   }
 

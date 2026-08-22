@@ -180,8 +180,23 @@ describe('sesTransport', () => {
 
     it('refuses to send when the transport is not configured', async () => {
       delete process.env.EMAIL_FROM;
+      await expect(sendEmail({ ...MESSAGE, from: undefined })).rejects.toThrow(/not configured/i);
+      expect(nodemailer.createTransport).not.toHaveBeenCalled();
+    });
+
+    it('refuses to send when the AWS credential is missing, whatever the From', async () => {
+      delete process.env.AWS_SECRET_ACCESS_KEY;
       await expect(sendEmail(MESSAGE)).rejects.toThrow(/not configured/i);
       expect(nodemailer.createTransport).not.toHaveBeenCalled();
+    });
+
+    // The gate that let generation proceed is isEmailTransportConfigured({ from }),
+    // so the gate that lets the send proceed has to ask the same question. Asking
+    // it without the From burned the invoice number and then refused to deliver.
+    it('sends when the message carries its own From and EMAIL_FROM is unset', async () => {
+      delete process.env.EMAIL_FROM;
+      await sendEmail({ ...MESSAGE, from: 'billing@dev.isoplus.online' });
+      expect(sendMail.mock.calls[0][0].from).toBe('billing@dev.isoplus.online');
     });
 
     it('passes cc, replyTo, html and attachments straight through', async () => {
