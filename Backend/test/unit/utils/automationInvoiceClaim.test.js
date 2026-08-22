@@ -141,3 +141,36 @@ describe('generateUnderClaim — retry', () => {
     expect(await invoicedBy('a')).toBe('INV-3003 (ISO+™)');
   });
 });
+
+describe('generateUnderClaim — the ledger row comes before the marker', () => {
+  it('records the document while the provisional token is still held', async () => {
+    const order = [];
+    await generateUnderClaim({
+      ...base,
+      itemIds: ['a'],
+      produce: async () => ({ invoiceNumber: 'INV-3004 (ISO+™)' }),
+      record: async (document, claimed) => {
+        order.push(document.invoiceNumber, claimed.join(','), await invoicedBy('a'));
+      },
+    });
+
+    expect(order).toEqual(['INV-3004 (ISO+™)', 'a', provisionalClaimToken({
+      type: TYPE, periodKey: PERIOD, participant: PARTICIPANT,
+    })]);
+    expect(await invoicedBy('a')).toBe('INV-3004 (ISO+™)');
+  });
+
+  it('keeps the pending token when the ledger write fails, so the alarm can see it', async () => {
+    await expect(generateUnderClaim({
+      ...base,
+      itemIds: ['a'],
+      produce: async () => ({ invoiceNumber: 'INV-3005 (ISO+™)' }),
+      record: async () => { throw new Error('ledger write failed'); },
+    })).rejects.toThrow('ledger write failed');
+
+    // Not the real invoice number — that would name a document with no ledger
+    // row — and not released either, because a row may already have been
+    // written and releasing would bill those items twice.
+    expect(await invoicedBy('a')).toMatch(/^pending:/);
+  });
+});

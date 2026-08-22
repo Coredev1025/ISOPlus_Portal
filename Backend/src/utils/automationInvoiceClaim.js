@@ -18,12 +18,23 @@
  *
  *   1. claim the items with a provisional token
  *   2. generate, using only the items the claim actually took
- *   3. success → rewrite the marker to the real invoice number
+ *   3. record the document on the ledger, still under the provisional token
+ *   4. success → rewrite the marker to the real invoice number
  *      failure → release the claim, leaving the items for the next run
  *
  * The token is deterministic — same board, type, period and participant give
  * the same token — so a retried job re-claims its own items rather than
  * deadlocking against the claim its previous attempt left behind.
+ *
+ * ## Why the ledger write is step 3 and not step 5
+ *
+ * The marker rewrite is last so that a real invoice number on an item always
+ * implies a `pdflinks` row exists for it. With the ledger written after the
+ * rewrite instead, a crash in between left items carrying a finished-looking
+ * marker with no document behind it: invisible to the stale-claim alarm, which
+ * only knows the `pending:` prefix, and impossible to re-claim, because the
+ * deterministic token no longer matched. That is permanent, silent
+ * under-billing — the one outcome the protocol exists to avoid.
  */
 
 import { PROVISIONAL_CLAIM_PREFIX } from '../constants/invoiceSelection.js';
@@ -54,12 +65,18 @@ export function provisionalClaimToken({ type, periodKey, participant }) {
  * Anything it throws is propagated after the claim is released, so a failing
  * run surfaces as a failed job rather than a silently short invoice.
  *
+ * `record` — optional — writes the document to the ledger and runs while the
+ * provisional token is still held. A throw from it is propagated WITHOUT
+ * releasing the claim: some of the ledger rows may already exist, and handing
+ * those items back to the next run would bill them a second time. The token
+ * stays `pending:`, which is what the stale-claim alarm looks for.
+ *
  * Returns `null` when there was nothing to bill — no items left after the
  * claim, or a generator that reported the period empty. Section 3.5: that is
  * not an error, and it must produce no invoice and no email.
  */
 export async function generateUnderClaim({
-  workspaceId, boardId, itemIds, type, periodKey, participant, produce,
+  workspaceId, boardId, itemIds, type, periodKey, participant, produce, record = null,
 }) {
   const token = provisionalClaimToken({ type, periodKey, participant });
   const { claimed, rejected } = await claimItemsForInvoice({
@@ -99,9 +116,14 @@ export async function generateUnderClaim({
     return null;
   }
 
-  // The document exists, so the provisional token becomes the real number.
-  // Unconditional is safe here and only here: these are the items this run
-  // holds, and it is replacing its own token.
+  // The ledger row is written before the marker moves, so the marker can never
+  // claim a document that does not exist. A failure here keeps the `pending:`
+  // token rather than releasing it — see the note on `record` above.
+  if (record) await record(generated, claimed);
+
+  // The document exists and is on the ledger, so the provisional token becomes
+  // the real number. Unconditional is safe here and only here: these are the
+  // items this run holds, and it is replacing its own token.
   await markItemsInvoiced({
     workspaceId, boardId, itemIds: claimed, invoiceNumber: generated.invoiceNumber, periodKey,
   });
