@@ -703,15 +703,17 @@ Each task below is a candidate for its own expanded plan when picked up. Track A
 
 ### Task 17: Epic 7 — automatic sync from ISO+ (Track A)
 
-**Files:** Modify `Backend/src/services/sync/queue.js`, `Backend/src/routes/internal.js`
+**Superseded.** Do not implement the `/api/internal` sketch or per-board
+schedules from earlier drafts of this plan. Design and execution live in:
 
-> **Blocked on R8.** The spec is one sentence: "Currently we have manual sync which is triggered by users in Invoice and Statement pages. We need to create a schedule to sync automatically in the background." There is no cadence, no per-workspace vs global decision, no behaviour on failure, no interaction with the existing `syncStatus` state machine in `models/Board.js` (which already has `manual_triggered_sync` and `realtime_sync` states). **Write a short design before this task is planned.**
+- [`docs/superpowers/specs/2026-08-19-automatic-board-sync-schedule-design.md`](../superpowers/specs/2026-08-19-automatic-board-sync-schedule-design.md)
+- [`docs/plans/2026-08-19-automatic-board-sync-schedule-plan.md`](2026-08-19-automatic-board-sync-schedule-plan.md)
 
-- [ ] Resolve: cadence and whether it is per-board or per-workspace.
-- [ ] Resolve: how it interacts with `realtime_sync`, which already listens to webhooks — a scheduled sync may be redundant for boards already in that state.
-- [ ] Then: reuse the Task 13 tick rather than adding a second scheduler.
+Portal-wide `board_sync` (`targetId: portal`), `BOARD_SYNC_CRON` (default
+`0 2 * * *`), fan-out of `scheduled_sync` onto `board-sync`, worker
+concurrency 1. Enable-time backlog and ISO+ webhooks stay.
 
-**Covers:** 7.1, once specified.
+**Covers:** 7.1.
 
 ---
 
@@ -726,7 +728,7 @@ Carried from doc 6, not planned here: Contact/Invoice/Customer/Payment Sync work
 **Spec coverage.** Every numbered task in doc 6 maps to a task above: E1→9, E2→8, E3→10, E4→11, E5→12/13/14, E6→15/16, E7→17. Docs 1–5 are absorbed into those tasks; doc 2's five new AWS resources appear in Tasks 13 and 14; doc 1's global overview and drill-down in Task 16; doc 3's three numbering decisions in Task 10; doc 4's mapping fields in Task 11; doc 5's field table in Task 12.
 
 **Gaps I am flagging rather than papering over:**
-- Epic 7 has no acceptance criteria (R8) — Task 17 is blocked by design, not by effort.
+- Epic 7 (R8) is specified in `docs/superpowers/specs/2026-08-19-automatic-board-sync-schedule-design.md` and executed by `docs/plans/2026-08-19-automatic-board-sync-schedule-plan.md` — Task 17 above is a pointer, not work to do here.
 - The Quote-only line-item override (doc 4) is an open question the spec itself raises.
 - Phase 2 tasks are specified to interface level, not line level — stated in the depth note above, deliberately.
 

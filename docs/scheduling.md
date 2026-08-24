@@ -15,16 +15,17 @@ Ticket: KAN-15.
 
 - It claims due `ScheduledJob` documents from Mongo and dispatches each one to
   a handler registered for its `kind`.
-- A handler's job is to **enqueue and return**. For `board_sync` that means a
-  BullMQ job on the existing `board-sync` queue
-  (`Backend/src/services/sync/queue.js`); the sync worker
-  (`Backend/src/workers/syncWorker.js`) does the actual work, on its own
-  existing retry and concurrency settings.
+- A handler's job is to **enqueue and return**. For invoice/statement
+  automation that means fan-out onto the automation queue. Portal board
+  catch-up uses the same enqueue-and-return pattern from the in-process
+  board-sync clock (`runBoardSyncSweep` → `scheduled_sync` on `board-sync`),
+  not from the tick.
 - The scheduler holds no business logic for any feature. It does not know what
   a board sync or an invoice is — only that a `kind` has a handler and a
   policy.
-- One HTTP endpoint, driven externally. The application has no in-process
-  timer — see "Why not `node-schedule`" below for why that matters.
+- One HTTP endpoint for invoice/statement automation, driven externally.
+  Portal board catch-up uses a separate in-process timer (see below) — see
+  "Why not `node-schedule`" for why the shared tick stays external.
 
 ## The endpoint
 
@@ -242,10 +243,6 @@ distinction matters, see the next section.
 
 ## Why not `node-schedule`
 
-`node-schedule` is a declared dependency in `Backend/package.json` and is
-**not used anywhere in `src/`.** It was evaluated and rejected for this
-feature, deliberately, not overlooked:
-
 An in-process timer (`node-schedule`, `node-cron`, or anything similar) fires
 once **per running instance** of the app. Elastic Beanstalk can and does run
 more than one instance. The moment it scales past one, an in-process timer
@@ -256,9 +253,11 @@ exactly one of them handles a given tick request, and the claim logic in
 `Backend/src/services/scheduler/tick.js` makes concurrent ticks from multiple
 instances safe regardless.
 
-Do not add a `node-schedule` call to wire this up "just for now." If the
-unused dependency is ever removed, that is a separate, deliberate cleanup —
-not something to route around here.
+Do not add a `node-schedule` (or `node-cron`) call to wire the **shared** tick
+up "just for now." Portal board catch-up (Epic 12) is an intentional exception:
+it uses in-process `setTimeout` + `cron-parser` (`startBoardSyncCron`) and
+relies on BullMQ jobId collapse when multiple instances fire.
+Invoice/statement automation stay on EventBridge.
 
 ## Trap: a route in this repo must be mounted twice
 
@@ -324,19 +323,29 @@ stale volume over the newly built image, because volumes outlive containers.
 
 Handlers live in `Backend/src/services/scheduler/handlers.js`, imported for
 its side effects at boot (`registerSchedulerHandlers()`, called once from
-`Backend/src/index.js:48`, before any tick can arrive). The registered
-example, `board_sync`:
+`Backend/src/index.js`, before any tick can arrive). Invoice and statement
+automation register here under `AT_LEAST_ONCE`. Portal board catch-up does
+**not** — it is driven by `startBoardSyncCron` (see below).
 
-```js
-// Backend/src/services/scheduler/handlers.js
-register('board_sync', {
-  policy: AT_LEAST_ONCE,
-  handler: ({ targetId, workspaceId }) =>
-    triggerManualSync(getSchedulerAuthorization(), workspaceId, targetId),
-});
-```
+## Portal board catch-up (`board_sync`)
 
-Five rules apply to every handler. Only the first is enforced in code
+An in-process `setTimeout` + `cron-parser` timer (`startBoardSyncCron` in
+`portalSchedule.js`) fires on `BOARD_SYNC_CRON` (default `0 2 * * *`) in
+`DEFAULT_TIMEZONE` and calls `runBoardSyncSweep`. That fans out
+`scheduled_sync` jobs for every `syncData: true` board onto `board-sync`.
+The worker runs them at concurrency 1. Enable-time backlog and ISO+
+webhooks are unchanged. Board Configuration reads previous / current /
+next from the workspace sync status poll (next run is computed from the
+cron, not from a `ScheduledJob` row).
+
+Leftover portal `ScheduledJob` rows (`kind: board_sync`, `targetId: portal`)
+are disabled by migration so EventBridge ticks cannot claim them.
+Invoice/statement automation remain on the tick.
+
+Multi-instance duplicate fires are accepted: BullMQ jobIds
+`sched:{boardId}:{periodKey}` collapse them.
+
+Five rules apply to every **tick** handler. Only the first is enforced in code
 (`register()` in `Backend/src/services/scheduler/registry.js` throws at boot
 if no policy is declared); the rest are conventions from the design and from
 the comments in `handlers.js` and `tick.js` — nothing stops a handler from
@@ -483,7 +492,7 @@ cannot survive.
 | Policy | `nextRunAt` advances | Used by | Why |
 |---|---|---|---|
 | `AT_MOST_ONCE` | At claim, before the handler runs | Nothing registered today | For work where a duplicate is the worse failure — a duplicated invoice sent to an NDIS participant is a client-facing incident, while a lost run shows up in `missedRuns` and is recoverable by hand. |
-| `AT_LEAST_ONCE` | Only after the handler's enqueue succeeds | `board_sync`, `invoice_automation`, `statement_automation` | Board sync is idempotent and cheap to repeat. The automation kinds fan out per board, which breaks both policies on its own; their safety comes from the per-board `jobId` (`buildFanOutSpecs`), so missing a month is the failure left worth designing against. See the comment in `registerAutomationHandlers`. |
+| `AT_LEAST_ONCE` | Only after the handler's enqueue succeeds | `invoice_automation`, `statement_automation` | The automation kinds fan out per board; their safety comes from the per-board `jobId` (`buildFanOutSpecs`), so missing a month is the failure left worth designing against. See the comment in `registerAutomationHandlers`. Portal board catch-up is not on the tick — see "Portal board catch-up" above. |
 
 Choose `AT_MOST_ONCE` when a duplicate is the worse failure mode. Choose
 `AT_LEAST_ONCE` only when the handler is genuinely idempotent — if it is not,

@@ -10,6 +10,9 @@ import { Progress } from "@/components/ui/progress";
 const MANUAL_SYNC_STATES = new Set(['active', 'waiting', 'failed']);
 const FAILED_EXECUTION_STATUSES = new Set(['failed', 'timeout']);
 const ACTIVE_EXECUTION_STATUSES = new Set(['started', 'in-progress']);
+/** Catch-up from the portal cron — no floating progress card while in flight.
+ * Failures still surface (see hasFailedSyncExecution / hasFailedJobStatus). */
+const HIDDEN_INDICATOR_SYNC_TYPES = new Set(['scheduled_sync', 'realtime_sync']);
 
 function buildSyncError(board: any, message: string) {
   return {
@@ -17,6 +20,11 @@ function buildSyncError(board: any, message: string) {
     stack: board.syncExecution?.error?.stack || null,
     details: board.syncExecution?.error?.details || null,
   };
+}
+
+function isHiddenFromIndicator(board: any) {
+  const syncType = board.syncExecution?.syncType || board.syncStatus;
+  return HIDDEN_INDICATOR_SYNC_TYPES.has(syncType);
 }
 
 function isManualSyncBoard(board: any) {
@@ -89,12 +97,6 @@ function mapExecutionSyncBoard(board: any) {
   };
 }
 
-function mapSyncBoardFromPoll(board: any) {
-  return isManualSyncBoard(board)
-    ? mapManualSyncBoard(board)
-    : mapExecutionSyncBoard(board);
-}
-
 function isRecentFailure(timestamp: string | number | undefined, windowMs: number) {
   if (!timestamp) return false;
   return (Date.now() - new Date(timestamp).getTime()) < windowMs;
@@ -104,14 +106,13 @@ function hasActiveSyncExecution(board: any) {
   const execution = board.syncExecution;
   return execution
     && ACTIVE_EXECUTION_STATUSES.has(execution.status)
-    && execution.syncType !== 'realtime_sync';
+    && !HIDDEN_INDICATOR_SYNC_TYPES.has(execution.syncType);
 }
 
 function hasFailedSyncExecution(board: any) {
   const execution = board.syncExecution;
   return execution
     && FAILED_EXECUTION_STATUSES.has(execution.status)
-    && execution.syncType !== 'realtime_sync'
     && isRecentFailure(execution.endTime, 60 * 1000);
 }
 
@@ -119,22 +120,51 @@ function hasActiveJobStatus(board: any) {
   const jobStatus = board.jobStatus;
   return jobStatus
     && (jobStatus.state === 'active' || jobStatus.state === 'waiting')
-    && board.syncStatus !== 'realtime_sync';
+    && !isHiddenFromIndicator(board);
 }
 
 function hasFailedJobStatus(board: any) {
   const jobStatus = board.jobStatus;
   return jobStatus
     && jobStatus.state === 'failed'
-    && board.syncStatus !== 'realtime_sync'
     && isRecentFailure(jobStatus.finishedOn, 5 * 60 * 1000);
+}
+
+/** Overnight / finished failures survive on the board after SyncExecution leaves the poll. */
+function hasStickyLastSyncError(board: any) {
+  if (!board?.lastSyncError) return false;
+  // cancelSync stamps lastSyncError with "Sync cancelled by user" — not a failure.
+  if (board.syncStatus === 'sync_cancelled') return false;
+  if (hasActiveSyncExecution(board) || hasActiveJobStatus(board)) return false;
+  return true;
+}
+
+function mapStickyErrorBoard(board: any) {
+  return {
+    boardId: board.boardId,
+    boardName: board.boardName || board.boardId,
+    status: 'failed' as const,
+    syncType: board.syncStatus || 'scheduled_sync',
+    startTime: board.lastSyncedAt
+      ? new Date(board.lastSyncedAt).toISOString()
+      : new Date().toISOString(),
+    isManualSync: false,
+    error: buildSyncError(board, board.lastSyncError),
+  };
+}
+
+function mapSyncBoardFromPoll(board: any) {
+  if (isManualSyncBoard(board)) return mapManualSyncBoard(board);
+  if (board.syncExecution) return mapExecutionSyncBoard(board);
+  return mapStickyErrorBoard(board);
 }
 
 function isActiveSyncBoard(board: any) {
   return hasActiveSyncExecution(board)
     || hasFailedSyncExecution(board)
     || hasActiveJobStatus(board)
-    || hasFailedJobStatus(board);
+    || hasFailedJobStatus(board)
+    || hasStickyLastSyncError(board);
 }
 
 function getElapsedTime(startTime: string, currentTime: number): number {
@@ -334,7 +364,12 @@ function SyncStatusCard({ sync, currentTime }: SyncStatusCardProps) {
 }
 
 export function SyncStatusIndicator() {
-  const { syncStatuses, setSyncStatuses, currentWorkspaceId } = useAppContext();
+  const {
+    syncStatuses,
+    setSyncStatuses,
+    setWorkspaceBoardStatuses,
+    currentWorkspaceId,
+  } = useAppContext();
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
 
@@ -347,6 +382,7 @@ export function SyncStatusIndicator() {
       );
 
       if (response.data?.boards) {
+        setWorkspaceBoardStatuses(response.data.boards);
         const activeSyncs = response.data.boards
           .filter((board: any) => isActiveSyncBoard(board))
           .map((board: any) => mapSyncBoardFromPoll(board));
@@ -364,6 +400,7 @@ export function SyncStatusIndicator() {
       pollingIntervalRef.current = setInterval(pollSyncStatus, 10000);
     } else {
       setSyncStatuses([]);
+      setWorkspaceBoardStatuses([]);
     }
 
     return () => {
@@ -372,7 +409,7 @@ export function SyncStatusIndicator() {
         pollingIntervalRef.current = null;
       }
     };
-  }, [currentWorkspaceId, setSyncStatuses]);
+  }, [currentWorkspaceId, setSyncStatuses, setWorkspaceBoardStatuses]);
 
   useEffect(() => {
     if (syncStatuses.length === 0) return;

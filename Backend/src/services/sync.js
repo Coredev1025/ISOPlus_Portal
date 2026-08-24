@@ -9,6 +9,9 @@ import {
   checkActiveQueueJob,
 } from './syncBoardHelpers.js';
 import { sanitizeApiPathSegment } from '../utils/securityHelpers.js';
+import { buildBoardSyncScheduleView } from '../utils/boardSyncScheduleViewHelpers.js';
+import { buildPortalBoardSyncMeta } from './scheduler/portalSchedule.js';
+import { SYNC_ALREADY_ENABLED_STATUSES } from '../constants/sync.js';
 
 export async function enableBoardSync(authorization, workspaceId, boardId) {
   try {
@@ -18,7 +21,7 @@ export async function enableBoardSync(authorization, workspaceId, boardId) {
     
     const board = await Board.findOne({ boardId: safeBoardId }).select('syncStatus').lean();
     
-    if (board && ['sync_enabled', 'board_validation', 'board_valid', 'data_backlog_sync', 'realtime_sync', 'manual_triggered_sync'].includes(board.syncStatus)) {
+    if (board && SYNC_ALREADY_ENABLED_STATUSES.includes(board.syncStatus)) {
       return {
         success: false,
         message: `Sync already enabled for this board (current status: ${board.syncStatus})`,
@@ -331,7 +334,7 @@ export async function triggerManualSync(authorization, workspaceId, boardId) {
       boardId
     }, {
       jobId: `manual-sync-${boardId}-${Date.now()}`,
-      priority: 2 // Higher priority than regular sync
+      priority: 2 // Lower number than sweep (10); BullMQ runs lower first
     });
 
     await Board.findOneAndUpdate(
@@ -595,7 +598,13 @@ export async function getBoardSyncStatus(boardId) {
       validationErrors: board.validationErrors,
       syncStats: board.syncStats,
       jobStatus,
-      syncExecution
+      syncExecution,
+      schedule: buildBoardSyncScheduleView({
+        board,
+        jobStatus,
+        syncExecution,
+        portalSchedule: buildPortalBoardSyncMeta(),
+      }),
     };
 
   } catch (err) {

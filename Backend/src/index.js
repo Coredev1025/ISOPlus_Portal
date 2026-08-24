@@ -35,6 +35,7 @@ import syncWorker, { checkAndRetryFailedJobs } from './workers/syncWorker.js'; /
 import { startAutomationWorker } from './workers/automationWorker.js';
 import { startEmailEventsWorker } from './workers/emailEventsWorker.js';
 import { registerSchedulerHandlers } from './services/scheduler/handlers.js';
+import { startBoardSyncCron } from './services/scheduler/portalSchedule.js';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
@@ -191,7 +192,10 @@ createBullBoard({
 app.use('/api/queues', serverAdapter.getRouter());
 
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => info('Bootstrap', 'Connected to MongoDB'))
+  .then(() => {
+    info('Bootstrap', 'Connected to MongoDB');
+    startBoardSyncCron();
+  })
   .catch((err) => logError('Bootstrap', 'MongoDB connection error', err));
 
 process.on('unhandledRejection', (reason) => {

@@ -191,6 +191,49 @@ describe('checkActiveQueueJob', () => {
     expect(result.alreadyRunning).toBe(true);
   });
 
+  it.each(['waiting', 'delayed'])(
+    'drops a %s scheduled_sync job so manual Resync can pre-empt the sweep',
+    async (jobState) => {
+      const remove = vi.fn(async () => undefined);
+      queue.impl = async () => ({
+        getState: vi.fn()
+          .mockResolvedValueOnce(jobState)
+          .mockResolvedValueOnce(jobState),
+        remove,
+      });
+
+      expect(await checkActiveQueueJob('brd_9', 'job_7', 'scheduled_sync')).toBeNull();
+      expect(remove).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('still blocks when a scheduled_sync job is already active', async () => {
+    const remove = vi.fn(async () => undefined);
+    queue.impl = async () => ({ getState: async () => 'active', remove });
+
+    const result = await checkActiveQueueJob('brd_9', 'job_7', 'scheduled_sync');
+
+    expect(result.alreadyRunning).toBe(true);
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('refuses Resync when remove fails after the job has become active', async () => {
+    const remove = vi.fn(async () => {
+      throw new Error('Job is locked by another worker');
+    });
+    const getState = vi.fn()
+      .mockResolvedValueOnce('waiting')
+      .mockResolvedValueOnce('waiting')
+      .mockResolvedValueOnce('active');
+    queue.impl = async () => ({ getState, remove });
+
+    const result = await checkActiveQueueJob('brd_9', 'job_7', 'scheduled_sync');
+
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(result.alreadyRunning).toBe(true);
+    expect(result.jobState).toBe('active');
+  });
+
   it('returns null without asking the queue when there is no job id', async () => {
     expect(await checkActiveQueueJob('brd_9', null, 'data_backlog_sync')).toBeNull();
     expect(queue.calls).toEqual([]);

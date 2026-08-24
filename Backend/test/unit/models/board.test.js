@@ -25,7 +25,7 @@ describe('Board model', () => {
   it('accepts every valid syncStatus enum value', async () => {
     const validStatuses = [
       'disabled', 'sync_enabled', 'board_validation', 'board_valid', 'board_invalid',
-      'data_backlog_sync', 'realtime_sync', 'manual_triggered_sync', 'sync_stopped',
+      'data_backlog_sync', 'realtime_sync', 'manual_triggered_sync', 'scheduled_sync', 'sync_stopped',
       'sync_cancelled', 'failed',
     ];
     for (const status of validStatuses) {

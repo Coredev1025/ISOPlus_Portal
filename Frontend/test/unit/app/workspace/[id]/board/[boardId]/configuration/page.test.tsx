@@ -62,12 +62,26 @@ let boardUrls: string[] = [];
 let boardPuts: Array<Record<string, unknown>> = [];
 let automationPutUrls: string[] = [];
 
+const BOARD_SYNC_STATUS = {
+  boardId: 'b-1',
+  syncData: true,
+  syncStatus: 'realtime_sync',
+  schedule: {
+    cron: '0 2 * * *',
+    timezone: 'Australia/Sydney',
+    previous: { at: '2026-08-18T16:00:00.000Z' },
+    current: null,
+    upcoming: { at: '2026-08-20T16:00:00.000Z' },
+  },
+};
+
 function stubConfigurationData(
   options: {
     board?: unknown;
     boardStatus?: number;
     attributesStatus?: number;
     gate?: Promise<void>;
+    syncStatus?: unknown;
   } = {},
 ) {
   server.use(
@@ -91,6 +105,10 @@ function stubConfigurationData(
         );
       }
       return HttpResponse.json(options.board ?? BOARD);
+    }),
+    http.get('*/api/sync/workspace/status/*', () => {
+      const row = options.syncStatus ?? BOARD_SYNC_STATUS;
+      return HttpResponse.json({ boards: [row] });
     }),
     http.put('*/api/boards', async ({ request }) => {
       boardPuts.push((await request.json()) as Record<string, unknown>);
@@ -247,6 +265,25 @@ describe('Board configuration page', () => {
     expect(
       screen.getByRole('checkbox', { name: 'Update Portal Automation' }),
     ).not.toBeChecked();
+  });
+
+  it('shows previous, current and next run when data sync is enabled', async () => {
+    stubConfigurationData();
+    renderPage();
+    expect(await screen.findByRole('region', { name: /sync schedule/i })).toBeInTheDocument();
+    expect(screen.getByText('Previous')).toBeInTheDocument();
+    expect(screen.getByText('Current')).toBeInTheDocument();
+    expect(screen.getByText('Next scheduled run')).toBeInTheDocument();
+    expect(screen.getByText('Idle')).toBeInTheDocument();
+  });
+
+  it('does not show the sync schedule region when sync is off', async () => {
+    stubConfigurationData({
+      board: { board: { ...BOARD.board, syncData: false } },
+    });
+    renderPage();
+    await screen.findByRole('heading', { name: 'Board Configuration' });
+    expect(screen.queryByRole('region', { name: /sync schedule/i })).not.toBeInTheDocument();
   });
 
   it('offers only long-text attributes, sorted by name', async () => {

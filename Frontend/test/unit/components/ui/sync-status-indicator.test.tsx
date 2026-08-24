@@ -39,16 +39,16 @@ function renderIndicator(workspaceId: string | null) {
   );
 }
 
-/** A board mid-sync, in the shape the poll endpoint really returns. */
+/** A board mid first-time backlog sync — the shape the poll endpoint returns. */
 function inProgressBoard(overrides: Record<string, unknown> = {}) {
   return {
     boardId: 'b-1',
     boardName: 'NDIS Services',
-    syncStatus: 'scheduled_sync',
+    syncStatus: 'data_backlog_sync',
     syncStats: { foldersProcessed: 1, itemsSynced: 10 },
     syncExecution: {
       status: 'in-progress',
-      syncType: 'scheduled_sync',
+      syncType: 'data_backlog_sync',
       startTime: '2026-08-10T00:00:00.000Z',
       duration: undefined,
       progress: { foldersProcessed: 2, totalFolders: 5, currentFolder: 'Participants' },
@@ -154,7 +154,7 @@ describe('SyncStatusIndicator', () => {
             inProgressBoard({
               syncExecution: {
                 status: 'failed',
-                syncType: 'scheduled_sync',
+                syncType: 'data_backlog_sync',
                 startTime: '2026-08-10T00:00:00.000Z',
                 // A failed execution only surfaces while endTime is within the
                 // last 60 seconds — see hasFailedSyncExecution.
@@ -174,6 +174,89 @@ describe('SyncStatusIndicator', () => {
     expect(await screen.findByText('Sync Failed')).toBeInTheDocument();
     await waitFor(() => {
       expect(container.textContent).toContain('ISO+ returned 502');
+    });
+  });
+
+  it('surfaces a failed nightly scheduled_sync (hidden only while in progress)', async () => {
+    server.use(
+      http.get(`*/api/sync/workspace/status/ws-1`, () =>
+        HttpResponse.json({
+          boards: [
+            inProgressBoard({
+              syncStatus: 'scheduled_sync',
+              syncExecution: {
+                status: 'failed',
+                syncType: 'scheduled_sync',
+                startTime: '2026-08-10T00:00:00.000Z',
+                endTime: new Date().toISOString(),
+                progress: {},
+                counters: {},
+                error: { message: 'Nightly catch-up failed' },
+              },
+            }),
+          ],
+        }),
+      ),
+    );
+
+    const { container } = renderIndicator('ws-1');
+
+    expect(await screen.findByText('Sync Failed')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(container.textContent).toContain('Nightly catch-up failed');
+    });
+  });
+
+  it('keeps an overnight catch-up failure visible via lastSyncError after the short window', async () => {
+    server.use(
+      http.get(`*/api/sync/workspace/status/ws-1`, () =>
+        HttpResponse.json({
+          boards: [
+            {
+              boardId: 'b-1',
+              boardName: 'NDIS Services',
+              // Worker sets syncStatus to failed and stamps lastSyncError; the
+              // in-progress SyncExecution is gone from the poll by morning.
+              syncStatus: 'failed',
+              lastSyncError: 'ISO+ returned 429 at 02:00',
+              jobStatus: null,
+              syncExecution: null,
+            },
+          ],
+        }),
+      ),
+    );
+
+    const { container } = renderIndicator('ws-1');
+
+    expect(await screen.findByText('Sync Failed')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(container.textContent).toContain('ISO+ returned 429 at 02:00');
+    });
+  });
+
+  it('does not sticky-fail a board the user deliberately cancelled', async () => {
+    server.use(
+      http.get(`*/api/sync/workspace/status/ws-1`, () =>
+        HttpResponse.json({
+          boards: [
+            {
+              boardId: 'b-1',
+              boardName: 'NDIS Services',
+              syncStatus: 'sync_cancelled',
+              lastSyncError: 'Sync cancelled by user',
+              jobStatus: null,
+              syncExecution: null,
+            },
+          ],
+        }),
+      ),
+    );
+
+    const { container } = renderIndicator('ws-1');
+
+    await waitFor(() => {
+      expect(container.textContent).toBe('');
     });
   });
 
@@ -260,7 +343,7 @@ describe('SyncStatusIndicator', () => {
             inProgressBoard({
               syncExecution: {
                 status: 'failed',
-                syncType: 'scheduled_sync',
+                syncType: 'data_backlog_sync',
                 startTime: '2026-08-10T00:00:00.000Z',
                 endTime: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
                 progress: {},
@@ -304,5 +387,37 @@ describe('SyncStatusIndicator', () => {
     await waitFor(() => {
       expect(container.textContent).toBe('');
     });
+  });
+
+  it('ignores a scheduled catch-up — the floating span is for first-time enable only', async () => {
+    let polled = false;
+    server.use(
+      http.get(`*/api/sync/workspace/status/ws-1`, () => {
+        polled = true;
+        return HttpResponse.json({
+          boards: [
+            inProgressBoard({
+              syncStatus: 'scheduled_sync',
+              syncExecution: {
+                status: 'in-progress',
+                syncType: 'scheduled_sync',
+                startTime: '2026-08-10T00:00:00.000Z',
+                progress: { foldersProcessed: 2, totalFolders: 5 },
+                counters: { itemsProcessed: 40 },
+              },
+              jobStatus: { state: 'active', progress: {} },
+            }),
+          ],
+        });
+      }),
+    );
+
+    const { container } = renderIndicator('ws-1');
+
+    await waitFor(() => {
+      expect(polled).toBe(true);
+    });
+    expect(container.textContent).not.toContain('NDIS Services');
+    expect(container.textContent).not.toContain('Syncing Data');
   });
 });

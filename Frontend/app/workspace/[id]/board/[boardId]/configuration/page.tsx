@@ -30,6 +30,7 @@ import axios from "@/app/utils/axiosConfig";
 import { showSaveSuccessToast, showSaveErrorToast, showFetchSuccessToast, showFetchErrorToast, showUpdateSuccessToast, showUpdateErrorToast } from "@/lib/toast-utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { isOwnerOrSupport } from "@/lib/access";
+import { BoardSyncStatusPanel } from "@/lib/board-sync-status-panel";
 
 // Define the attribute type as a literal union type
 type AttributeType = "Text" | "Long Text";
@@ -425,6 +426,7 @@ export default function ConfigurationPage() {
                     </p>
                   )}
                 </div>
+                {syncData && <BoardSyncStatusPanel boardId={boardId} />}
               </div>
 
               <div className="border-t" />

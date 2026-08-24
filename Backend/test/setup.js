@@ -119,7 +119,9 @@ beforeAll(async () => {
   process.env.SESSION_SECRET = process.env.SESSION_SECRET || 'test_session_secret';
 
   const systemBinary = resolveSystemMongod();
-  const mongoOptions = systemBinary ? { binary: { systemBinary } } : {};
+  const mongoOptions = systemBinary
+    ? { binary: { systemBinary }, instance: { launchTimeout: 60_000 } }
+    : { instance: { launchTimeout: 60_000 } };
   mongoServer = await MongoMemoryServer.create(mongoOptions);
   const uri = mongoServer.getUri();
   process.env.MONGODB_URI = uri;

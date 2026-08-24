@@ -343,6 +343,10 @@ describe('configure business page', () => {
       target: { value: 'not-an-email' },
     });
 
+    await waitFor(() => {
+      expect(screen.getByLabelText('Business Email')).toHaveValue('not-an-email');
+    });
+
     clickSave();
 
     // The request went out with the bad value; the server is the only gate.

@@ -43,6 +43,19 @@ export interface SyncStatus {
     } | null;
 }
 
+/** Full board rows from `/api/sync/workspace/status` (includes `schedule`). */
+export type WorkspaceBoardStatus = {
+    boardId: string;
+    schedule?: {
+        cron?: string | null;
+        timezone?: string | null;
+        previous: { at: string } | null;
+        current: { state: string; syncType?: string } | null;
+        upcoming: { at: string } | null;
+    } | null;
+    [key: string]: unknown;
+};
+
 interface ContextProps {
     user: User;
     setUser: Dispatch<SetStateAction<User>>;
@@ -50,6 +63,8 @@ interface ContextProps {
     setWorkspaces: Dispatch<SetStateAction<Workspace[]>>;
     syncStatuses: SyncStatus[];
     setSyncStatuses: Dispatch<SetStateAction<SyncStatus[]>>;
+    workspaceBoardStatuses: WorkspaceBoardStatus[];
+    setWorkspaceBoardStatuses: Dispatch<SetStateAction<WorkspaceBoardStatus[]>>;
     currentWorkspaceId: string | null;
     setCurrentWorkspaceId: Dispatch<SetStateAction<string | null>>;
 }
@@ -66,6 +81,7 @@ export function ContextProvider({ children }: { children: ReactNode }) {
     });
     const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
     const [syncStatuses, setSyncStatuses] = useState<SyncStatus[]>([]);
+    const [workspaceBoardStatuses, setWorkspaceBoardStatuses] = useState<WorkspaceBoardStatus[]>([]);
     const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null);
 
     useEffect(() => {
@@ -97,6 +113,8 @@ export function ContextProvider({ children }: { children: ReactNode }) {
             setWorkspaces,
             syncStatuses,
             setSyncStatuses,
+            workspaceBoardStatuses,
+            setWorkspaceBoardStatuses,
             currentWorkspaceId,
             setCurrentWorkspaceId
         }}>

@@ -5,25 +5,55 @@ import { info, warn } from '../../utils/logger.js';
 import { getAutomationQueue } from '../automation/queue.js';
 import { KIND_INVOICE, KIND_STATEMENT } from '../../constants/automation.js';
 import { buildFanOutSpecs } from '../automation/fanOut.js';
-import { triggerManualSync } from '../sync.js';
 import { isOfflineMode } from '../offlineIsoplus.js';
 import { getSchedulerAuthorization } from './auth.js';
 import { register } from './registry.js';
 import { isAutomationEnabled } from '../../utils/automationEnabled.js';
-import { AT_LEAST_ONCE } from '../../constants/scheduler.js';
+import {
+  AT_LEAST_ONCE,
+  BOARD_SYNC_KIND,
+  DEFAULT_TIMEZONE,
+  LOG_SCOPE,
+} from '../../constants/scheduler.js';
+import { buildScheduledSyncSpecs, buildScheduledSyncBoardWrites } from '../../utils/boardSyncSweepHelpers.js';
+import syncQueue from '../sync/queue.js';
 
 const BLOCK_FOR_KIND = { [KIND_INVOICE]: 'invoice', [KIND_STATEMENT]: 'statement' };
 
-/**
- * triggerManualSync does not throw for every failure — some outcomes come back
- * as `{ success: false }`. `alreadyRunning` is idempotency doing its job and
- * must resolve normally; anything else must throw, or the tick records a clean
- * success and the schedule goes quiet forever with no signal to alert on.
- */
-function assertSyncDispatched(result) {
-  if (result.success === false && !result.alreadyRunning) {
-    throw new Error(`board_sync: ${result.message} (board ${result.boardId})`);
+export async function runBoardSyncSweep({ slot, timezone = DEFAULT_TIMEZONE } = {}) {
+  if (isOfflineMode()) {
+    warn(LOG_SCOPE, 'board_sync skipped: backend is in offline mode', {
+      kind: BOARD_SYNC_KIND,
+    });
+    return;
   }
+
+  if (!slot) {
+    throw new Error('board_sync: dispatched without a slot; refusing to fan out');
+  }
+
+  const boards = await Board.find({ syncData: true })
+    .select('boardId workspaceId syncData')
+    .lean();
+
+  const specs = buildScheduledSyncSpecs({
+    boards,
+    slot,
+    timezone,
+    authorization: getSchedulerAuthorization(),
+  });
+
+  if (specs.length === 0) {
+    info(LOG_SCOPE, 'board_sync sweep: no sync-enabled boards', { count: 0 });
+    return;
+  }
+
+  await syncQueue.addBulk(specs);
+  const writes = buildScheduledSyncBoardWrites(specs);
+  if (writes.length > 0) {
+    await Board.bulkWrite(writes, { ordered: false });
+  }
+  info(LOG_SCOPE, 'board_sync sweep enqueued', { count: specs.length });
 }
 
 /**
@@ -115,34 +145,11 @@ export function registerAutomationHandlers() {
  *
  * A handler enqueues and returns — it must never await the work itself, or a
  * tick stops being bounded.
+ *
+ * Portal board catch-up is driven by `startBoardSyncCron` (in-process
+ * setTimeout + cron-parser), not by the EventBridge tick — do not register
+ * `board_sync` here.
  */
 export function registerSchedulerHandlers() {
-  // At-least-once: triggerManualSync is idempotent (SyncExecution.hasRunningSync
-  // and checkActiveQueueJob both refuse a second concurrent sync on a board),
-  // so a repeat is harmless while a silent skip only makes data staler.
-  register('board_sync', {
-    policy: AT_LEAST_ONCE,
-    handler: async ({ targetId, workspaceId }) => {
-      // Local dev has no ISO+ credentials, so a schedule dispatched by
-      // `npm run tick` must not reach the live platform. A skip, not a throw:
-      // under AT_LEAST_ONCE a throw retries the same row on every tick forever.
-      if (isOfflineMode()) {
-        warn('Scheduler', 'board_sync skipped: backend is in offline mode', {
-          kind: 'board_sync',
-          targetId,
-          workspaceId,
-        });
-        return;
-      }
-
-      const result = await triggerManualSync(
-        getSchedulerAuthorization(),
-        workspaceId,
-        targetId,
-      );
-      assertSyncDispatched(result);
-    },
-  });
-
   registerAutomationHandlers();
 }
