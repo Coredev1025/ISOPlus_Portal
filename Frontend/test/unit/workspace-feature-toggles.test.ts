@@ -65,24 +65,67 @@ describe('workspace-feature-toggles (Epic 2 / KAN-7)', () => {
       },
     });
 
-    await expect(fetchInvoiceStatementAutomationFlag('ws-3')).resolves.toBe(true);
+    await expect(fetchInvoiceStatementAutomationFlag('ws-3')).resolves.toBe('on');
     expect(axios.get).toHaveBeenCalledWith(
       'http://localhost:3001/api/business/profile',
       { params: { workspaceId: 'ws-3' } }
     );
   });
 
-  it('fetchInvoiceStatementAutomationFlag returns false when the profile call fails', async () => {
-    (axios.get as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('network'));
-
-    await expect(fetchInvoiceStatementAutomationFlag('ws-4')).resolves.toBe(false);
-  });
-
-  it('fetchInvoiceStatementAutomationFlag returns false when featureToggles is absent', async () => {
+  it('fetchInvoiceStatementAutomationFlag returns off when featureToggles is absent', async () => {
     (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       data: { name: 'Acme' },
     });
 
-    await expect(fetchInvoiceStatementAutomationFlag('ws-5')).resolves.toBe(false);
+    await expect(fetchInvoiceStatementAutomationFlag('ws-5')).resolves.toBe('off');
   });
+
+  /**
+   * The reproduction for the defect this replaced.
+   *
+   * Every failure used to collapse to `false`, which the tab gate reads as
+   * "this workspace does not have the feature". A transient 503 on the profile
+   * call therefore hid the Invoice & Statement Automation tab and rewrote
+   * ?tab=automation to ?tab=financial, with nothing said. "The server did not
+   * answer" and "the answer is no" have to stay distinguishable.
+   */
+  it.each([500, 502, 503, 504])(
+    'fetchInvoiceStatementAutomationFlag reports %i as unavailable, not off',
+    async (status) => {
+      (axios.get as ReturnType<typeof vi.fn>).mockRejectedValue({
+        response: { status },
+      });
+
+      await expect(fetchInvoiceStatementAutomationFlag('ws-4')).resolves.toBe(
+        'unavailable'
+      );
+    }
+  );
+
+  it('fetchInvoiceStatementAutomationFlag reports a network failure as unavailable', async () => {
+    // No `response` at all — DNS, CORS, offline. Indistinguishable from a 5xx
+    // as far as "we do not know" goes.
+    (axios.get as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('network'));
+
+    await expect(fetchInvoiceStatementAutomationFlag('ws-4b')).resolves.toBe(
+      'unavailable'
+    );
+  });
+
+  /**
+   * 4xx keeps the old behaviour deliberately. The profile may be genuinely
+   * missing, or not readable by this user — both are a real answer of "not
+   * available to you", not an outage, and must not leave a tab on screen that
+   * the server will refuse.
+   */
+  it.each([401, 403, 404])(
+    'fetchInvoiceStatementAutomationFlag treats %i as off',
+    async (status) => {
+      (axios.get as ReturnType<typeof vi.fn>).mockRejectedValue({
+        response: { status },
+      });
+
+      await expect(fetchInvoiceStatementAutomationFlag('ws-6')).resolves.toBe('off');
+    }
+  );
 });

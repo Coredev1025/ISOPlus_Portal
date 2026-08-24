@@ -12,7 +12,10 @@ import {
   resolveActiveFinanceTab,
   type FinanceSettingsTab,
 } from "@/lib/finance-settings-page";
-import { fetchInvoiceStatementAutomationFlag } from "@/lib/workspace-feature-toggles";
+import {
+  fetchInvoiceStatementAutomationFlag,
+  type AutomationFlagState,
+} from "@/lib/workspace-feature-toggles";
 import Spinner from "@/components/ui/spin";
 import { XeroOAuthReturnBoundary } from "@/lib/xero-oauth-return-listener";
 
@@ -34,7 +37,10 @@ function FinanceSettingsContent() {
   const tabParam = searchParams.get("tab");
 
   const requestedTab = parseFinanceSettingsTab(tabParam);
-  const [automationEnabled, setAutomationEnabled] = useState(false);
+  // Tri-state: "unavailable" is the profile call not answering, which must not
+  // read as "this workspace does not have automation" — see the type.
+  const [automationFlag, setAutomationFlag] =
+    useState<AutomationFlagState>("off");
   const [flagLoaded, setFlagLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState<FinanceSettingsTab>("financial");
 
@@ -51,9 +57,9 @@ function FinanceSettingsContent() {
     let cancelled = false;
 
     const loadFlag = async () => {
-      const enabled = await fetchInvoiceStatementAutomationFlag(workspaceId);
+      const flag = await fetchInvoiceStatementAutomationFlag(workspaceId);
       if (cancelled) return;
-      setAutomationEnabled(enabled);
+      setAutomationFlag(flag);
       setFlagLoaded(true);
     };
 
@@ -65,7 +71,7 @@ function FinanceSettingsContent() {
 
   useEffect(() => {
     if (!flagLoaded) return;
-    const resolved = resolveActiveFinanceTab(requestedTab, automationEnabled);
+    const resolved = resolveActiveFinanceTab(requestedTab, automationFlag);
     setActiveTab(resolved);
 
     if (resolved !== requestedTab) {
@@ -74,18 +80,18 @@ function FinanceSettingsContent() {
   }, [
     flagLoaded,
     requestedTab,
-    automationEnabled,
+    automationFlag,
     pathname,
     router,
   ]);
 
   const handleTabChange = useCallback(
     (tab: FinanceSettingsTab) => {
-      const resolved = resolveActiveFinanceTab(tab, automationEnabled);
+      const resolved = resolveActiveFinanceTab(tab, automationFlag);
       setActiveTab(resolved);
       router.replace(`${pathname}?tab=${resolved}`);
     },
-    [automationEnabled, pathname, router]
+    [automationFlag, pathname, router]
   );
 
   return (
@@ -109,7 +115,7 @@ function FinanceSettingsContent() {
         <FinanceSettingsTabs
           workspaceId={workspaceId}
           activeTab={activeTab}
-          automationEnabled={automationEnabled}
+          automationEnabled={automationFlag !== "off"}
           onTabChange={handleTabChange}
         />
       )}
