@@ -32,11 +32,11 @@ export function resolveBoardSyncCron(env = process.env) {
 }
 
 export function isEligibleSyncBoard(board) {
+  if (board?.syncData === false) return false;
   return Boolean(
-    board?.syncData === true
-    && typeof board.boardId === 'string'
+    typeof board?.boardId === 'string'
     && board.boardId.trim()
-    && typeof board.workspaceId === 'string'
+    && typeof board?.workspaceId === 'string'
     && board.workspaceId.trim(),
   );
 }

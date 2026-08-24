@@ -54,11 +54,25 @@ test.describe('Board sync schedule', () => {
     await expect(syncCheckbox).toBeVisible();
 
     if (await syncCheckbox.isChecked()) {
+      await page.waitForResponse(
+        (resp) =>
+          resp.url().includes('/api/sync/workspace/status/') && resp.ok(),
+      );
+
       const region = page.getByRole('region', { name: /sync schedule/i });
       await expect(region).toBeVisible();
       await expect(region.getByText('Previous')).toBeVisible();
       await expect(region.getByText('Current')).toBeVisible();
       await expect(region.getByText('Next scheduled run')).toBeVisible();
+
+      // Panel reads schedule from the header poll — static <dt> labels alone
+      // pass even when the payload never arrived (all three fallbacks).
+      const nextRun = region
+        .locator('div')
+        .filter({ has: page.getByText('Next scheduled run') })
+        .locator('dd');
+      await expect(nextRun).not.toHaveText('Not scheduled');
+      await expect(nextRun).toHaveText(/\d{4}/);
     } else {
       await expect(
         page.getByRole('region', { name: /sync schedule/i }),

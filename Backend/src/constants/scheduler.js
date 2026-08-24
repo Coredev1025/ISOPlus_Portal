@@ -26,9 +26,9 @@
  *
  * Touchpoints: registry.js (validates against POLICIES), tick.js (claim
  * strategy), outcome.js (success/failure recording), intervalFloor.js
- * (which floor applies), handlers.js (which registers board_sync AND both
- * automation kinds under AT_LEAST_ONCE — see the comment there for why the
- * invoice kind is not AT_MOST_ONCE despite the guidance above).
+ * (which floor applies), handlers.js (registers invoice and statement
+ * automation under AT_LEAST_ONCE — see the comment there for why the invoice
+ * kind is not AT_MOST_ONCE despite the guidance above).
  */
 export const AT_MOST_ONCE = 'at_most_once';
 export const AT_LEAST_ONCE = 'at_least_once';
@@ -106,9 +106,9 @@ export const AT_LEAST_ONCE_MIN_INTERVAL_MINUTES = 5;
 // ── Portal board catch-up ───────────────────────────────────────────────────
 
 /**
- * Registry key / log kind for the portal-wide ISO+ board catch-up sweep.
- * Touchpoints: handlers.js (runBoardSyncSweep), portalSchedule.js,
- * boardSyncSweepHelpers.js.
+ * Log kind for the portal-wide ISO+ board catch-up sweep.
+ * Touchpoints: handlers.js (runBoardSyncSweep), portalSchedule.js
+ * (startBoardSyncCron, buildPortalBoardSyncMeta), sync.js (schedule on status).
  */
 export const BOARD_SYNC_KIND = 'board_sync';
 

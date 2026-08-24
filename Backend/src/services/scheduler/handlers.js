@@ -33,7 +33,7 @@ export async function runBoardSyncSweep({ slot, timezone = DEFAULT_TIMEZONE } = 
   }
 
   const boards = await Board.find({ syncData: true })
-    .select('boardId workspaceId syncData')
+    .select('boardId workspaceId')
     .lean();
 
   const specs = buildScheduledSyncSpecs({

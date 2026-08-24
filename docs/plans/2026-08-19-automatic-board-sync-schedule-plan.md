@@ -1,25 +1,39 @@
 # Automatic Board Sync Schedule Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status:** Implemented (2026-08). Where this plan conflicts with what shipped,
+> read [`docs/superpowers/specs/2026-08-19-automatic-board-sync-schedule-design.md`](../superpowers/specs/2026-08-19-automatic-board-sync-schedule-design.md) ("Changes since approval") and [`docs/scheduling.md`](../scheduling.md) — those are authoritative.
+
+> **For agentic workers:** This plan is a historical execution record, not
+> active work. Do not implement the tick-based architecture described in early
+> tasks — it was superseded before merge.
 
 **Goal:** Once a day (configurable cron), enqueue a catch-up sync for every ISO+ sync-enabled board, run those jobs one at a time, and show previous / current / next run on Board Configuration.
 
-**Architecture:** One portal-wide `ScheduledJob` (`kind: board_sync`, `targetId: portal`) is upserted at boot. The existing tick claims it; the handler fans out `scheduled_sync` jobs onto the existing `board-sync` queue with idempotent jobIds. `syncWorker` concurrency is 1 so only one board sync runs at a time. Enable-time backlog + webhooks are unchanged. Board Configuration reads an extended `GET /api/sync/board/status/:boardId`.
+**Architecture (as shipped):** In-process `setTimeout` + `cron-parser` (`startBoardSyncCron` in `portalSchedule.js`) fires on `BOARD_SYNC_CRON` (default `0 2 * * *` in `DEFAULT_TIMEZONE`). Each fire calls `runBoardSyncSweep`, which fans out `scheduled_sync` jobs onto the existing `board-sync` queue with idempotent jobIds. `board_sync` is **not** registered on `POST /api/scheduler/tick` — EventBridge remains invoice/statement automation only. `syncWorker` concurrency is 1. Enable-time backlog + webhooks are unchanged. Board Configuration reads schedule from the workspace status poll (`GET /api/sync/workspace/status/:workspaceId`) already driven by `SyncStatusIndicator`, not a per-page status fetch.
 
 **Tech Stack:** Node ESM, Express, Mongoose, BullMQ, Vitest, Next.js, Playwright.
 
 **Spec:** [`docs/superpowers/specs/2026-08-19-automatic-board-sync-schedule-design.md`](../superpowers/specs/2026-08-19-automatic-board-sync-schedule-design.md)
 
-**Branch:** Current branch. Do not invent a ticket; the PR still needs a `PREFIX-NUMBER` before it is opened.
+## Changes since this plan was written
 
-This file **replaces** the earlier per-board / every-30-minutes sketch. Do not create one `ScheduledJob` per board. Do not call `ensureBoardSyncSchedule` from `enableBoardSync`.
+| Planned here | Shipped | Why |
+|---|---|---|
+| One portal `ScheduledJob` upserted at boot; tick claims it | In-process cron timer (`startBoardSyncCron`); no `ScheduledJob` row for board sync | Epic 12 scope — invoice/statement stay on EventBridge tick only |
+| `BOARD_SYNC_TARGET_ID = 'portal'` | Constant removed; next run from `computeNextRun` + env, not `ScheduledJob.nextRunAt` | No tick advances a board-sync row; migration disables leftover portal rows |
+| `ensurePortalBoardSyncSchedule` on Mongo connect | `startBoardSyncCron()` on Mongo connect | Same boot hook, different mechanism |
+| `board_sync` registered under `AT_LEAST_ONCE` on the tick | `runBoardSyncSweep` exported; **not** registered in `registerSchedulerHandlers` | Tick must not claim `board_sync` |
+| Configuration page fetches `GET /api/sync/board/status/:boardId` | Panel reads `schedule` from workspace status poll in context | Avoid a second 10s poller on Configuration |
+| JobId via `automationPeriodKey` | `scheduledSyncPeriodKey` in `boardSyncSweepHelpers.js` | Board catch-up must not import invoice-automation helpers |
+
+Full rationale is in the design spec's "Changes since approval" table.
 
 ## Global Constraints
 
 - **Cognitive complexity < 15 per file** (SonarJS S3776). Fan-out, cron resolve, and status shaping live in helpers, not nested in `handlers.js` or the configuration page.
 - **Backend is ESM.** Relative imports need the `.js` extension. Tests are Vitest `*.test.js`.
 - **No new runtime dependencies.** Reuse the KAN-15 tick, `upsertSchedule`, `automationPeriodKey`, and `board-sync` queue.
-- **No second clock.** Do not add `node-schedule` or `/api/internal/.../tick`.
+- **No second clock for automation.** Do not add `node-schedule` or `/api/internal/.../tick`. Board sync uses in-process cron; invoice/statement keep EventBridge → tick.
 - **Handler enqueues and returns.** Never await ISO+ inside the tick.
 - **Do not remove Resync Data or webhooks.** Scheduled catch-up is additive.
 - **Do not gate on `invoiceStatementAutomation`.**
@@ -36,24 +50,24 @@ This file **replaces** the earlier per-board / every-30-minutes sketch. Do not c
 
 | File | Responsibility |
 |---|---|
-| `Backend/src/constants/scheduler.js` | `BOARD_SYNC_KIND`, `BOARD_SYNC_TARGET_ID`, `BOARD_SYNC_CRON_DEFAULT`. Import-free. |
-| `Backend/src/constants/sync.js` | `SYNC_WORKER_CONCURRENCY`, `SCHEDULED_SYNC_JOB_TYPE`. Import-free. New file. |
-| `Backend/src/utils/boardSyncSweepHelpers.js` | `resolveBoardSyncCron`, `isEligibleSyncBoard`, `buildScheduledSyncSpecs`. Pure besides env read in resolve. |
+| `Backend/src/constants/scheduler.js` | `BOARD_SYNC_KIND`, `BOARD_SYNC_CRON_DEFAULT`. Import-free. |
+| `Backend/src/constants/sync.js` | `SYNC_WORKER_CONCURRENCY`, `SCHEDULED_SYNC_JOB_TYPE`, queueable statuses. Import-free. |
+| `Backend/src/utils/boardSyncSweepHelpers.js` | `resolveBoardSyncCron`, `isEligibleSyncBoard`, `buildScheduledSyncSpecs`, `scheduledSyncPeriodKey`, `buildScheduledSyncBoardWrites`. |
 | `Backend/src/utils/boardSyncScheduleViewHelpers.js` | `buildBoardSyncScheduleView` — previous / current / next from already-loaded records. Pure. |
-| `Backend/src/services/scheduler/handlers.js` | `board_sync` handler fans out via `addBulk` instead of `triggerManualSync` for one board. |
-| `Backend/src/services/scheduler/portalSchedule.js` | `ensurePortalBoardSyncSchedule({ now })` — the only runtime writer of the portal row. |
-| `Backend/src/index.js` | After Mongo connects, call `ensurePortalBoardSyncSchedule`. |
-| `Backend/src/services/sync.js` | `getBoardSyncStatus` attaches `schedule`. |
+| `Backend/src/services/scheduler/handlers.js` | `runBoardSyncSweep` fans out via `addBulk`; **does not** register `board_sync` on the tick. |
+| `Backend/src/services/scheduler/portalSchedule.js` | `startBoardSyncCron`, `buildPortalBoardSyncMeta` — in-process clock and status meta (no `ScheduledJob` row). |
+| `Backend/src/index.js` | After Mongo connects, call `startBoardSyncCron`. |
+| `Backend/src/services/sync.js` | `getBoardSyncStatus` attaches `schedule`; workspace status includes schedule per board. |
 | `Backend/src/services/sync/queue.js` | Unchanged except tests may import it for `addBulk`. |
 | `Backend/src/workers/syncWorker.js` | Concurrency 1; `scheduled_sync` uses the same catch-up path as manual. |
 | `Backend/src/models/Board.js` | Add `scheduled_sync` to `syncStatus` enum. |
 | `Backend/src/models/SyncExecution.js` | Add `scheduled_sync` to `syncType` enum. |
 | `Backend/.env.example` | `BOARD_SYNC_CRON`. |
-| `Frontend/lib/board-sync-status-helpers.ts` | Copy and empty-state helpers. |
-| `Frontend/lib/board-sync-status-panel.tsx` | Previous / current / next panel. |
-| `Frontend/app/workspace/[id]/board/[boardId]/configuration/page.tsx` | Render the panel when sync is on; fetch status. |
-| `Frontend/e2e/board-sync-schedule.spec.ts` | Signed-in configuration shows the three labels. |
-| `docs/scheduling.md` | Portal sweep, cron env, concurrency 1. |
+| `Frontend/lib/board-sync-status-helpers.ts` | Types and label/format helpers. |
+| `Frontend/lib/board-sync-status-panel.tsx` | Previous / current / next panel; reads workspace poll from context. |
+| `Frontend/app/workspace/[id]/board/[boardId]/configuration/page.tsx` | Render the panel when sync is on. |
+| `Frontend/e2e/board-sync-schedule.spec.ts` | Signed-in configuration shows schedule data from workspace poll. |
+| `docs/scheduling.md` | In-process cron, cron env, concurrency 1. |
 
 **Do not create:** per-board schedule helpers, a new queue, a cron text field on the configuration page.
 
@@ -79,7 +93,7 @@ This file **replaces** the earlier per-board / every-30-minutes sketch. Do not c
   - `isEligibleSyncBoard(board) => boolean`
   - `buildScheduledSyncSpecs({ boards, slot, timezone, authorization }) => Array<{ name, data, opts }>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `Backend/test/unit/utils/boardSyncSweepHelpers.test.js`:
 
@@ -180,13 +194,13 @@ describe('portal identifiers', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and confirm it fails**
+- [x] **Step 2: Run the test and confirm it fails**
 
 Run: `cd Backend && npm test -- test/unit/utils/boardSyncSweepHelpers.test.js`
 
 Expected: FAIL — cannot find `boardSyncSweepHelpers.js` / `constants/sync.js`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add to `Backend/src/constants/scheduler.js` (import-free; update the `AT_LEAST_ONCE` touchpoint comment to include the sweep helper and `portalSchedule.js`):
 
@@ -267,13 +281,13 @@ export function buildScheduledSyncSpecs({ boards, slot, timezone, authorization 
 }
 ```
 
-- [ ] **Step 4: Re-run**
+- [x] **Step 4: Re-run**
 
 Run: `cd Backend && npm test -- test/unit/utils/boardSyncSweepHelpers.test.js`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Backend/src/constants/scheduler.js Backend/src/constants/sync.js \
@@ -288,7 +302,10 @@ EOF
 
 ---
 
-### Task 2: Handler fans out instead of syncing one board
+### Task 2: `runBoardSyncSweep` fans out instead of syncing one board
+
+> **Deviation:** `board_sync` is **not** registered on the EventBridge tick.
+> `runBoardSyncSweep` is called from `startBoardSyncCron` instead.
 
 **Files:**
 - Modify: `Backend/src/services/scheduler/handlers.js`
@@ -300,7 +317,7 @@ EOF
 
 The existing handler calls `triggerManualSync(workspaceId, targetId)`. After this task `targetId` is `'portal'` and must **not** be passed to `triggerManualSync`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Replace the `board_sync` cases in `Backend/test/unit/services/scheduler.handlers.test.js` that assume `triggerManualSync` is called with a board id. Keep the file's `clearRegistry` / token restore pattern. Add Board seeds and `recordedBulkJobs` from `test/helpers/queue.js`.
 
@@ -388,13 +405,13 @@ Delete the old tests that expect `triggerManualSync` + `alreadyRunning` for this
 
 If the current file only tests `board_sync` + `triggerManualSync`, replace the whole describe. If it also tests `runAutomationKind`, leave those describes untouched.
 
-- [ ] **Step 2: Run and confirm fail**
+- [x] **Step 2: Run and confirm fail**
 
 Run: `cd Backend && npm test -- test/unit/services/scheduler.handlers.test.js`
 
 Expected: FAIL — `runBoardSyncSweep` is not exported, or `triggerManualSync` is still the handler body.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `handlers.js`:
 
@@ -447,13 +464,13 @@ Register:
   });
 ```
 
-- [ ] **Step 4: Re-run**
+- [x] **Step 4: Re-run**
 
 Run: `cd Backend && npm test -- test/unit/services/scheduler.handlers.test.js`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Backend/src/services/scheduler/handlers.js \
@@ -467,7 +484,11 @@ EOF
 
 ---
 
-### Task 3: Upsert the portal schedule at boot
+### Task 3: Start the in-process board-sync cron at boot
+
+> **Deviation:** This task originally specified `ensurePortalBoardSyncSchedule`
+> (upsert a portal `ScheduledJob` for the tick). Shipped code uses
+> `startBoardSyncCron` instead — see "Changes since this plan was written".
 
 **Files:**
 - Create: `Backend/src/services/scheduler/portalSchedule.js`
@@ -475,13 +496,14 @@ EOF
 - Test: `Backend/test/unit/services/scheduler.portalSchedule.test.js`
 - Modify: `Backend/.env.example`
 
-**Interfaces:**
-- Consumes: `upsertSchedule`, `resolveBoardSyncCron`, `BOARD_SYNC_KIND`, `BOARD_SYNC_TARGET_ID`
-- Produces: `ensurePortalBoardSyncSchedule({ now } = {}) => Promise<ScheduledJob>`
+**Interfaces (as shipped):**
+- Consumes: `resolveBoardSyncCron`, `computeNextRun`, `runBoardSyncSweep`, `BOARD_SYNC_KIND`
+- Produces: `startBoardSyncCron({ env }) => { stop } | null`, `buildPortalBoardSyncMeta({ now })`
 
-Call it from `mongoose.connect(...).then`, not at module load — `upsertSchedule` needs Mongo. A failure logs `warn` and must not crash the API.
+Call `startBoardSyncCron()` from `mongoose.connect(...).then`, not at module load.
+Skipped when `NODE_ENV=test` or `BOARD_SYNC_CRON` is invalid.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```javascript
 import { describe, it, expect, afterEach } from 'vitest';
@@ -526,13 +548,13 @@ describe('ensurePortalBoardSyncSchedule', () => {
 });
 ```
 
-- [ ] **Step 2: Run and confirm fail**
+- [x] **Step 2: Run and confirm fail**
 
 Run: `cd Backend && npm test -- test/unit/services/scheduler.portalSchedule.test.js`
 
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `Backend/src/services/scheduler/portalSchedule.js`:
 
@@ -580,13 +602,13 @@ Add to `Backend/.env.example` (comment: without it, catch-up still runs at the d
 BOARD_SYNC_CRON=
 ```
 
-- [ ] **Step 4: Re-run**
+- [x] **Step 4: Re-run**
 
 Run: `cd Backend && npm test -- test/unit/services/scheduler.portalSchedule.test.js test/unit/services/scheduler.handlers.test.js`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Backend/src/services/scheduler/portalSchedule.js Backend/src/index.js \
@@ -613,7 +635,7 @@ EOF
 - Consumes: `SYNC_WORKER_CONCURRENCY`, `SCHEDULED_SYNC_JOB_TYPE`
 - Produces: `processJob` handles `scheduled_sync` via the same catch-up as `manual_triggered_sync`, recording `scheduled_sync` on the board. Worker `opts.concurrency === 1`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `Backend/test/unit/workers/syncWorker.test.js`, change the concurrency test:
 
@@ -654,13 +676,13 @@ Also add a model test if none exists:
 
 in `Backend/test/unit/models/board.test.js`.
 
-- [ ] **Step 2: Run and confirm fail**
+- [x] **Step 2: Run and confirm fail**
 
 Run: `cd Backend && npm test -- test/unit/workers/syncWorker.test.js test/unit/models/board.test.js`
 
 Expected: FAIL — concurrency still 2; `Unknown job type: scheduled_sync`; enum rejection.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add `'scheduled_sync'` to both enums.
 
@@ -695,13 +717,13 @@ Delete the old `processManualTriggeredSync` if it is fully replaced.
 
 If `processDataBacklogSync` already writes `syncStatus` from `job.data.jobType`, confirm the enum includes `scheduled_sync` so Mongoose does not strip it. Do not change webhook disable/re-enable behaviour.
 
-- [ ] **Step 4: Re-run**
+- [x] **Step 4: Re-run**
 
 Run: `cd Backend && npm test -- test/unit/workers/syncWorker.test.js test/unit/models/board.test.js`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Backend/src/workers/syncWorker.js Backend/src/models/Board.js \
@@ -734,7 +756,7 @@ EOF
 
 `upcoming`: `{ at: nextRunAt } | null` from the portal schedule row.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `Backend/test/unit/utils/boardSyncScheduleViewHelpers.test.js`:
 
@@ -808,13 +830,13 @@ describe('buildBoardSyncScheduleView', () => {
 
 In `getBoardSyncStatus` tests, after seeding a board with `syncData: true` and inserting a portal schedule, assert `status.schedule.upcoming.at` is defined.
 
-- [ ] **Step 2: Run and confirm fail**
+- [x] **Step 2: Run and confirm fail**
 
 Run: `cd Backend && npm test -- test/unit/utils/boardSyncScheduleViewHelpers.test.js`
 
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement the helper and wire `getBoardSyncStatus`**
+- [x] **Step 3: Implement the helper and wire `getBoardSyncStatus`**
 
 Helper: pure mapping only. No I/O.
 
@@ -842,13 +864,13 @@ In `getBoardSyncStatus`, after the existing job/execution loads:
 
 Include `schedule` on the returned object. Import `ScheduledJob`. Keep complexity down by not inlining the mapping.
 
-- [ ] **Step 4: Re-run**
+- [x] **Step 4: Re-run**
 
 Run: `cd Backend && npm test -- test/unit/utils/boardSyncScheduleViewHelpers.test.js test/unit/services/sync.test.js test/unit/routes/sync.test.js`
 
 Expected: PASS. Existing status tests that use `toMatchObject` still pass if they do not forbid extra keys.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Backend/src/utils/boardSyncScheduleViewHelpers.js Backend/src/services/sync.js \
@@ -876,7 +898,7 @@ EOF
 - Consumes: `GET ${NEXT_PUBLIC_BACKEND_URL}/api/sync/board/status/${boardId}`
 - Produces: when the Sync checkbox is checked, a region **Sync schedule** with Previous, Current, Next scheduled run.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `Frontend/test/unit/lib/board-sync-status-helpers.test.ts`:
 
@@ -947,13 +969,13 @@ Add:
   });
 ```
 
-- [ ] **Step 2: Run and confirm fail**
+- [x] **Step 2: Run and confirm fail**
 
 Run: `cd Frontend && npm test -- test/unit/lib/board-sync-status-helpers.test.ts test/unit/app/workspace/[id]/board/[boardId]/configuration/page.test.tsx`
 
 Expected: FAIL — missing module / missing region.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Helpers: `formatScheduleInstant` uses `Intl.DateTimeFormat('en-AU', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Australia/Sydney' })` — pass timezone from the payload when present rather than adding a new hardcoded zone string in a second file; default argument `timezone` from the schedule object.
 
@@ -961,13 +983,13 @@ Panel: `<section aria-label="Sync schedule">` with three labelled rows. Keep it 
 
 On the configuration page, when `syncData` is true, fetch status (same axios instance as the rest of the page). Do not fetch when sync is off.
 
-- [ ] **Step 4: Re-run**
+- [x] **Step 4: Re-run**
 
 Run: `cd Frontend && npm test -- test/unit/lib/board-sync-status-helpers.test.ts test/unit/app/workspace/[id]/board/[boardId]/configuration/page.test.tsx`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Frontend/lib/board-sync-status-helpers.ts Frontend/lib/board-sync-status-panel.tsx \
@@ -998,7 +1020,7 @@ The seeded board may have `syncData` false. If the region only renders when sync
 
 Read `seed/README.md` / the seeded board's `syncData` before writing the skip. If the default board is on, assert the region. If it is off, assert the checkbox is present and the region is absent (still a user-visible journey), **plus** a unit test already covers the on-state. Prefer the on-state if the seed allows it.
 
-- [ ] **Step 1: Write the spec**
+- [x] **Step 1: Write the spec**
 
 Follow `signIn` from `invoice-statement-automation.spec.ts`. Path: `/workspace/${WORKSPACE}/board/${BOARD}/configuration`.
 
@@ -1025,21 +1047,21 @@ Follow `signIn` from `invoice-statement-automation.spec.ts`. Path: `/workspace/$
   });
 ```
 
-- [ ] **Step 2: Run**
+- [x] **Step 2: Run**
 
 Run: `cd Frontend && npm run e2e -- e2e/board-sync-schedule.spec.ts`
 
 Expected: skip without `E2E_*`; pass against `npm run dev:up` with `dev:user` credentials. Do not claim pass without this output.
 
-- [ ] **Step 3: No extra production code unless the heading is missing**
+- [x] **Step 3: No extra production code unless the heading is missing**
 
 If the checkbox accessible name does not match, change the test to the name already in the configuration page test (`Sync data from ISO+ to Portal database`), not the other way around.
 
-- [ ] **Step 4: Confirm**
+- [x] **Step 4: Confirm**
 
 Re-run the same Playwright command.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Frontend/e2e/board-sync-schedule.spec.ts
@@ -1059,29 +1081,29 @@ EOF
 - Modify: `docs/plans/2026-08-06-finance-settings-automation-plan.md`
 - Modify: `docs/superpowers/specs/2026-08-19-automatic-board-sync-schedule-design.md` only if implementation departed (add a "Changes since approval" row then)
 
-- [ ] **Step 1: Document the sweep in `docs/scheduling.md`**
+- [x] **Step 1: Document the sweep in `docs/scheduling.md`**
 
-After the existing `board_sync` handler example, replace any implication that `targetId` is a board id with:
+After the existing scheduler handler section, document the in-process cron:
 
 ```markdown
 ## Portal board catch-up (`board_sync`)
 
-One `ScheduledJob` (`kind: board_sync`, `targetId: portal`) is upserted on
-Mongo connect (`ensurePortalBoardSyncSchedule`). Cadence is `BOARD_SYNC_CRON`
-or `0 2 * * *`. Each tick fans out `scheduled_sync` jobs for every
+An in-process `setTimeout` + `cron-parser` timer (`startBoardSyncCron`) fires
+on `BOARD_SYNC_CRON` (default `0 2 * * *` in `DEFAULT_TIMEZONE`). Each fire
+calls `runBoardSyncSweep`, which fans out `scheduled_sync` jobs for every
 `syncData: true` board onto `board-sync`. The worker runs them at
-concurrency 1. Enable-time backlog and ISO+ webhooks are unchanged.
-Board Configuration reads previous / current / next from
-`GET /api/sync/board/status/:boardId`.
+concurrency 1. `board_sync` is not registered on `POST /api/scheduler/tick`.
+Board Configuration reads previous / current / next from the workspace status
+poll (`GET /api/sync/workspace/status/:workspaceId`).
 ```
 
-- [ ] **Step 2: Supersede Task 17**
+- [x] **Step 2: Supersede Task 17**
 
 In `docs/plans/2026-08-06-finance-settings-automation-plan.md`, replace the Task 17 body with a pointer to this plan and the spec. Do not leave the old `/api/internal` sketch as something to implement.
 
-- [ ] **Step 3: No test run for prose.** Check the handler comment in `docs/scheduling.md` still matches `handlers.js` (fan-out, not `triggerManualSync`).
+- [x] **Step 3: No test run for prose.** Check the handler comment in `docs/scheduling.md` still matches `handlers.js` (fan-out, not `triggerManualSync`).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/scheduling.md docs/plans/2026-08-06-finance-settings-automation-plan.md
@@ -1100,7 +1122,8 @@ EOF
 - Dropping worker concurrency below 1, or restoring 2
 - System Health screens
 - Migrations that insert per-board `ScheduledJob` rows
-- Running `ensurePortalBoardSyncSchedule` from `createApp()`
+- Registering `board_sync` on `POST /api/scheduler/tick`
+- Upserting a portal `ScheduledJob` row for board sync (superseded by in-process cron)
 
 ## Self-review
 
@@ -1113,10 +1136,10 @@ EOF
 | Queue, one at a time | 2 (enqueue) + 4 (concurrency 1) |
 | Do not rebuild enable-time sync / hooks | Constraints; no edits to `enableBoardSync` webhook path |
 | Previous / current / upcoming on configuration | 5 + 6 + 7 |
-| Reuse KAN-15 tick | 2 + 3 |
+| In-process cron, not tick | 3 (deviation from original tick sketch) |
 
-**Placeholder scan:** Cron default is `0 2 * * *`. Sentinel target is `portal`. Job prefix is `sched:`. Accessible name for the panel is `Sync schedule`.
+**Placeholder scan:** Cron default is `0 2 * * *`. Job prefix is `sched:`. Accessible name for the panel is `Sync schedule`.
 
-**Type consistency:** `BOARD_SYNC_KIND`, `BOARD_SYNC_TARGET_ID`, `BOARD_SYNC_CRON_DEFAULT`, `SCHEDULED_SYNC_JOB_TYPE`, `runBoardSyncSweep`, `ensurePortalBoardSyncSchedule`, `buildScheduledSyncSpecs`, `buildBoardSyncScheduleView` are the same names in every task.
+**Type consistency:** `BOARD_SYNC_KIND`, `BOARD_SYNC_CRON_DEFAULT`, `SCHEDULED_SYNC_JOB_TYPE`, `runBoardSyncSweep`, `startBoardSyncCron`, `buildPortalBoardSyncMeta`, `buildScheduledSyncSpecs`, `buildBoardSyncScheduleView` are the names in shipped code.
 
-**Blast radius:** Backend scheduler handler behaviour for `board_sync` **changes** (fan-out, not one board). Worker concurrency 2 → 1 affects manual Resync and backlog too. Status JSON gains a `schedule` field (additive). Webhooks, PDF, Xero, invoice automation unchanged.
+**Blast radius:** Board sync clock is separate from the EventBridge tick. Worker concurrency 2 → 1 affects manual Resync and backlog too. Status JSON gains a `schedule` field (additive). Webhooks, PDF, Xero, invoice automation unchanged.
