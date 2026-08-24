@@ -37,6 +37,9 @@ import {
   saveInvoiceNumber,
 } from '../../utils/invoicePdfSupport.js';
 import { DEFAULT_TIMEZONE } from '../../constants/scheduler.js';
+import { invoicePeriodSuffix } from '../../utils/invoicePeriodSuffix.js';
+import { isMissingPaymentDetails, missingDocumentBranding } from '../../utils/businessDocumentReadiness.js';
+import { warn } from '../../utils/logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -64,6 +67,7 @@ export async function generateNdisInvoiceGeneratorPdf({
   participantName: fallbackName,
   invoiceDate: invoiceDateInput,
   dueDate: dueDateInput,
+  period = null,
 }) {
   const business = await Business.findOne({ workspaceId: mongoEq(workspaceId) });
   if (!business) throw new Error('Business not found');
@@ -110,7 +114,22 @@ export async function generateNdisInvoiceGeneratorPdf({
   const invoiceDate = invoiceDateRaw ? String(invoiceDateRaw).replace('Z', '') : '';
   const dueDate = resolveDueDate(invoiceDateRaw, dueDateInput);
 
-  const fileUrl = await renderAndUploadNdisInvoice({
+  // Not a refusal. The document is correct in every other respect, and
+  // refusing to invoice over a missing logo would be worse than the blank
+  // corner. But an invoice with no bank details cannot be paid, and until now
+  // the only signal was somebody noticing the empty space after it had reached
+  // a client.
+  const missingBranding = missingDocumentBranding(business);
+  if (missingBranding.length > 0) {
+    warn('Automation', 'Generating an invoice with branding missing from the business profile', {
+      workspaceId,
+      boardId,
+      missing: missingBranding,
+      unpayable: isMissingPaymentDetails(business),
+    });
+  }
+
+  const rendered = await renderAndUploadNdisInvoice({
     business,
     workspaceId,
     boardId,
@@ -123,7 +142,10 @@ export async function generateNdisInvoiceGeneratorPdf({
     enrichedRows: enrichNdisInvoiceGeneratorRows(
       allRows, buildMasterItemsMap(masterItems), timezone,
     ),
+    periodSuffix: invoicePeriodSuffix(period, timezone),
   });
+  if (rendered.empty) return { empty: true };
+  const { fileUrl, invoiceTotal } = rendered;
 
   await persistGeneratedInvoice({
     workspaceId, boardId, masterItems, invoiceNumber, fileUrl,
@@ -132,6 +154,7 @@ export async function generateNdisInvoiceGeneratorPdf({
   return {
     invoiceNumber,
     fileUrl,
+    invoiceTotal,
     itemCount: masterItems.length,
     lineCount: allRows.length,
   };
@@ -139,7 +162,7 @@ export async function generateNdisInvoiceGeneratorPdf({
 
 async function renderAndUploadNdisInvoice({
   business, workspaceId, boardId, invoiceNumberBase, participantName,
-  clientDetails, invoiceDate, dueDate, timezone, enrichedRows,
+  clientDetails, invoiceDate, dueDate, timezone, enrichedRows, periodSuffix = '',
 }) {
   const templatePath = path.join(__dirname, '..', '..', 'assets', 'NDISinvoice.json');
   const template = JSON.parse(await readFile(templatePath, 'utf8'));
@@ -147,7 +170,16 @@ async function renderAndUploadNdisInvoice({
 
   const { ordersArr, subTotal } = buildNdisInvoiceOrders(enrichedRows, timezone);
   const gstTotal = formatInvoiceMoney(0);
-  const total = formatInvoiceMoney(Number(subTotal) + Number(gstTotal));
+  // Kept as a number as well as the formatted string: the statement of account
+  // carries the figure the invoice billed through unchanged rather than
+  // recomputing it from the source items.
+  const invoiceTotal = Number(subTotal) + Number(gstTotal);
+  // Same guard as the Age Care path, for the same reason: rows can exist and
+  // still bill nothing, and a $0.00 invoice claims a number and marks its
+  // items invoiced — excluding them from every future run. Zero, not
+  // "not positive", so a credit note still issues.
+  if (invoiceTotal === 0) return { empty: true };
+  const total = formatInvoiceMoney(invoiceTotal);
   const pdfBytes = await generate({
     template,
     inputs: [{
@@ -183,13 +215,16 @@ async function renderAndUploadNdisInvoice({
   });
 
   const filename = ndisInvoicePdfFilename(
-    workspaceId, boardId, invoiceNumberBase, participantName,
+    workspaceId, boardId, invoiceNumberBase, participantName, periodSuffix,
   );
   const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
   if (uploadResult?.$metadata?.httpStatusCode !== 200) {
     throw new Error('Upload of PDF failed, please provide correct information.');
   }
-  return getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
+  return {
+    fileUrl: await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ),
+    invoiceTotal,
+  };
 }
 
 async function persistGeneratedInvoice({

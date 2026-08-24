@@ -7,9 +7,11 @@
 // and (via injected deps built in routes/webhook.js) utils/webhookNdisPdfHandlers.js,
 // utils/webhookParticipantTaxPdfHelpers.js, utils/webhookMonthlyStatementPdfHelpers.js.
 import InvoiceNumber from '../models/InvoiceNumber.js';
+import { claimHolder, claimItemsForInvoice } from './invoicedMarker.js';
 import { getS3File } from './uploadS3.js';
 import { info, warn } from './logger.js';
 import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
+import { PROVISIONAL_CLAIM_PREFIX } from '../constants/invoiceSelection.js';
 
 export function enableRepeatHeadOnTables(template) {
   if (!template?.schemas || !Array.isArray(template.schemas)) return;
@@ -44,6 +46,52 @@ export async function getLogoData(business, req = null) {
   return `data:image/${type};base64,${buffer.toString('base64')}`;
 }
 
+/**
+ * Report that a claim was refused, naming the invoice that holds the item.
+ *
+ * Split out so `saveInvoiceNumber` stays flat: the holder read only happens on
+ * the refusal path, which is the rare one.
+ *
+ * A `pending:` holder is a provisional token from an automated run that is
+ * still in flight or has crashed — a different problem, with its own detection
+ * in utils/staleInvoiceClaims.js — so it is not reported as a competing
+ * document here.
+ */
+async function warnAlreadyInvoiced({ workspaceId, boardId, itemId, invoiceNumber, type }) {
+  const claimedBy = await claimHolder({ workspaceId, boardId, itemId });
+  if (!claimedBy || claimedBy.startsWith(PROVISIONAL_CLAIM_PREFIX)) return;
+  warn('Webhook-Service', 'Item is already invoiced; keeping the existing claim', {
+    workspaceId, boardId, itemId, invoiceNumber, type, claimedBy,
+  }, {});
+}
+
+/**
+ * Record an invoice number against an item, and mark the item as invoiced.
+ *
+ * The marking is section 3.3 of the invoice selection spec: manual invoice
+ * generation must set the same marker as the automated run, or the next
+ * scheduled run finds those items unmarked and bills them again. This function
+ * is where it belongs because it is the single point every path that allocates
+ * an invoice number already passes through — the manual NDIS and SaH webhook
+ * generators, the Xero routes, and the scheduled generator.
+ *
+ * `claimItemsForInvoice` rather than an unconditional set, so a second document
+ * covering the same item (typically the Xero push following the PDF run) does
+ * not overwrite the claim naming the invoice the participant received. Either
+ * marker excludes the item from selection, so the guard holds either way.
+ *
+ * A refusal is warned about rather than passed over. Keeping the first claim is
+ * the right call, but a refusal means a second document now exists for work
+ * that was already billed — and the only evidence of it used to be that nothing
+ * changed. The common case is benign (the Xero push recording the same number
+ * the PDF run allocated, which the claim treats as idempotent and does not
+ * refuse), so this only fires when the holder is a genuinely different invoice.
+ *
+ * The marker write is best-effort, matching what this function has always done
+ * with its own write. A failure here means an item that was invoiced is not
+ * marked, and the next run would bill it again — so it is warned separately and
+ * explicitly rather than folded into the invoice-number warning.
+ */
 export async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, type, pdfLink = null) {
   try {
     await InvoiceNumber.findOneAndUpdate(
@@ -58,6 +106,17 @@ export async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNum
     );
   } catch (err) {
     warn('Webhook-Service', 'Failed to save invoice number to database', {
+      workspaceId, boardId, itemId, invoiceNumber, type, error: err.message,
+    }, {});
+  }
+
+  try {
+    const { rejected } = await claimItemsForInvoice({
+      workspaceId, boardId, itemIds: [itemId], invoiceNumber, periodKey: null,
+    });
+    if (rejected.length > 0) await warnAlreadyInvoiced({ workspaceId, boardId, itemId, invoiceNumber, type });
+  } catch (err) {
+    warn('Webhook-Service', 'Failed to mark item as invoiced; it may be billed again', {
       workspaceId, boardId, itemId, invoiceNumber, type, error: err.message,
     }, {});
   }

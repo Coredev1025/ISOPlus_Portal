@@ -17,6 +17,7 @@ import { error as logError, info, warn } from '../../utils/logger.js';
 import { recordEmailSend } from './deliveryEvents.js';
 import { resolveRecipient } from './recipients.js';
 import { isAccessDeniedError, isEmailTransportConfigured, sendEmail } from './sesTransport.js';
+import { defaultEmailBody, defaultEmailSubject } from '../../utils/automationEmailDefaults.js';
 
 const LOG_SCOPE = 'Email-Delivery';
 
@@ -46,7 +47,16 @@ export function outboxKeyFor({ kind, workspaceId, boardId, periodKey, recipientK
 
 /** The message as a backend-neutral record — what any backend would send. */
 export function composeRecord(message) {
-  const { kind, workspaceId, boardId, periodKey, block, attachments = [] } = message;
+  const {
+    kind, workspaceId, boardId, periodKey, block, attachments = [],
+    businessName = null, boardName = null, recipientKey = null, documentNumbers = [],
+  } = message;
+  // The workspace's own wording wins. These only fill the gap, and they use
+  // the business and board NAMES — a board id names an internal record the
+  // recipient has never seen.
+  const context = {
+    businessName, boardName, participant: recipientKey, documentNumbers,
+  };
   return {
     kind,
     workspaceId,
@@ -57,8 +67,8 @@ export function composeRecord(message) {
     from: block?.emailFrom || null,
     replyTo: block?.replyTo || null,
     copyTo: block?.sendCopyTo || null,
-    subject: block?.emailSubject || `${kind} for board ${boardId}`,
-    body: block?.emailMessage || '',
+    subject: block?.emailSubject || defaultEmailSubject(kind, context),
+    body: block?.emailMessage || defaultEmailBody(kind, context),
     attachments,
   };
 }

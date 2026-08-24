@@ -12,6 +12,7 @@ import {
 } from '../services/automation/pushDraftInvoicesToXero.js';
 import { buildRedisConnection } from '../services/redisConnection.js';
 import AutomationSettings from '../models/AutomationSettings.js';
+import Board from '../models/Board.js';
 import Business from '../models/Business.js';
 import { mongoEq } from '../utils/securityHelpers.js';
 import { substituteEmailTemplate } from '../utils/emailTemplateHelpers.js';
@@ -121,7 +122,8 @@ function composeBlock(block, vars) {
 }
 
 async function deliverGroup({
-  kind, workspaceId, boardId, periodKey, block, businessName, group, bypassEmail = null,
+  kind, workspaceId, boardId, periodKey, block, businessName, boardName, group,
+  bypassEmail = null,
 }) {
   const vars = buildTemplateVars({ businessName, results: group.results });
   const attachments = group.results.map((doc) => doc.pdfUrl);
@@ -134,6 +136,13 @@ async function deliverGroup({
     recipientKey: group.participant,
     block: composeBlock(block, vars),
     attachments,
+    // Context for the default subject and body, used only when the workspace
+    // has written none of its own.
+    businessName,
+    boardName,
+    documentNumbers: group.results
+      .map((doc) => doc.invoiceNumber || doc.statementNumber)
+      .filter(Boolean),
     // Absent on an ordinary run; when the tick set it, the backend sends here
     // instead of resolving the participant's billing address.
     ...(bypassEmail ? { bypassEmail } : {}),
@@ -247,7 +256,7 @@ async function composeAndDeliver(job) {
   // to deliver afterwards burns real numbers on PDFs nobody receives and leaves
   // rows that make the re-run hand back those stale documents. Resolves rather
   // than throws — nothing irreversible happened.
-  const backend = activeEmailBackendName();
+  const backend = activeEmailBackendName({ from: block?.emailFrom ?? null });
   if (!backend) {
     warn('Automation', 'No email backend configured; generated nothing rather than discarding it', {
       kind, workspaceId, boardId, periodKey,
@@ -263,6 +272,10 @@ async function composeAndDeliver(job) {
   // already durable and re-sendable.
   const results = await generateDocumentResults(job);
   const business = await Business.findOne({ workspaceId: mongoEq(String(workspaceId)) }).lean();
+  // The board's own name, for the default subject and body. `label` is the
+  // billing-facing name ("Care Management - NDIS - Certification") and `name`
+  // the display one; either beats the boardId these emails used to quote.
+  const board = await Board.findOne({ boardId: mongoEq(String(boardId)) }).lean();
 
   for (const group of deliveryGroups(results)) {
     await deliverGroup({
@@ -272,6 +285,7 @@ async function composeAndDeliver(job) {
       periodKey,
       block,
       businessName: business?.name,
+      boardName: board?.label || board?.name || null,
       group,
       bypassEmail: job.data.bypassEmail ?? null,
     });

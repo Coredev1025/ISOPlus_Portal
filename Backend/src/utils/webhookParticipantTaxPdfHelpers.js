@@ -14,6 +14,9 @@ import { logAuditTrail } from '../utils/auditLogger.js';
 import { claimDocumentNumber } from '../utils/documentNumberAllocator.js';
 import { extractRefId as extractNdisRefId } from '../utils/ndisServiceRecords.js';
 import { mongoEq } from '../utils/securityHelpers.js';
+import { invoicePeriodSuffix } from '../utils/invoicePeriodSuffix.js';
+import { isMissingPaymentDetails, missingDocumentBranding } from '../utils/businessDocumentReadiness.js';
+import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
 import {
   GENERATED_DOCUMENT_PUBLIC_READ,
   GENERATED_PDF_URL_EXPIRY_SECONDS,
@@ -241,7 +244,6 @@ export async function generateParticipantTaxInvoicePdf({
   enableRepeatHeadOnTables(template);
 
   const logoBase64 = await getLogoData(business);
-  const invoiceNumber = await claimInvoiceNumber(workspaceId);
   let invoiceDate = req.body?.invoiceDate || new Date().toISOString();
   let dueDate = req.body?.dueDate || '';
   if (!dueDate) {
@@ -295,16 +297,40 @@ export async function generateParticipantTaxInvoicePdf({
     formatCurrencyValue,
   });
 
-  if (ordersArr.length === 0) {
+  // Low Cat bills the full service amount; every other Age Care board bills
+  // only the participant's contribution. Kept as a number alongside the
+  // formatted string because the statement of account has to carry the figure
+  // the invoice billed through unchanged rather than recompute it — and
+  // recomputing would mean replicating this branch in a second place.
+  const invoiceTotalRaw = isLowCatBoard ? totalAmountSum : totalParticipantContribution;
+
+  // Nothing to invoice means nothing to CHARGE, not merely no rows. This guard
+  // used to test `ordersArr.length` alone, so rows that existed but billed
+  // nothing passed straight through it — which is how INV-1005 reached a
+  // client as two "Service" lines at $0.00 and a TOTAL AUD of $0.00.
+  //
+  // The wasted PDF is the least of it. That run also claimed a real invoice
+  // number and marked its items invoiced, so those items are excluded from
+  // every future invoice and the participant is silently never billed for the
+  // work at all.
+  //
+  // Zero, not "not positive": a credit note is legitimately negative and must
+  // still be issued.
+  if (ordersArr.length === 0 || Number(invoiceTotalRaw) === 0) {
     await Promise.all(dbItems.map((item) =>
       setIntegrationMessage(workspaceId, boardId, item.itemId, 'There is nothing to invoice!'),
     ));
     return res.status(400).json({ message: 'There is nothing to invoice!' });
   }
 
-  const subtotalValue = isLowCatBoard
-    ? formatCurrencyValue(totalAmountSum)
-    : formatCurrencyValue(totalParticipantContribution);
+  // Claimed only once there is something to charge. A claim leaves a gap in the
+  // sequence if the run then fails, and claiming before the total was known
+  // meant every refused zero-value run left one — a gap in a sequence the
+  // client reads off their invoices, for a document that was never issued.
+  // Everything between here and the guard is a read, so nothing is lost by
+  // waiting.
+  const invoiceNumber = await claimInvoiceNumber(workspaceId);
+  const subtotalValue = formatCurrencyValue(invoiceTotalRaw);
   const totalAUDValue = subtotalValue;
 
   const billingContact = (receiverName && receiverName.trim() !== '' && receiverName.trim() !== ' ')
@@ -359,11 +385,26 @@ export async function generateParticipantTaxInvoicePdf({
     plugins: { text, image, line, table, multiVariableText },
   });
 
+  // '' for manual generation, which carries no period — so those keys are
+  // byte-identical to before and the PDFLink rows storing them stay valid.
+  const missingBranding = missingDocumentBranding(business);
+  if (missingBranding.length > 0) {
+    info('Webhook-Service', 'Generating an invoice with branding missing from the business profile', {
+      workspaceId,
+      boardId,
+      missing: missingBranding,
+      unpayable: isMissingPaymentDetails(business),
+    });
+  }
+
+  const periodSuffix = invoicePeriodSuffix(
+    req.body?.period, business?.headOfficeTimezone || DEFAULT_TIMEZONE,
+  );
   const filename = buildOutputKey({
     workspaceId,
     boardId,
     type: OUTPUT_TYPE.PARTICIPANT_INVOICE,
-    name: `${invoiceNumber + '-ISO+™-' + participantName.replace(/\s+/g, '-')}.pdf`,
+    name: `${invoiceNumber + '-ISO+™-' + participantName.replace(/\s+/g, '-')}${periodSuffix}.pdf`,
   });
   const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
   if (uploadResult['$metadata'].httpStatusCode !== 200) {
@@ -389,6 +430,7 @@ export async function generateParticipantTaxInvoicePdf({
     invoiceNumber: `${invoiceNumber} (ISO+™)`,
     fileUrl,
     itemCount: dbItems.length,
+    invoiceTotal: Number(invoiceTotalRaw) || 0,
   });
 }
 

@@ -31,15 +31,27 @@ function envValue(name) {
 }
 
 /**
- * True only when the AWS credential, region and default From are all present.
+ * True only when the AWS credential, region and a From address are all present.
  * Any one missing means delivery is off, rather than half on.
+ *
+ * `from` is the workspace's own Email From, off the automation settings block.
+ * When a workspace has configured one, that IS the sending identity, so
+ * requiring EMAIL_FROM as well would refuse to send an email whose sender is
+ * already known — which is what it did, and why a fully configured workspace
+ * could sit unable to deliver on an environment that simply had no default.
+ *
+ * The deployment-level gate is not lost by this. AUTOMATION_ENABLED still has
+ * to be on for the scheduler to fan out at all, and the AWS credential still
+ * has to be present here; what changes is that the *sender address* may come
+ * from the workspace rather than only from the environment.
  */
-export function isEmailTransportConfigured() {
+export function isEmailTransportConfigured({ from = null } = {}) {
+  const sender = String(from ?? '').trim() || envValue('EMAIL_FROM');
   return Boolean(
     envValue('AWS_ACCESS_KEY_ID')
     && envValue('AWS_SECRET_ACCESS_KEY')
     && envValue('AWS_REGION')
-    && envValue('EMAIL_FROM'),
+    && sender,
   );
 }
 
@@ -127,10 +139,15 @@ export async function sendEmail({ from, to, cc, replyTo, subject, html, text, at
   if (recipients.length === 0) {
     throw new Error('sendEmail requires at least one recipient — refusing to send a message to nobody.');
   }
-  if (!isEmailTransportConfigured()) {
+  // The same question the preflight gate asked, with the same argument. Asking
+  // it without `from` is how a workspace that had configured its own Email From
+  // passed the gate that decides whether to generate — burning a real invoice
+  // number off Business.documentNumbering — and was then refused here.
+  if (!isEmailTransportConfigured({ from })) {
     throw new Error(
-      'Email transport is not configured: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, '
-      + 'AWS_REGION and EMAIL_FROM must all be set.',
+      'Email transport is not configured: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and '
+      + 'AWS_REGION must all be set, and a From address must come from either the '
+      + "workspace's Email From or EMAIL_FROM.",
     );
   }
 

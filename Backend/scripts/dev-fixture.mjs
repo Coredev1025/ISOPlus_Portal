@@ -59,6 +59,7 @@ import {
   isGeneratorFixturePath,
   fixtureFromModule,
 } from './devFixtureShape.mjs'
+import { saveLocalFile } from '../src/utils/localFileStore.js'
 
 const backendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const DEFAULT_FIXTURE = join(backendRoot, 'test', 'fixtures', 'ndis-quote-board.json')
@@ -120,7 +121,10 @@ try {
   console.error(`error: ${err.message}`)
   process.exit(1)
 }
-const { workspaceId, business, boards, items, automationSettings, scheduledJobs, invoiceNumbers } = shape
+const {
+  workspaceId, business, boards, items, automationSettings, scheduledJobs, invoiceNumbers,
+  localFiles,
+} = shape
 
 // --- replay ------------------------------------------------------------------
 //
@@ -231,6 +235,7 @@ const Item = await model('Item')
 const AutomationSettings = await model('AutomationSettings')
 const ScheduledJob = await model('ScheduledJob')
 const InvoiceNumber = await model('InvoiceNumber')
+const PDFLink = await model('PDFLink')
 
 const done = async (code) => {
   await mongoose.disconnect()
@@ -332,6 +337,13 @@ if (flags['--list']) {
 if (flags['--remove']) {
   const removedItems = await Item.deleteMany({ workspaceId, itemId: { $in: itemIds } })
   const removedBoards = await Board.deleteMany({ workspaceId, boardId: { $in: boardIds } })
+  // Scheduled-run documents only (`periodKey` set). A manual or webhook PDF for
+  // the same item has no periodKey and is left alone. Without this, a reloaded
+  // fixture's first tick finds the old slot's rows through existingSlotResults
+  // and returns them instead of billing anything.
+  const removedLinks = await PDFLink.deleteMany({
+    workspaceId, itemId: { $in: itemIds }, periodKey: { $ne: null },
+  })
   const removedBiz = business
     ? await Business.deleteMany({ workspaceId, name: business.name })
     : { deletedCount: 0 }
@@ -340,6 +352,7 @@ if (flags['--remove']) {
   console.log(`  items     ${removedItems.deletedCount}`)
   console.log(`  boards    ${removedBoards.deletedCount}`)
   console.log(`  business  ${removedBiz.deletedCount}  (matched on the fixture's name only)`)
+  console.log(`  pdfLinks  ${removedLinks.deletedCount}  (scheduled-run rows only)`)
   // Automation rows go only when the fixture declares them — never by
   // workspace alone, since a seeded database can hold real settings and jobs
   // under the same workspace.
@@ -385,6 +398,15 @@ if (business) {
   console.log(`  business  ${workspaceId} — ${business.name}`)
 }
 
+// Written before anything reads them. `getS3File` resolves a key against the
+// offline store, so a business whose defaultLogo names a file that is not there
+// throws mid-generation rather than rendering a blank corner — worse than the
+// missing logo it was meant to fix.
+for (const [key, base64] of Object.entries(localFiles ?? {})) {
+  await saveLocalFile(key, Buffer.from(base64, 'base64'))
+  console.log(`  file      ${key}`)
+}
+
 for (const b of boards) {
   await Board.findOneAndUpdate(
     { workspaceId, boardId: b.boardId },
@@ -408,6 +430,10 @@ for (const item of items) {
         data,
         updatedAt: new Date(),
       },
+      // The invoiced marker is run state, not fixture state. Leaving it in
+      // place made a reload look like a reset while every item stayed claimed,
+      // so the next tick selected nothing and billed nothing.
+      $unset: { invoicedBy: '', invoicedPeriodKey: '', invoicedAt: '' },
     },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   )
@@ -447,6 +473,18 @@ for (const n of invoiceNumbers) {
     { upsert: true, new: true, setDefaultsOnInsert: true },
   )
   console.log(`  invoiceNumber       ${n.itemId} [${n.type}] ${n.invoiceNumber}`)
+}
+
+// Same reason as the $unset above: a reload is a reset. The slot's own
+// document rows are what existingSlotResults reads, so leaving them behind
+// makes the next tick return the previous run's PDFs rather than generating.
+if (itemIds.length > 0) {
+  const cleared = await PDFLink.deleteMany({
+    workspaceId, itemId: { $in: itemIds }, periodKey: { $ne: null },
+  })
+  if (cleared.deletedCount > 0) {
+    console.log(`  cleared   ${cleared.deletedCount} scheduled-run pdfLink row(s)`)
+  }
 }
 
 console.log(`\n  ${items.length} item(s) loaded. Inspect with: npm run dev:fixture -- --list`)

@@ -47,10 +47,10 @@ export function resetEmailBackends() {
  * writes PDFLink rows, so discovering there is no transport afterwards burns
  * real numbers on documents nobody receives.
  */
-export function activeEmailBackendName() {
+export function activeEmailBackendName({ from = null } = {}) {
   return selectBackendName({
     offline: isOfflineMode(),
-    transportConfigured: isEmailTransportConfigured(),
+    transportConfigured: isEmailTransportConfigured({ from }),
   });
 }
 
@@ -65,13 +65,14 @@ export function activeEmailBackendName() {
 export async function deliverEmail(message) {
   registerBuiltInEmailBackends();
 
-  const name = activeEmailBackendName();
+  const name = activeEmailBackendName({ from: message?.block?.emailFrom ?? null });
   if (!name) {
     // Louder than a silent skip: an environment that is online with no
     // transport can neither send nor usefully pretend to.
     throw new Error(
-      'Email delivery is not configured: set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, ' +
-      'AWS_REGION and EMAIL_FROM, or run offline to write outbox previews instead.',
+      'Email delivery is not configured: set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY ' +
+      "and AWS_REGION, give the workspace an Email From (or set EMAIL_FROM as the " +
+      'default), or run offline to write outbox previews instead.',
     );
   }
 

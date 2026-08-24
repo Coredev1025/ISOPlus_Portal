@@ -713,6 +713,11 @@ describe('generateParticipantTaxInvoicePdf', () => {
       invoiceNumber: 'INV-1001 (ISO+™)',
       fileUrl: 'https://s3.example.com/signed/invoice.pdf',
       itemCount: 2,
+      // The figure this invoice billed — the participant contribution, since
+      // this is not a Low Cat board. Returned so the statement of account can
+      // carry it through unchanged instead of re-deriving which of the two
+      // totals applies.
+      invoiceTotal: 45.75,
     });
   });
 
@@ -849,6 +854,47 @@ describe('generateParticipantTaxInvoicePdf', () => {
     expect(deps.uploadFileToS3).not.toHaveBeenCalled();
   });
 
+  it('answers 400 when the rows exist but bill nothing', async () => {
+    // INV-1005: two "Service" lines and a TOTAL AUD of $0.00, sent to a client.
+    // The guard counted rows rather than weighing them, so records that existed
+    // and charged nothing passed straight through it.
+    //
+    // The wasted PDF was the least of it — that run claimed a real invoice
+    // number and marked its items invoiced, which excludes them from every
+    // later run and silently never bills the work.
+    const zeroContribution = () => {
+      const record = deliveredRecord();
+      record.data['Participant Contribution ($)'] = 0;
+      return record;
+    };
+
+    const { res, deps } = await run({ dbItems: [zeroContribution()] });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ message: 'There is nothing to invoice!' });
+    expect(generate).not.toHaveBeenCalled();
+    expect(deps.uploadFileToS3).not.toHaveBeenCalled();
+    // Marked, so the board says why nothing arrived.
+    expect(isoplus.setIntegrationMessage).toHaveBeenCalledWith(
+      'ws_1', 'b_1', 'item_1', 'There is nothing to invoice!',
+    );
+  });
+
+  it('still issues a credit note, which is legitimately negative', async () => {
+    // The guard tests for zero, not "not positive", precisely so this case
+    // survives it. A refund owed to a participant is a real document.
+    const refund = () => {
+      const record = deliveredRecord();
+      record.data['Participant Contribution ($)'] = -40;
+      return record;
+    };
+
+    const { res } = await run({ dbItems: [refund()] });
+
+    expect(res.statusCode).toBe(200);
+    expect(generate).toHaveBeenCalled();
+  });
+
   it('throws instead of reporting success when the S3 upload does not return 200', async () => {
     await expect(run({ deps: { uploadFileToS3: vi.fn().mockResolvedValue({ $metadata: { httpStatusCode: 500 } }) } }))
       .rejects.toThrow('Upload of PDF failed, please provide correct information.');
@@ -894,6 +940,61 @@ describe('generateParticipantTaxInvoicePdf', () => {
       expect.anything(),
     );
   });
+  describe('a zero-value invoice is not an invoice', () => {
+    // INV-1005 on dev: two "Service" rows at quantity 0.00 and unit price $0.00,
+    // an empty "Invoiced to", and TOTAL AUD $0.00 — generated, numbered, marked
+    // against its items and emailed to a client.
+    //
+    // The guard checked row COUNT, not value, so rows that exist but bill
+    // nothing passed straight through it. The cost is not the wasted PDF: the
+    // items are marked invoiced by that run, so they are excluded from every
+    // future invoice and the participant is silently never billed for them.
+    const zeroRecord = () => ({
+      workspaceId: 'ws_1',
+      boardId: 'b_1',
+      itemId: 'item_zero',
+      data: {
+        'Transaction Status': [{ id: 'ts_del', name: 'Delivered - To be claimed and invoiced.' }],
+        'Scheduled Shift Start Date & Time': '2026-04-23T01:00:00Z',
+        'Actual Shift End Date & Time': '2026-04-23T05:00:00Z',
+        'Participant Profile': [{ id: 'pp_1', name: 'Jane Citizen' }],
+        'Service Plan': [{ id: 'sp_1', name: '01_011_0107_1_1' }],
+        Unit: '',
+        Quantity: 0,
+        'Unit Price ($)': 0,
+        'Total Amount ($)': 0,
+        'Participant Contribution ($)': 0,
+      },
+    });
+
+    it('refuses when every row bills nothing', async () => {
+      const { res, deps } = await run({ dbItems: [zeroRecord(), zeroRecord()] });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({ message: 'There is nothing to invoice!' });
+      // The three consequences that matter, in order of how bad they are.
+      expect(deps.uploadFileToS3).not.toHaveBeenCalled();
+      expect(isoplus.setGeneratedField).not.toHaveBeenCalled();
+      expect(deps.saveInvoiceNumber).not.toHaveBeenCalled();
+    });
+
+    it('does not burn an invoice number on the refusal', async () => {
+      // The number was claimed before the total was known, so every refused
+      // run left a gap in a sequence a client reads off their invoices.
+      const before = await Business.findOne({ workspaceId: 'ws_1' }).lean();
+      await run({ dbItems: [zeroRecord(), zeroRecord()] });
+      const after = await Business.findOne({ workspaceId: 'ws_1' }).lean();
+
+      expect(after.documentNumbering?.invoice?.nextNumber)
+        .toBe(before.documentNumbering?.invoice?.nextNumber);
+    });
+
+    it('still invoices when the rows total a real amount', async () => {
+      const { res } = await run({ dbItems: [deliveredRecord()] });
+      expect(res.statusCode).toBe(200);
+    });
+  });
+
 });
 
 describe('handleParticipantTaxInvoiceRoute', () => {
@@ -977,3 +1078,4 @@ describe('handleParticipantTaxInvoiceRoute', () => {
     )).rejects.toThrow('Item item_ghost not found');
   });
 });
+
