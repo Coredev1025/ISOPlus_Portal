@@ -8,6 +8,7 @@ import {
   WEEKDAYS,
 } from '../constants/automation.js';
 import { EMAIL_PATTERN } from '../constants/validation.js';
+import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
 import { pickerScheduleError } from '../services/scheduler/pickerValidation.js';
 import { SEND_METHODS, RECIPIENTS } from '../models/AutomationSettings.js';
 
@@ -250,6 +251,17 @@ export function buildAutomationSettingsPayload(settings, jobs = {}) {
       // callers that never select `enabled` are treated as enabled.
       nextRun: job && job.enabled !== false ? (job.nextRunAt ?? null) : null,
       lastRunAt: job?.lastRunAt ?? null,
+      // The zone `nextRun` and `lastRunAt` are to be read in. Both are
+      // instants; `runAt` beside them is a wall-clock time in this zone, so a
+      // client formatting the instants in the reader's zone puts two different
+      // clocks in one row — a 09:00 Sydney schedule reads "7:00 AM" in Manila.
+      //
+      // Taken from the job rather than resolved again from
+      // Business.headOfficeTimezone: ScheduledJob.timezone is what the tick
+      // computes nextRunAt with, and the business value may have moved since.
+      // Unlike nextRun this survives a pause, because a paused block still
+      // shows the history that has to be read in the same zone.
+      timezone: job?.timezone || DEFAULT_TIMEZONE,
       // Never the stored string. ScheduledJob.lastError stringifies whatever
       // the run threw, so it carries database and index names (E11000 ...
       // business-dashboard.pdflinks index), internal addressing (connect

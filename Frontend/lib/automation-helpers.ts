@@ -1,10 +1,11 @@
-import { format, isValid, parseISO } from "date-fns";
+import { isValid, parseISO } from "date-fns";
 import {
   DEFAULT_DELIVERY_STATE,
   DELIVERY_STATE_BADGES,
   EMAIL_TEXT_FIELDS,
 } from "@/constants/automation";
 import { EMAIL_PATTERN } from "@/constants/validation";
+import { DEFAULT_BUSINESS_TIMEZONE } from "@/constants/timezone";
 import type {
   AutomationBlock,
   AutomationRecentDocument,
@@ -14,11 +15,60 @@ import type {
 /**
  * Shared by the schedule block's read-only Next Run field and the status panel,
  * which must not disagree about how a run is spelled.
+ *
+ * Rendered in the SCHEDULE's zone, not the reader's. `nextRun` and `lastRunAt`
+ * are instants; the `Run At` field beside them is a wall-clock time in the
+ * schedule's own zone. Formatting the instant locally put two clocks in one
+ * row — a workspace set to run at 09:00 Sydney showed "7:00 AM" to a reader in
+ * Manila, contradicting the field directly above it.
+ *
+ * `timeZone` comes from the API (ScheduledJob.timezone). It falls back to the
+ * business default rather than to the reader's zone, because the scheduler's
+ * own fallback is the same constant — so the two agree even when the response
+ * predates the field.
  */
-export function formatNextRun(value: string | null | undefined): string {
+export function formatNextRun(
+  value: string | null | undefined,
+  timeZone: string = DEFAULT_BUSINESS_TIMEZONE
+): string {
   if (!value) return "—";
   const parsed = parseISO(value);
-  return isValid(parsed) ? format(parsed, "dd/MM/yyyy 'at' h:mm a") : "—";
+  if (!isValid(parsed)) return "—";
+
+  return (
+    formatInZone(parsed, timeZone) ??
+    formatInZone(parsed, DEFAULT_BUSINESS_TIMEZONE) ??
+    "—"
+  );
+}
+
+/**
+ * `dd/MM/yyyy 'at' h:mm a` in an explicit zone, or null if Intl rejects the
+ * zone. Assembled from parts rather than a locale pattern so the shape does not
+ * move with the runtime's ICU data — en-AU renders the day period lowercase and
+ * separates it with a narrow no-break space, neither of which this ever showed.
+ */
+function formatInZone(at: Date, timeZone: string): string | null {
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat("en-AU", {
+      timeZone,
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).formatToParts(at);
+  } catch {
+    // RangeError: a stale or misspelled zone must not blank the field.
+    return null;
+  }
+
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+
+  return `${get("day")}/${get("month")}/${get("year")} at ${get("hour")}:${get("minute")} ${get("dayPeriod").toUpperCase()}`;
 }
 
 const DATE_INPUT_PATTERN = /^\d{4}-\d{2}-\d{2}$/;

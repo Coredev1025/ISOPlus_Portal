@@ -29,6 +29,13 @@ export type AutomationBlock = {
   nextRun?: string | null;
   /** Read-only. From ScheduledJob.lastRunAt; survives a pause. */
   lastRunAt?: string | null;
+  /**
+   * Read-only. ScheduledJob.timezone — the zone `nextRun` and `lastRunAt` are
+   * to be read in, and the zone `runAt` is already expressed in. Absent on a
+   * response from a backend that predates the field, which `formatNextRun`
+   * reads as the business default, the same fallback the scheduler uses.
+   */
+  timezone?: string;
   /** Read-only. ScheduledJob.lastError from the most recent run, or null. */
   lastRunError?: string | null;
   /**

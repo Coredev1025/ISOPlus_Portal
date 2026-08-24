@@ -7,6 +7,7 @@ import {
   MAX_EMAIL_MESSAGE_LENGTH,
   automationScheduleRejection,
 } from '../../../src/utils/automationSettingsHelpers.js';
+import { DEFAULT_TIMEZONE } from '../../../src/constants/scheduler.js';
 
 const validBlock = {
   enabled: true,
@@ -302,6 +303,62 @@ describe('automationScheduleRejection', () => {
 });
 
 describe('buildAutomationSettingsPayload', () => {
+  /**
+   * `nextRun` and `lastRunAt` are instants; `runAt` is a wall-clock time in the
+   * schedule's own zone. Without the zone travelling beside them the client can
+   * only format an instant in the reader's timezone, which put two different
+   * clocks in one row — a 09:00 Sydney schedule reading "7:00 AM" in Manila.
+   *
+   * ScheduledJob.timezone is the value the tick actually computes on, so it is
+   * the only correct source; it is not `Business.headOfficeTimezone` read a
+   * second time, which may have changed since the schedule was written.
+   */
+  it('carries the schedule timezone so instants can be formatted in it', () => {
+    const payload = buildAutomationSettingsPayload(
+      { invoice: { enabled: true }, statement: { enabled: true } },
+      {
+        invoice_automation: { timezone: 'Australia/Perth' },
+        statement_automation: { timezone: 'Pacific/Auckland' },
+      },
+    );
+
+    expect(payload.invoice.timezone).toBe('Australia/Perth');
+    expect(payload.statement.timezone).toBe('Pacific/Auckland');
+  });
+
+  it('falls back to the default timezone when no job carries one', () => {
+    // A block that has never been enabled has no ScheduledJob row at all, and
+    // a legacy row may predate the field. Both must still format.
+    const payload = buildAutomationSettingsPayload(
+      { invoice: { enabled: false }, statement: { enabled: false } },
+      { statement_automation: { lastRunAt: new Date('2026-08-01T23:00:00.000Z') } },
+    );
+
+    expect(payload.invoice.timezone).toBe(DEFAULT_TIMEZONE);
+    expect(payload.statement.timezone).toBe(DEFAULT_TIMEZONE);
+  });
+
+  /**
+   * A paused block hides its nextRun but keeps its history, so the zone that
+   * history is read in has to survive the pause too.
+   */
+  it('keeps the timezone on a paused block, unlike nextRun', () => {
+    const payload = buildAutomationSettingsPayload(
+      { invoice: { enabled: false } },
+      {
+        invoice_automation: {
+          enabled: false,
+          timezone: 'Australia/Perth',
+          nextRunAt: new Date('2026-09-01T23:00:00.000Z'),
+          lastRunAt: new Date('2026-08-01T23:00:00.000Z'),
+        },
+      },
+    );
+
+    expect(payload.invoice.nextRun).toBeNull();
+    expect(payload.invoice.timezone).toBe('Australia/Perth');
+  });
+
   it('merges nextRunAt from the linked job as read-only nextRun', () => {
     const when = new Date('2026-08-12T09:00:00+10:00');
     const payload = buildAutomationSettingsPayload(

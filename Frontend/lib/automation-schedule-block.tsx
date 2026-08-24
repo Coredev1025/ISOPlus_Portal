@@ -13,6 +13,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { UNIT_OPTIONS } from "@/constants/automation";
+import { DEFAULT_BUSINESS_TIMEZONE } from "@/constants/timezone";
 import { formatNextRun, toDateInputValue } from "@/lib/automation-helpers";
 import {
   defaultRunOnForUnit,
@@ -253,15 +254,19 @@ export function AutomationScheduleBlock({
           />
         </AutomationField>
 
+        {/* The zone is named because this row is deliberately NOT in the
+            reader's local time: it is the same clock as Run At above, which
+            is the schedule's. Without saying so, a reader abroad reads their
+            own morning into it. */}
         <AutomationField
           id={`${idPrefix}-next-run`}
           label="Next Run"
-          hint="Calculated by the scheduler — read-only."
+          hint={`Calculated by the scheduler — read-only. Times shown in ${value.timezone ?? DEFAULT_BUSINESS_TIMEZONE}.`}
         >
           <Input
             id={`${idPrefix}-next-run`}
             readOnly
-            value={formatNextRun(value.nextRun)}
+            value={formatNextRun(value.nextRun, value.timezone)}
             className="bg-muted"
           />
         </AutomationField>

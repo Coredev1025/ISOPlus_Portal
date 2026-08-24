@@ -52,6 +52,10 @@ export const READ_ONLY_BLOCK_FIELDS = [
   "lastRunError",
   "lastRunFailed",
   "consecutiveFailures",
+  // Resolved per schedule by the scheduler (ScheduledJob.timezone), never typed
+  // here. Sending it back would let a Save move the zone a live schedule fires
+  // in — the display field silently rewriting the billing time.
+  "timezone",
 ] as const;
 
 /**
