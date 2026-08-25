@@ -22,6 +22,7 @@ vi.mock('@/lib/automation-settings', async () => {
 });
 
 import { InvoiceStatementAutomationPanel } from '@/lib/invoice-statement-automation-panel';
+import { AUTOMATION_PANEL_POLL_MS } from '@/constants/automation';
 import {
   DEFAULT_BLOCK,
   fetchAutomationSettings,
@@ -586,5 +587,51 @@ describe('InvoiceStatementAutomationPanel', () => {
       );
       expect(statusRegion().queryByText(/on track/i)).not.toBeInTheDocument();
     });
+  });
+});
+
+/**
+ * 6.2 puts bounce and delivery failures on the client panel, but the panel
+ * fetched once on mount and never again. SES publishes a bounce minutes after
+ * the send, so a client sitting on the tab watched "Sent" indefinitely and the
+ * failure only appeared if they happened to reload.
+ *
+ * The code already assumed otherwise: the status panel justifies its
+ * role="status" with "when a poll turns a 'Sent' row into a bounce". That poll
+ * did not exist.
+ */
+describe("delivery states arrive without a reload", () => {
+  it("refetches on an interval", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock.mockResolvedValue(settings());
+      render(<InvoiceStatementAutomationPanel workspaceId="ws-1" />);
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+      await vi.advanceTimersByTimeAsync(AUTOMATION_PANEL_POLL_MS);
+
+      expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops polling once the panel goes away", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock.mockResolvedValue(settings());
+      const { unmount } = render(<InvoiceStatementAutomationPanel workspaceId="ws-1" />);
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+      unmount();
+      const afterUnmount = fetchMock.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(AUTOMATION_PANEL_POLL_MS * 3);
+
+      // A timer left running against an unmounted panel is a request nobody
+      // reads, forever.
+      expect(fetchMock.mock.calls.length).toBe(afterUnmount);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

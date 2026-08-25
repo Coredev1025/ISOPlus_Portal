@@ -12,6 +12,7 @@ import { AutomationEmailBlock } from "@/lib/automation-email-block";
 import { AutomationScheduleBlock } from "@/lib/automation-schedule-block";
 import { AutomationStatusPanel } from "@/lib/automation-status-panel";
 import { hasInvalidEmail } from "@/lib/automation-helpers";
+import { AUTOMATION_PANEL_POLL_MS } from "@/constants/automation";
 import {
   DEFAULT_BLOCK,
   fetchAutomationSettings,
@@ -156,21 +157,42 @@ export function InvoiceStatementAutomationPanel({
 
   useEffect(() => {
     let cancelled = false;
-    fetchAutomationSettings(workspaceId)
-      .then((loaded) => {
-        if (!cancelled) {
-          setSettings(loaded);
+
+    /**
+     * `first` separates the mount fetch from the polls.
+     *
+     * Only the mount fetch may touch `settings`: overwriting the working draft
+     * on a timer would take the form out from under whoever is typing in it.
+     * A poll refreshes what the panel REPORTS — the saved state, the documents
+     * and their delivery outcomes — and leaves the draft alone. That split is
+     * what makes polling safe on a page that is also an editor.
+     *
+     * A failed poll is ignored rather than shown: the panel already has
+     * content, and one dropped request is not worth replacing it with an
+     * error. Only the mount fetch can move the panel into `failed`.
+     */
+    const load = (first: boolean) =>
+      fetchAutomationSettings(workspaceId)
+        .then((loaded) => {
+          if (cancelled) return;
+          if (first) setSettings(loaded);
           setSavedSettings(loaded);
           setRecentDocuments(loaded.recentDocuments ?? []);
           setHealth(loaded.health);
           setLoadState("loaded");
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setLoadState("failed");
-      });
+        })
+        .catch(() => {
+          if (!cancelled && first) setLoadState("failed");
+        });
+
+    load(true);
+    // SES publishes a bounce minutes after the send, so without this a client
+    // watching the tab sees "Sent" until they reload.
+    const timer = setInterval(() => load(false), AUTOMATION_PANEL_POLL_MS);
+
     return () => {
       cancelled = true;
+      clearInterval(timer);
     };
   }, [workspaceId]);
 

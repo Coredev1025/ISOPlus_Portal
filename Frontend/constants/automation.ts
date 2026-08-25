@@ -124,3 +124,19 @@ export const DELIVERY_STATE_BADGES = {
  * Touchpoints: lib/automation-helpers.ts (`deliveryStatus`).
  */
 export const DEFAULT_DELIVERY_STATE = "generated";
+
+/**
+ * How often the client panel refetches its settings and recent documents.
+ *
+ * The panel used to fetch once on mount. SES publishes a Bounce or Complaint
+ * minutes after the send, so a client watching the tab saw "Sent" indefinitely
+ * and only learned of the failure by reloading — while the panel's own code
+ * justified its `role="status"` with "when a poll turns a 'Sent' row into a
+ * bounce". This is that poll.
+ *
+ * Slow on purpose. This is a settings page someone leaves open, not a
+ * dashboard, and each tick costs a settings read plus a documents aggregation.
+ *
+ * Touchpoints: lib/invoice-statement-automation-panel.tsx.
+ */
+export const AUTOMATION_PANEL_POLL_MS = 60_000;
