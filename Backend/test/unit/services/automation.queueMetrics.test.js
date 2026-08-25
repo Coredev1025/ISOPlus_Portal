@@ -37,7 +37,10 @@ describe('readQueueDepth', () => {
 
   it('reports zeroes rather than throwing when the queue is unreachable', async () => {
     // Redis being down must degrade one tile, not 500 the whole overview.
-    globalThis.__BULLMQ_JOB_COUNTS__ = 'explode';
+    // A rejection, not a malformed return: that is how getJobCounts actually
+    // fails, and the previous fixture exercised a shape-check for an answer
+    // BullMQ cannot give.
+    globalThis.__BULLMQ_JOB_COUNTS__ = new Error('ECONNREFUSED');
     const depth = await readQueueDepth();
     expect(depth).toMatchObject({ total: 0, available: false });
   });

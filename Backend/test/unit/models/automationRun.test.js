@@ -5,7 +5,7 @@ import {
   RUN_QUEUED,
   RUN_SKIPPED,
   TRIGGER_SCHEDULE,
-  SKIP_NO_RECIPIENT,
+  SKIP_SETTINGS_DISABLED,
 } from '../../../src/constants/systemHealth.js';
 
 const base = {
@@ -56,9 +56,9 @@ describe('AutomationRun', () => {
     const run = await AutomationRun.create({
       ...base,
       status: RUN_SKIPPED,
-      skipReason: SKIP_NO_RECIPIENT,
+      skipReason: SKIP_SETTINGS_DISABLED,
     });
-    expect(run.skipReason).toBe(SKIP_NO_RECIPIENT);
+    expect(run.skipReason).toBe(SKIP_SETTINGS_DISABLED);
   });
 
   it('declares a bare startedAt index, so the overview query is not a collection scan', () => {

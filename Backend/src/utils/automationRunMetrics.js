@@ -2,7 +2,6 @@ import {
   RUN_SUCCEEDED,
   RUN_FAILED,
   ERROR_RATE_WINDOW_HOURS,
-  TREND_BUCKETS,
   TODAY_WINDOW_HOURS,
   WEEK_WINDOW_HOURS,
 } from '../constants/systemHealth.js';
@@ -12,27 +11,6 @@ const HOUR_MS = 60 * 60 * 1000;
 /** Rows started at or after `from`. */
 function since(rows, from) {
   return rows.filter((row) => new Date(row.startedAt).getTime() >= from);
-}
-
-/**
- * Failures per bucket across the error-rate window, oldest first.
- *
- * Bucketed by elapsed time rather than by clock hour, so the last bucket
- * always ends at `now` and the sparkline's right edge is the present.
- */
-function failureTrend(windowRows, now, windowMs) {
-  const buckets = new Array(TREND_BUCKETS).fill(0);
-  const bucketMs = windowMs / TREND_BUCKETS;
-
-  for (const row of windowRows) {
-    if (row.status !== RUN_FAILED) continue;
-    const age = now - new Date(row.startedAt).getTime();
-    // Clamp: a row exactly at the window edge would otherwise index -1.
-    const index = Math.min(TREND_BUCKETS - 1, Math.max(0, TREND_BUCKETS - 1 - Math.floor(age / bucketMs)));
-    buckets[index] += 1;
-  }
-
-  return buckets;
 }
 
 /**
@@ -65,6 +43,5 @@ export function summariseRuns(rows, now = new Date()) {
     failed,
     // Guarded: 0/0 is NaN, which renders as "NaN%" on the tile.
     errorRate24h: decided === 0 ? 0 : Math.round((failed / decided) * 1000) / 1000,
-    trend: failureTrend(windowRows, nowMs, windowMs),
   };
 }

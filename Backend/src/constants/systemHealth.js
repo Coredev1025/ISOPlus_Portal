@@ -48,15 +48,8 @@ export const RUN_STATUSES = [RUN_QUEUED, RUN_RUNNING, RUN_SUCCEEDED, RUN_FAILED,
  */
 export const SKIP_SETTINGS_DISABLED = 'settings_disabled';
 export const SKIP_NO_EMAIL_BACKEND = 'no_email_backend';
-export const SKIP_NO_RECIPIENT = 'no_recipient';
 export const SKIP_ACCOUNTING_NOT_CONNECTED = 'accounting_not_connected';
 
-export const SKIP_REASONS = [
-  SKIP_SETTINGS_DISABLED,
-  SKIP_NO_EMAIL_BACKEND,
-  SKIP_NO_RECIPIENT,
-  SKIP_ACCOUNTING_NOT_CONNECTED,
-];
 
 /**
  * What caused a run. Manual runs are distinguished so a forced re-run does not
@@ -75,19 +68,13 @@ export const RUN_TRIGGERS = [TRIGGER_SCHEDULE, TRIGGER_MANUAL];
 // ── Metrics ─────────────────────────────────────────────────────────────────
 
 /**
- * The window the headline error rate is computed over, and how many buckets
- * the sparkline splits it into. 24 hours over 12 buckets is two hours each —
- * coarse enough that one failure does not spike the whole chart, fine enough
- * that a burst is visible.
+ * The window the headline error rate is computed over.
  *
- * Touchpoints: utils/automationRunMetrics.js (both). ERROR_RATE_WINDOW_HOURS is
- * also read by routes/systemHealth.js, which echoes it back on the overview
- * response as errorRateWindowHours. TREND_BUCKETS has no reader outside the
- * metrics helper — the bucket count is a computation detail, not part of the
- * response shape.
+ * Touchpoints: utils/automationRunMetrics.js, and routes/systemHealth.js, which
+ * echoes it back on the overview response as errorRateWindowHours so the tile
+ * can label itself without hardcoding the number twice.
  */
 export const ERROR_RATE_WINDOW_HOURS = 24;
-export const TREND_BUCKETS = 12;
 
 /**
  * Rolling windows measured back from now for counting recent runs.

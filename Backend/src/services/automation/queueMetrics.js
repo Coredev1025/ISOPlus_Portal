@@ -21,14 +21,9 @@ export async function readQueueDepth() {
   let available = true;
 
   try {
-    const raw = await getAutomationQueue().getJobCounts();
-    // Shape-checked, not just spread: a non-object answer (a string, null)
-    // spreads to nothing and would otherwise be reported as a genuine zero
-    // queue rather than as "could not read it".
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      throw new TypeError(`getJobCounts returned ${typeof raw}`);
-    }
-    counts = { ...EMPTY, ...raw };
+    // getJobCounts resolves an object or rejects; the rejection is the real
+    // failure mode (Redis unreachable) and the catch below owns it.
+    counts = { ...EMPTY, ...(await getAutomationQueue().getJobCounts()) };
   } catch (err) {
     available = false;
     warn('SystemHealth', 'Could not read automation queue depth', { error: err?.message });

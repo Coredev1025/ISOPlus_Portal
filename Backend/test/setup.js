@@ -107,6 +107,12 @@ vi.mock('bullmq', () => {
       return [];
     }
     getJobCounts() {
+      // A test sets this to an Error to simulate an unreachable Redis, which
+      // is how getJobCounts really fails — it rejects, it does not return
+      // something malformed.
+      if (globalThis.__BULLMQ_JOB_COUNTS__ instanceof Error) {
+        throw globalThis.__BULLMQ_JOB_COUNTS__;
+      }
       return globalThis.__BULLMQ_JOB_COUNTS__ ?? {
         waiting: 0, active: 0, failed: 0, delayed: 0, completed: 0,
       };

@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 
 import { summariseRuns } from '../../../src/utils/automationRunMetrics.js';
 import {
-  TREND_BUCKETS,
   RUN_SUCCEEDED,
   RUN_FAILED,
   RUN_SKIPPED,
@@ -21,8 +20,6 @@ describe('summariseRuns', () => {
     expect(out.failed).toBe(0);
     // 0/0 is the case that produces NaN and renders as "NaN%".
     expect(out.errorRate24h).toBe(0);
-    expect(out.trend).toHaveLength(TREND_BUCKETS);
-    expect(out.trend.every((n) => n === 0)).toBe(true);
   });
 
   it('counts today and this week separately', () => {
@@ -76,17 +73,4 @@ describe('summariseRuns', () => {
     expect(out.failed).toBe(0);
   });
 
-  it('buckets failures oldest-first across the window', () => {
-    // 24h over 12 buckets = 2h each. A failure 1h ago lands in the last bucket.
-    const out = summariseRuns([run(RUN_FAILED, hoursAgo(1))], NOW);
-
-    expect(out.trend).toHaveLength(TREND_BUCKETS);
-    expect(out.trend.at(-1)).toBe(1);
-    expect(out.trend.slice(0, -1).every((n) => n === 0)).toBe(true);
-  });
-
-  it('ignores a run older than the window when bucketing', () => {
-    const out = summariseRuns([run(RUN_FAILED, hoursAgo(100))], NOW);
-    expect(out.trend.every((n) => n === 0)).toBe(true);
-  });
 });
