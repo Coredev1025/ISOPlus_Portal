@@ -123,3 +123,16 @@ export const HISTORY_PAGE_SIZE = 50;
  */
 export const QUEUE_DEPTH_WARN = 50;
 
+/**
+ * The SES event types that mean a message did not reach the person it was for.
+ *
+ * Stored verbatim as SES spells them (`services/email/events.js` does not
+ * normalise `eventType`), so these strings are the wire values, not our own
+ * vocabulary. Delivery and Send are excluded deliberately: they are the
+ * healthy path, and counting them here would make the figure meaningless.
+ *
+ * Touchpoints: routes/systemHealth.js (the overview's delivery counts).
+ */
+export const SES_BOUNCE_EVENT = 'Bounce';
+export const SES_COMPLAINT_EVENT = 'Complaint';
+

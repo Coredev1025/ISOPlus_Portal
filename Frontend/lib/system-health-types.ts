@@ -37,6 +37,19 @@ export type ClientRow = {
   connection: ConnectionStatus;
 };
 
+/**
+ * Bounces and complaints over the same window the run figures use.
+ *
+ * Always numeric, never absent: the screen used to render a paragraph saying
+ * delivery reporting did not exist, which an operator cannot tell apart from
+ * "it exists and nothing bounced". Zero says the second thing.
+ */
+export type DeliveryIssues = {
+  bounced: number;
+  complained: number;
+  windowHours: number;
+};
+
 export type Overview = {
   activeAutomations: number;
   runsToday: number;
@@ -46,6 +59,7 @@ export type Overview = {
   errorRate24h: number;
   trend: number[];
   errorRateWindowHours: number;
+  delivery: DeliveryIssues;
   // The "is the scheduler even ticking" signal. With no ticks every other
   // figure is legitimately zero and the screen looks healthy, so this is not
   // optional to render.

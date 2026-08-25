@@ -79,7 +79,12 @@ test.describe("System Health", () => {
 
     await expect(page.getByText(/active automations/i)).toBeVisible();
     await expect(page.getByText(/error rate/i)).toBeVisible();
-    await expect(page.getByText(/bounce and delivery reporting is not built yet/i)).toBeVisible();
+    // Was asserting the screen said delivery reporting "is not built yet" —
+    // an expectation that outlived the thing it described. Both figures are
+    // real now, and a zero must render as a zero.
+    await expect(page.getByText(/^Bounced \(/)).toBeVisible();
+    await expect(page.getByText(/^Complaints \(/)).toBeVisible();
+    await expect(page.getByText(/not built yet/i)).toHaveCount(0);
   });
 
   test("clicking a client navigates to the drill-down", async ({ page }) => {

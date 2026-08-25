@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
+import EmailEvent from '../../src/models/EmailEvent.js';
 
 vi.mock('../../src/utils/automationConnectionStatus.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -28,6 +29,56 @@ describe('GET /api/system-health/overview', () => {
     await Business.deleteMany({});
     await SchedulerHealth.deleteMany({});
     app = createApp();
+  });
+
+  /**
+   * 6.4 names "bounce/complaint count" as one of the overview's six metrics.
+   * It shipped as a hardcoded paragraph saying the feature was not built —
+   * written when that was true, and left standing after the SES event pipeline
+   * landed. EmailEvent rows are on this branch's own head, so the screen was
+   * telling operators to stop looking at the one place the answer lives.
+   */
+  describe('bounce and complaint counts', () => {
+    it('counts Bounce and Complaint events inside the window', async () => {
+      const { agent } = await authenticatedAgent(app, { role: 'support_admin' });
+      const recent = new Date(Date.now() - 60 * 60 * 1000);
+      await EmailEvent.create([
+        { eventType: 'Bounce', sesMessageId: 'm-1', eventAt: recent },
+        { eventType: 'Bounce', sesMessageId: 'm-2', eventAt: recent },
+        { eventType: 'Complaint', sesMessageId: 'm-3', eventAt: recent },
+        // Delivery is not a problem and must not inflate either count.
+        { eventType: 'Delivery', sesMessageId: 'm-4', eventAt: recent },
+      ]);
+
+      const res = await agent.get('/api/system-health/overview');
+
+      expect(res.status).toBe(200);
+      expect(res.body.delivery.bounced).toBe(2);
+      expect(res.body.delivery.complained).toBe(3 - 2);
+      expect(res.body.delivery.windowHours).toBe(24 * 7);
+    });
+
+    it('ignores events older than the window', async () => {
+      const { agent } = await authenticatedAgent(app, { role: 'support_admin' });
+      const longAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      await EmailEvent.create([
+        { eventType: 'Bounce', sesMessageId: 'old-1', eventAt: longAgo },
+      ]);
+
+      const res = await agent.get('/api/system-health/overview');
+
+      expect(res.body.delivery.bounced).toBe(0);
+    });
+
+    it('reports zeroes rather than omitting the figures when nothing bounced', async () => {
+      const { agent } = await authenticatedAgent(app, { role: 'support_admin' });
+
+      const res = await agent.get('/api/system-health/overview');
+
+      // Present-and-zero is the difference between "nothing bounced" and "this
+      // build cannot tell you" — the confusion the placeholder created.
+      expect(res.body.delivery).toEqual({ bounced: 0, complained: 0, windowHours: 24 * 7 });
+    });
   });
 
   it('requires authentication', async () => {

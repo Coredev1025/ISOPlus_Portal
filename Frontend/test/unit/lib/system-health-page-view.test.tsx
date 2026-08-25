@@ -25,6 +25,7 @@ const OVERVIEW = {
     waiting: 3, active: 0, delayed: 0, failed: 0,
     total: 3, backlogged: false, available: true,
   },
+  delivery: { bounced: 4, complained: 1, windowHours: 168 },
 };
 
 describe("SystemHealthPageView", () => {
@@ -42,9 +43,14 @@ describe("SystemHealthPageView", () => {
     expect(screen.getByText("2.3%")).toBeInTheDocument();
   });
 
-  it("says bounce reporting is unbuilt rather than showing an empty bounce count", () => {
+  it("reports bounces as a count, never as a not-built notice", () => {
+    // Replaces an assertion that pinned the opposite. It required the screen to
+    // say delivery reporting "is not built yet" — written when that was true,
+    // and left asserting it after the SES event pipeline landed. The
+    // expectation was the defect, not the code.
     render(<SystemHealthPageView />);
-    expect(screen.getByText(/bounce and delivery reporting is not built yet/i)).toBeInTheDocument();
+    expect(screen.queryByText(/not built yet/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/^Bounced \(/)).toBeInTheDocument();
   });
 
   it("flags a queue backlog", () => {
@@ -90,5 +96,37 @@ describe("SystemHealthPageView", () => {
     render(<SystemHealthPageView />);
     expect(screen.getByText(/scheduler has never ticked/i)).toBeInTheDocument();
     expect(screen.getByText(/eventbridge/i)).toBeInTheDocument();
+  });
+});
+
+/**
+ * 6.4 names "bounce/complaint count" as one of the six metrics. The screen
+ * shipped a hardcoded paragraph saying delivery reporting was not built —
+ * written when that was true, still there after the SES pipeline landed. An
+ * operator chasing a bounce was told to stop looking.
+ */
+describe("bounce and complaint counts", () => {
+  it("shows the counts rather than a not-built notice", () => {
+    render(<SystemHealthPageView />);
+
+    expect(screen.getByText("4")).toBeInTheDocument();
+    expect(screen.getByText("1")).toBeInTheDocument();
+    // Anchored to the tile labels; the section heading also says "complaints".
+    expect(screen.getByText(/^Bounced \(168h\)$/)).toBeInTheDocument();
+    expect(screen.getByText(/^Complaints \(168h\)$/)).toBeInTheDocument();
+    expect(screen.queryByText(/not built yet/i)).not.toBeInTheDocument();
+  });
+
+  it("renders zero as a number, not as an absence", () => {
+    mockState.current = {
+      ...mockState.current,
+      overview: { ...OVERVIEW, delivery: { bounced: 0, complained: 0, windowHours: 168 } },
+    };
+
+    render(<SystemHealthPageView />);
+
+    // "0 bounced" and "we cannot tell you" must not look the same.
+    expect(screen.queryByText(/not built yet/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText("0").length).toBeGreaterThan(0);
   });
 });

@@ -64,7 +64,7 @@ export function SystemHealthPageView() {
         <Tile
           label="Runs today"
           value={String(overview?.runsToday ?? 0)}
-          hint={`${overview?.failed ?? 0} failed`}
+          hint={`${overview?.succeeded ?? 0} succeeded, ${overview?.failed ?? 0} failed · ${overview?.runsThisWeek ?? 0} this week`}
         />
         <Tile
           label={`Error rate (${overview?.errorRateWindowHours ?? 24}h)`}
@@ -85,11 +85,24 @@ export function SystemHealthPageView() {
         />
       </section>
 
+      {/* Real figures, not a notice. The paragraph that used to sit here said
+          delivery reporting did not exist — true when it was written, stale
+          once the SES event pipeline landed, and indistinguishable to an
+          operator from "nothing bounced". Zero is now shown as zero. */}
       <section className="space-y-2">
         <h2 className="text-sm font-semibold">Bounces &amp; complaints</h2>
-        <p className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
-          Bounce and delivery reporting is not built yet, so there is nothing to show here.
-        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Tile
+            label={`Bounced (${overview?.delivery?.windowHours ?? 168}h)`}
+            value={String(overview?.delivery?.bounced ?? 0)}
+            hint="Delivery refused by the recipient's mail server"
+          />
+          <Tile
+            label={`Complaints (${overview?.delivery?.windowHours ?? 168}h)`}
+            value={String(overview?.delivery?.complained ?? 0)}
+            hint="Marked as spam by the recipient"
+          />
+        </div>
       </section>
     </div>
   );

@@ -5,6 +5,7 @@ import AutomationSettings from '../models/AutomationSettings.js';
 import Business from '../models/Business.js';
 import Board from '../models/Board.js';
 import SchedulerHealth from '../models/SchedulerHealth.js';
+import EmailEvent from '../models/EmailEvent.js';
 import ScheduledJob from '../models/ScheduledJob.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireOwnerOrSupport } from '../middleware/requireOwnerOrSupport.js';
@@ -26,6 +27,8 @@ import {
   HISTORY_PAGE_SIZE,
   TRIGGER_MANUAL,
   RUN_FAILED,
+  SES_BOUNCE_EVENT,
+  SES_COMPLAINT_EVENT,
 } from '../constants/systemHealth.js';
 import { mongoEq } from '../utils/securityHelpers.js';
 import { error as logError } from '../utils/logger.js';
@@ -54,12 +57,21 @@ router.get('/overview', async (req, res) => {
     // happened to return.
     const from = new Date(now.getTime() - WEEK_WINDOW_HOURS * HOUR_MS);
 
-    const [rows, activeAutomations, queue, health] = await Promise.all([
+    const [rows, activeAutomations, queue, health, deliveryIssues] = await Promise.all([
       AutomationRun.find({ startedAt: { $gte: from } }).select('status startedAt').lean(),
       AutomationSettings.countDocuments(enabledWorkspaceFilter()),
       readQueueDepth(),
       SchedulerHealth.findOne({}).select('lastTickAt').lean(),
+      // Grouped in the database rather than counted twice: one pass over the
+      // same window the run figures use, so the two cannot disagree about
+      // which week they describe.
+      EmailEvent.aggregate([
+        { $match: { eventAt: { $gte: from }, eventType: { $in: [SES_BOUNCE_EVENT, SES_COMPLAINT_EVENT] } } },
+        { $group: { _id: '$eventType', count: { $sum: 1 } } },
+      ]),
     ]);
+
+    const countFor = (type) => deliveryIssues.find((row) => row._id === type)?.count ?? 0;
 
     res.json({
       ...summariseRuns(rows, now),
@@ -72,6 +84,15 @@ router.get('/overview', async (req, res) => {
       // rule — see docs/scheduling.md.
       lastTickAt: health?.lastTickAt ?? null,
       errorRateWindowHours: ERROR_RATE_WINDOW_HOURS,
+      // Always present, always numeric — including when nothing bounced. The
+      // screen previously rendered a paragraph saying delivery reporting did
+      // not exist, which is indistinguishable to an operator from "it exists
+      // and everything is fine". Zero says the second thing.
+      delivery: {
+        bounced: countFor(SES_BOUNCE_EVENT),
+        complained: countFor(SES_COMPLAINT_EVENT),
+        windowHours: WEEK_WINDOW_HOURS,
+      },
     });
   } catch (err) {
     logError('SystemHealth', 'Overview failed', { message: err.message, stack: err.stack }, req);
@@ -135,7 +156,13 @@ router.get('/workspace/:workspaceId', async (req, res) => {
 
     const [runs, total, schedules] = await Promise.all([
       AutomationRun.find({ workspaceId })
-        .sort({ startedAt: -1 })
+        // `_id` breaks the tie. One fan-out writes every row in a single
+        // bulkWrite, so a workspace with more boards than a page can hold has
+        // many rows sharing a startedAt to the millisecond. Sorting on that
+        // alone leaves the order undefined between them, and an undefined
+        // order across a skip/limit boundary silently repeats one run on page
+        // two and drops another entirely.
+        .sort({ startedAt: -1, _id: -1 })
         .skip((page - 1) * HISTORY_PAGE_SIZE)
         .limit(HISTORY_PAGE_SIZE)
         .lean(),
