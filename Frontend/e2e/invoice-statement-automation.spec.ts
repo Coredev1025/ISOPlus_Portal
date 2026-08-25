@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { test, expect, type Page } from "@playwright/test";
 
 /**
@@ -90,6 +91,49 @@ async function resetAutomationSettings(page: Page) {
     response.ok(),
     `could not reset automation settings (${response.status()})`,
   ).toBeTruthy();
+}
+
+/**
+ * Seed one automation document straight into Mongo, in the state a refused send
+ * now leaves behind.
+ *
+ * There is deliberately no API that writes a PDFLink row, and provoking a real
+ * refusal end to end would need a participant with no address and a live mail
+ * transport. The panel's job is to *report* the row, so the row is the fixture.
+ * Same local-stack escape hatch e2e/support/automation-run.ts already uses.
+ */
+function seedFailedDocument(): void {
+  const doc = {
+    workspaceId: WORKSPACE,
+    itemId: "e2e-delivery-report",
+    type: "NDIS Invoice",
+    invoiceNumber: "INV-E2E-1",
+    participant: "Samuel Rivers",
+    pdfLink: "https://files.test/e2e-delivery-report.pdf",
+    periodKey: "20260401-0900",
+    deliveryState: "failed",
+    deliveryDetail: "The client's profile has no email address on it.",
+  };
+  // `createdAt` is appended as a real `new Date(...)` rather than folded into
+  // the JSON: mongosh does not convert Extended JSON's `{$date}` on insert, and
+  // a plain object there reaches the panel as an unparseable timestamp.
+  execFileSync(
+    "docker",
+    ["exec", "-i", "isoplus-mongo", "mongosh", "business-dashboard", "--quiet", "--eval",
+      `db.pdflinks.deleteMany({itemId:"e2e-delivery-report"}); `
+      + `db.pdflinks.insertOne(Object.assign(${JSON.stringify(doc)}, `
+      + `{createdAt: new Date("2026-04-01T09:00:00Z")}));`],
+    { stdio: "pipe" },
+  );
+}
+
+function removeSeededDocument(): void {
+  execFileSync(
+    "docker",
+    ["exec", "-i", "isoplus-mongo", "mongosh", "business-dashboard", "--quiet", "--eval",
+      'db.pdflinks.deleteMany({itemId:"e2e-delivery-report"});'],
+    { stdio: "pipe" },
+  );
 }
 
 // Serial, deliberately. Every test in this file drives the SAME workspace and
@@ -428,6 +472,38 @@ test.describe("Invoice & Statement Automation", () => {
     ).toBeVisible();
     await expect(page).toHaveURL(/tab=automation/);
   });
+  /**
+   * The reproduction for the defect this closes.
+   *
+   * A send the backend refused wrote nothing to its documents, so they stayed
+   * at `generated` — muted, and rendered "never as an error". On portal-dev ten
+   * statements were produced, none delivered, and the panel still read
+   * "On track ... Succeeded". Epic 5 wants the delivery problem flagged against
+   * the send in plain English, with the recipient beside it.
+   */
+  test("a refused send is reported against the document, with its recipient", async ({
+    page,
+  }) => {
+    test.slow();
+    seedFailedDocument();
+
+    try {
+      await page.goto(AUTOMATION_URL);
+
+      const row = page.getByRole("listitem").filter({ hasText: "INV-E2E-1" });
+      await expect(row).toBeVisible();
+
+      // Who it was for — the part the panel never showed.
+      await expect(row).toContainText("Samuel Rivers");
+      // Not the muted "Generated": a send that reached nobody reads as failed.
+      await expect(row).toContainText(/failed to send/i);
+      // And the reason, in words that name the thing to go and fix.
+      await expect(row).toContainText(/no email address/i);
+    } finally {
+      removeSeededDocument();
+    }
+  });
+
   /**
    * Read in a browser deliberately NOT in the schedule's timezone.
    *

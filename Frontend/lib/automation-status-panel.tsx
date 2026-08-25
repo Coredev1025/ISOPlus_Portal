@@ -92,6 +92,7 @@ function RecentDocumentRow({
   timeZone,
 }: Readonly<{ doc: AutomationRecentDocument; timeZone?: string }>) {
   const delivery = deliveryStatus(doc);
+  const recipient = recipientLabel(doc);
 
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px]">
@@ -107,8 +108,8 @@ function RecentDocumentRow({
       {/* Who it went to. Suppressed when the label already IS the participant —
           an unnumbered statement falls back to it — so the row does not print
           the same name twice. */}
-      {recipientLabel(doc) ? (
-        <span className="text-muted-foreground">{recipientLabel(doc)}</span>
+      {recipient ? (
+        <span className="text-muted-foreground">{recipient}</span>
       ) : null}
       <span className="text-muted-foreground">
         {formatNextRun(doc.createdAt, timeZone)}
