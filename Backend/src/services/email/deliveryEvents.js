@@ -22,6 +22,8 @@ import {
   DELIVERY_STATE_FAILED,
   DELIVERY_STATE_RANK,
   DELIVERY_STATE_SENT,
+  DELIVERY_REFUSAL_MESSAGES,
+  DEFAULT_DELIVERY_REFUSAL_MESSAGE,
 } from '../../constants/automation.js';
 
 const LOG_SCOPE = 'Email-Delivery-Events';
@@ -183,6 +185,58 @@ export async function recordEmailSend({ messageId, workspaceId, documentUrls = [
   } catch (err) {
     warn(LOG_SCOPE, 'Could not record the send against its documents', {
       workspaceId, documentCount: urls.length, error: err.message,
+    });
+    return 0;
+  }
+}
+
+/**
+ * Record that these documents were NOT emailed, and why.
+ *
+ * The counterpart to `recordEmailSend`, for the path that never reaches SES:
+ * the recipient could not be resolved, or the transport refused the address.
+ * Both were only logged, so the documents kept the default `generated` — a
+ * muted badge the panel renders "never as an error" — and a run that delivered
+ * nothing to anybody still showed as On track. That is precisely the state
+ * Epic 5's visibility panel exists to make impossible.
+ *
+ * `deliveryDetail` carries a sentence naming the field to fix rather than the
+ * internal reason code, because the reader is the client, not an operator.
+ *
+ * No message id: there is no message. That also means a later successful
+ * re-send — which the refusal path deliberately leaves possible, by keeping the
+ * documents rather than discarding them — overwrites this through
+ * `recordEmailSend`, which sets state unconditionally and clears the detail.
+ *
+ * Never throws, for the same reason `recordEmailSend` does not: it is called
+ * after the send attempt is over, and failing the job would retry a send that
+ * already went out to the participants it did reach.
+ *
+ * @returns {Promise<number>} how many documents were stamped.
+ */
+export async function recordEmailFailure({ workspaceId, documentUrls = [], reason = null }) {
+  const urls = [...new Set(documentUrls.filter((url) => typeof url === 'string' && url))];
+  if (!workspaceId || urls.length === 0) return 0;
+
+  const detail = DELIVERY_REFUSAL_MESSAGES[reason] ?? DEFAULT_DELIVERY_REFUSAL_MESSAGE;
+
+  try {
+    const result = await PDFLink.updateMany(
+      // Scoped by workspace as well as URL, exactly as the send path is: the
+      // URL is the only natural key, and one tenant must not stamp another's row.
+      { workspaceId: { $eq: String(workspaceId) }, pdfLink: { $in: urls } },
+      {
+        $set: {
+          deliveryState: DELIVERY_STATE_FAILED,
+          deliveryDetail: detail,
+          deliveryUpdatedAt: new Date(),
+        },
+      },
+    );
+    return result?.modifiedCount ?? 0;
+  } catch (err) {
+    warn(LOG_SCOPE, 'Could not record the delivery failure against its documents', {
+      workspaceId, documentCount: urls.length, reason, error: err.message,
     });
     return 0;
   }
