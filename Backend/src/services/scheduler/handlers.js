@@ -15,19 +15,12 @@ import {
   DEFAULT_TIMEZONE,
   LOG_SCOPE,
 } from '../../constants/scheduler.js';
-import { buildScheduledSyncSpecs, buildScheduledSyncBoardWrites, resolveBoardSyncEnabled, resolveBoardSyncGapMs } from '../../utils/boardSyncSweepHelpers.js';
+import { buildScheduledSyncSpecs, buildScheduledSyncBoardWrites, resolveBoardSyncGapMs } from '../../utils/boardSyncSweepHelpers.js';
 import syncQueue from '../sync/queue.js';
 
 const BLOCK_FOR_KIND = { [KIND_INVOICE]: 'invoice', [KIND_STATEMENT]: 'statement' };
 
 export async function runBoardSyncSweep({ slot, timezone = DEFAULT_TIMEZONE } = {}) {
-  if (!resolveBoardSyncEnabled()) {
-    warn(LOG_SCOPE, 'board_sync skipped: BOARD_SYNC_ENABLED is off', {
-      kind: BOARD_SYNC_KIND,
-    });
-    return;
-  }
-
   if (isOfflineMode()) {
     warn(LOG_SCOPE, 'board_sync skipped: backend is in offline mode', {
       kind: BOARD_SYNC_KIND,
@@ -40,7 +33,7 @@ export async function runBoardSyncSweep({ slot, timezone = DEFAULT_TIMEZONE } = 
   }
 
   const boards = await Board.find({ syncData: true })
-    .select('boardId workspaceId')
+    .select('boardId workspaceId syncData')
     .lean();
 
   const specs = buildScheduledSyncSpecs({

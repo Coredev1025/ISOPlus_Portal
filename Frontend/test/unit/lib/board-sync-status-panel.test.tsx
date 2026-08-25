@@ -50,4 +50,36 @@ describe('BoardSyncStatusPanel', () => {
     expect(screen.getByText('Idle')).toBeInTheDocument();
     expect(screen.getByText('Not scheduled')).toBeInTheDocument();
   });
+
+  it('shows Not scheduled when upcoming is null (kill switch / invalid cron)', () => {
+    renderPanel('b-1', [{
+      boardId: 'b-1',
+      schedule: {
+        cron: '0 2 * * *',
+        timezone: 'Australia/Sydney',
+        previous: null,
+        current: null,
+        upcoming: null,
+      },
+    }]);
+
+    expect(screen.getByText('Not scheduled')).toBeInTheDocument();
+    expect(screen.getByText('Idle')).toBeInTheDocument();
+  });
+
+  it('formats Next scheduled run from upcoming.at', () => {
+    renderPanel('b-1', [{
+      boardId: 'b-1',
+      schedule: {
+        cron: '0 2 * * *',
+        timezone: 'Australia/Sydney',
+        previous: null,
+        current: null,
+        upcoming: { at: '2026-08-20T16:00:00.000Z' },
+      },
+    }]);
+
+    expect(screen.getByText(/2026/)).toBeInTheDocument();
+    expect(screen.queryByText('Not scheduled')).not.toBeInTheDocument();
+  });
 });

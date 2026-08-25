@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   BOARD_SYNC_CRON_DEFAULT,
   BOARD_SYNC_GAP_MS_DEFAULT,
+  BOARD_SYNC_GAP_MS_MAX,
   BOARD_SYNC_KIND,
 } from '../../../src/constants/scheduler.js';
 import { SCHEDULED_SYNC_JOB_TYPE } from '../../../src/constants/sync.js';
@@ -67,6 +68,13 @@ describe('resolveBoardSyncGapMs', () => {
   it('treats negative values as 0', () => {
     expect(resolveBoardSyncGapMs({ BOARD_SYNC_GAP_MS: '-1' })).toBe(0);
   });
+
+  it('clamps absurd values to BOARD_SYNC_GAP_MS_MAX', () => {
+    expect(BOARD_SYNC_GAP_MS_MAX).toBe(60 * 60 * 1000);
+    expect(resolveBoardSyncGapMs({ BOARD_SYNC_GAP_MS: '1e9' })).toBe(BOARD_SYNC_GAP_MS_MAX);
+    expect(resolveBoardSyncGapMs({ BOARD_SYNC_GAP_MS: String(BOARD_SYNC_GAP_MS_MAX + 1) }))
+      .toBe(BOARD_SYNC_GAP_MS_MAX);
+  });
 });
 
 describe('isEligibleSyncBoard', () => {
@@ -80,6 +88,12 @@ describe('isEligibleSyncBoard', () => {
     expect(isEligibleSyncBoard({ syncData: false, boardId: 'b1', workspaceId: 'ws-1' })).toBe(false);
     expect(isEligibleSyncBoard({ syncData: true, boardId: '', workspaceId: 'ws-1' })).toBe(false);
     expect(isEligibleSyncBoard({ syncData: true, boardId: 'b1', workspaceId: null })).toBe(false);
+  });
+
+  it('rejects missing or null syncData (allow-list, not deny-list)', () => {
+    expect(isEligibleSyncBoard({ boardId: 'b1', workspaceId: 'ws-1' })).toBe(false);
+    expect(isEligibleSyncBoard({ syncData: null, boardId: 'b1', workspaceId: 'ws-1' })).toBe(false);
+    expect(isEligibleSyncBoard({ syncData: undefined, boardId: 'b1', workspaceId: 'ws-1' })).toBe(false);
   });
 });
 

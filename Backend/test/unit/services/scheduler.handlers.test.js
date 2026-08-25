@@ -25,14 +25,12 @@ const { warn } = await import('../../../src/utils/logger.js');
 
 describe('board_sync sweep handler', () => {
   const originalToken = process.env.PERSONAL_ACCESS_TOKEN;
-  const originalEnabled = process.env.BOARD_SYNC_ENABLED;
   const originalGap = process.env.BOARD_SYNC_GAP_MS;
 
   beforeEach(() => {
     clearRegistry();
     resetRecordedJobs();
     process.env.PERSONAL_ACCESS_TOKEN = 'test-token';
-    delete process.env.BOARD_SYNC_ENABLED;
     delete process.env.BOARD_SYNC_GAP_MS;
     // Default to online so the pre-existing dispatch tests below are
     // unaffected by the offline guard; the offline-specific tests override
@@ -43,8 +41,6 @@ describe('board_sync sweep handler', () => {
   afterEach(() => {
     if (originalToken === undefined) delete process.env.PERSONAL_ACCESS_TOKEN;
     else process.env.PERSONAL_ACCESS_TOKEN = originalToken;
-    if (originalEnabled === undefined) delete process.env.BOARD_SYNC_ENABLED;
-    else process.env.BOARD_SYNC_ENABLED = originalEnabled;
     if (originalGap === undefined) delete process.env.BOARD_SYNC_GAP_MS;
     else process.env.BOARD_SYNC_GAP_MS = originalGap;
   });
@@ -113,18 +109,6 @@ describe('board_sync sweep handler', () => {
       slot: new Date('2026-08-11T16:00:00Z'),
       timezone: 'Australia/Sydney',
     })).resolves.toBeUndefined();
-    expect(recordedBulkJobs()).toEqual([]);
-  });
-
-  it('enqueues nothing when BOARD_SYNC_ENABLED is false', async () => {
-    process.env.BOARD_SYNC_ENABLED = 'false';
-    await Board.create({
-      boardId: 'on-1', name: 'A', workspaceId: 'ws-1', syncData: true, syncStatus: 'realtime_sync',
-    });
-    await runBoardSyncSweep({
-      slot: new Date('2026-08-11T16:00:00Z'),
-      timezone: 'Australia/Sydney',
-    });
     expect(recordedBulkJobs()).toEqual([]);
   });
 

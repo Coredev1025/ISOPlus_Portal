@@ -1,6 +1,7 @@
 import {
   BOARD_SYNC_CRON_DEFAULT,
   BOARD_SYNC_GAP_MS_DEFAULT,
+  BOARD_SYNC_GAP_MS_MAX,
 } from '../constants/scheduler.js';
 import {
   SCHEDULED_SYNC_JOB_TYPE,
@@ -39,7 +40,8 @@ export function resolveBoardSyncCron(env = process.env) {
 /**
  * Master switch for the portal scheduled catch-up only. Unset/blank = on.
  * false / 0 / off / no (case-insensitive) = off. Per-board Sync, webhooks,
- * and manual Resync are unaffected.
+ * and manual Resync are unaffected. Gated at startBoardSyncCron / status meta
+ * — see docs/scheduling.md.
  */
 export function resolveBoardSyncEnabled(env = process.env) {
   const raw = typeof env.BOARD_SYNC_ENABLED === 'string' ? env.BOARD_SYNC_ENABLED.trim() : '';
@@ -49,31 +51,35 @@ export function resolveBoardSyncEnabled(env = process.env) {
 
 /**
  * Minimum delay (ms) between starts of consecutive scheduled_sync jobs in one
- * sweep. Non-numeric or negative → default (0).
+ * sweep. Non-numeric or negative → default. Capped at BOARD_SYNC_GAP_MS_MAX.
+ * See docs/scheduling.md.
  */
 export function resolveBoardSyncGapMs(env = process.env) {
   const raw = typeof env.BOARD_SYNC_GAP_MS === 'string' ? env.BOARD_SYNC_GAP_MS.trim() : '';
   if (!raw) return BOARD_SYNC_GAP_MS_DEFAULT;
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0) return BOARD_SYNC_GAP_MS_DEFAULT;
-  return Math.floor(n);
+  return Math.min(Math.floor(n), BOARD_SYNC_GAP_MS_MAX);
 }
 
 export function isEligibleSyncBoard(board) {
-  if (board?.syncData === false) return false;
   return Boolean(
-    typeof board?.boardId === 'string'
+    board?.syncData === true
+    && typeof board.boardId === 'string'
     && board.boardId.trim()
-    && typeof board?.workspaceId === 'string'
+    && typeof board.workspaceId === 'string'
     && board.workspaceId.trim(),
   );
 }
 
 export function buildScheduledSyncSpecs({
-  boards, slot, timezone, authorization, gapMs = 0,
+  boards,
+  slot,
+  timezone,
+  authorization,
+  gapMs = BOARD_SYNC_GAP_MS_DEFAULT,
 }) {
   const periodKey = scheduledSyncPeriodKey({ slot, timezone });
-  const gap = Number.isFinite(gapMs) && gapMs > 0 ? Math.floor(gapMs) : 0;
   return boards.filter(isEligibleSyncBoard).map((board, index) => {
     const opts = {
       jobId: `sched:${board.boardId}:${periodKey}`,
@@ -81,8 +87,8 @@ export function buildScheduledSyncSpecs({
       // (0 = highest). Unprioritized jobs still beat both — see wait-list RPOP.
       priority: 10,
     };
-    if (gap > 0) {
-      opts.delay = index * gap;
+    if (gapMs > 0) {
+      opts.delay = index * gapMs;
     }
     return {
       name: SCHEDULED_SYNC_JOB_TYPE,

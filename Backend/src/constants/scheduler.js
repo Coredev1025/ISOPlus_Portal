@@ -121,9 +121,17 @@ export const BOARD_SYNC_CRON_DEFAULT = '0 2 * * *';
 /**
  * Minimum start spacing between consecutive scheduled_sync jobs in one sweep
  * when BOARD_SYNC_GAP_MS is unset. 0 means back-to-back (today's behaviour).
- * Touchpoints: boardSyncSweepHelpers.js (resolveBoardSyncGapMs).
+ * Touchpoints: boardSyncSweepHelpers.js (resolveBoardSyncGapMs),
+ * buildScheduledSyncSpecs (default param).
  */
 export const BOARD_SYNC_GAP_MS_DEFAULT = 0;
+
+/**
+ * Ceiling for BOARD_SYNC_GAP_MS (one hour). Typos like `1e9` must not enqueue
+ * multi-day delayed jobs that survive BOARD_SYNC_ENABLED=false.
+ * Touchpoints: boardSyncSweepHelpers.js (resolveBoardSyncGapMs).
+ */
+export const BOARD_SYNC_GAP_MS_MAX = 60 * 60 * 1000;
 
 // ── Persistence ─────────────────────────────────────────────────────────────
 
