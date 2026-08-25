@@ -85,8 +85,8 @@ Rejected:
 | Clock | In-process `setTimeout` + `cron-parser` (not EventBridge) |
 | Default cron | `0 2 * * *` (02:00 in the schedule timezone) |
 | Override | `BOARD_SYNC_CRON` in `Backend/.env` (and `.env.example`) |
-| Enable | `BOARD_SYNC_ENABLED` — unset = on; `false`/`0`/`off`/`no` stops cron + sweep |
-| Inter-board gap | `BOARD_SYNC_GAP_MS` — default `0`; `delay = index * gap` on bulk jobs; capped at one hour |
+| Enable | `BOARD_SYNC_ENABLED` — unset = on; `false`/`0`/`off`/`no` stops the cron. The sweep itself is not gated: one check, at `startBoardSyncCron` |
+| Inter-board gap | `BOARD_SYNC_GAP_MS` — default `0`; `delay = index * gap` on bulk jobs; capped at one hour. Warn when `(boards-1)*gap` exceeds a day (see `BOARD_SYNC_SPAN_WARN_MS`) |
 | Timezone | `DEFAULT_TIMEZONE` (`Australia/Sydney`) |
 | Who edits these | Operators via env. **Board Configuration does not edit them.** |
 

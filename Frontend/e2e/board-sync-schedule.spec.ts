@@ -51,6 +51,8 @@ test.describe('Board sync schedule', () => {
       (resp) =>
         resp.url().includes('/api/sync/workspace/status/') && resp.ok(),
     );
+    // The else branch never awaits this; keep a stray rejection off the run.
+    statusResponsePromise.catch(() => {});
 
     await page.goto(`/workspace/${WORKSPACE}/board/${BOARD}/configuration`);
     await expect(

@@ -130,6 +130,44 @@ describe('board_sync sweep handler', () => {
     // Delays follow eligible-board index at enqueue (find order), not boardId.
     expect(jobs.map((j) => j.opts.delay).sort((a, b) => a - b)).toEqual([0, 60_000, 120_000]);
     expect(new Set(jobs.map((j) => j.data.boardId))).toEqual(new Set(['gap-1', 'gap-2', 'gap-3']));
+    expect(warn).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'board_sync sweep span exceeds the cron interval',
+      expect.anything(),
+    );
+  });
+
+  it('warns when (boards-1)*gap exceeds BOARD_SYNC_SPAN_WARN_MS without shrinking delays', async () => {
+    // Max gap 1h; need span > 24h → at least 26 boards: (26-1)*1h = 25h.
+    process.env.BOARD_SYNC_GAP_MS = String(60 * 60 * 1000);
+    const seeds = Array.from({ length: 26 }, (_, i) => ({
+      boardId: `span-${i}`,
+      name: `S${i}`,
+      workspaceId: 'ws-1',
+      syncData: true,
+      syncStatus: 'realtime_sync',
+    }));
+    await Board.create(seeds);
+
+    await runBoardSyncSweep({
+      slot: new Date('2026-08-11T16:00:00Z'),
+      timezone: 'Australia/Sydney',
+    });
+
+    const jobs = recordedBulkJobs().filter((j) => j.name === SCHEDULED_SYNC_JOB_TYPE);
+    expect(jobs).toHaveLength(26);
+    const delays = jobs.map((j) => j.opts.delay).sort((a, b) => a - b);
+    expect(delays[0]).toBe(0);
+    expect(delays[25]).toBe(25 * 60 * 60 * 1000);
+    expect(warn).toHaveBeenCalledWith(
+      'Scheduler',
+      'board_sync sweep span exceeds the cron interval',
+      expect.objectContaining({
+        boards: 26,
+        gapMs: 60 * 60 * 1000,
+        spanMs: 25 * 60 * 60 * 1000,
+      }),
+    );
   });
 });
 

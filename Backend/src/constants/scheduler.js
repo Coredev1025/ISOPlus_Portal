@@ -133,6 +133,14 @@ export const BOARD_SYNC_GAP_MS_DEFAULT = 0;
  */
 export const BOARD_SYNC_GAP_MS_MAX = 60 * 60 * 1000;
 
+/**
+ * Warn when the last board's start delay `(n-1)*gap` exceeds this span.
+ * Matches the default daily BOARD_SYNC_CRON interval — overlapping sweeps with
+ * different periodKeys would not dedupe. Does not clamp spacing.
+ * Touchpoints: handlers.js (runBoardSyncSweep).
+ */
+export const BOARD_SYNC_SPAN_WARN_MS = 24 * 60 * 60 * 1000;
+
 // ── Persistence ─────────────────────────────────────────────────────────────
 
 /**
