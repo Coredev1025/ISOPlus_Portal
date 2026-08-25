@@ -40,8 +40,10 @@ function StatusRow({
   block,
 }: Readonly<{ title: string; block: AutomationBlock }>) {
   const status = blockStatus(block);
+  // Both instants are read in the schedule's own zone, so this row cannot
+  // disagree with the Run At field in the block below it.
   const lastOutcome = block.lastRunAt
-    ? `${formatNextRun(block.lastRunAt)} — ${blockNeedsAttention(block) ? "Failed" : "Succeeded"}`
+    ? `${formatNextRun(block.lastRunAt, block.timezone)} — ${blockNeedsAttention(block) ? "Failed" : "Succeeded"}`
     : "—";
 
   return (
@@ -56,7 +58,7 @@ function StatusRow({
         {status.label}
       </span>
       <span className="text-[12px] text-muted-foreground">
-        Next run: {formatNextRun(block.nextRun)}
+        Next run: {formatNextRun(block.nextRun, block.timezone)}
       </span>
       <span className="text-[12px] text-muted-foreground">
         Last run: {lastOutcome}
@@ -67,7 +69,10 @@ function StatusRow({
 
 // Named `doc`, not `document`: this module's tests stub `document.elementFromPoint`,
 // and a prop that shadows the global is one rename away from a confusing failure.
-function RecentDocumentRow({ doc }: Readonly<{ doc: AutomationRecentDocument }>) {
+function RecentDocumentRow({
+  doc,
+  timeZone,
+}: Readonly<{ doc: AutomationRecentDocument; timeZone?: string }>) {
   const delivery = deliveryStatus(doc);
 
   return (
@@ -82,7 +87,7 @@ function RecentDocumentRow({ doc }: Readonly<{ doc: AutomationRecentDocument }>)
       </a>
       <span className="text-muted-foreground">{doc.type}</span>
       <span className="text-muted-foreground">
-        {formatNextRun(doc.createdAt)}
+        {formatNextRun(doc.createdAt, timeZone)}
       </span>
       {/* Labelled rather than left as a bare word: out of context "Bounced"
           tells a screen-reader user nothing about what it describes. */}
@@ -152,7 +157,11 @@ export function AutomationStatusPanel({
             </h4>
             <ul className="space-y-1">
               {recentDocuments.map((doc) => (
-                <RecentDocumentRow key={doc.pdfUrl} doc={doc} />
+                <RecentDocumentRow
+                  key={doc.pdfUrl}
+                  doc={doc}
+                  timeZone={invoice.timezone ?? statement.timezone}
+                />
               ))}
             </ul>
           </div>

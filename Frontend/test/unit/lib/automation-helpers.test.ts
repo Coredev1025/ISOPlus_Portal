@@ -14,6 +14,7 @@ import {
   type AutomationRecentDocument,
   type AutomationSettings,
 } from '@/lib/automation-settings';
+import { DEFAULT_BUSINESS_TIMEZONE } from '@/constants/timezone';
 
 /** DEFAULT_BLOCK is deep-frozen, so every fixture needs its own deep copy. */
 function block(overrides: Partial<AutomationBlock> = {}): AutomationBlock {
@@ -47,12 +48,45 @@ describe('formatNextRun', () => {
     expect(formatNextRun('not-a-date')).toBe('—');
   });
 
-  it('formats an instant in the reader local time, not as raw ISO', () => {
-    const formatted = formatNextRun('2026-09-01T12:00:00.000Z');
-    // Asserted by shape: date-fns formats in the runner's zone, and the value
-    // must not depend on it.
-    expect(formatted).toMatch(/^\d{2}\/\d{2}\/\d{4} at \d{1,2}:\d{2} (AM|PM)$/);
-    expect(formatted).not.toContain('T');
+  /**
+   * The reproduction for the defect this replaced.
+   *
+   * `nextRun` is an instant; `runAt` is a wall-clock time in the schedule's own
+   * zone. Formatting the instant in the reader's zone put two different clocks
+   * in one row: a workspace scheduled for 09:00 Sydney showed "7:00 AM" to a
+   * reader in Manila, contradicting the Run At field beside it.
+   *
+   * Both assertions use the same instant, so a run in any machine timezone has
+   * to produce both answers — which only holds if the zone is what decides.
+   */
+  it('formats an instant in the schedule timezone, not the reader local one', () => {
+    const nextRun = '2026-09-30T23:00:00.000Z';
+
+    expect(formatNextRun(nextRun, 'Australia/Sydney')).toBe('01/10/2026 at 9:00 AM');
+    expect(formatNextRun(nextRun, 'Asia/Manila')).toBe('01/10/2026 at 7:00 AM');
+  });
+
+  it('honours a zone whose offset moves the calendar day', () => {
+    // 08:02 UTC is still the previous day in Los Angeles and already the next
+    // in Sydney — the case a date-only assertion would let through.
+    const instant = '2026-08-20T08:02:00.000Z';
+
+    expect(formatNextRun(instant, 'Australia/Sydney')).toBe('20/08/2026 at 6:02 PM');
+    expect(formatNextRun(instant, 'America/Los_Angeles')).toBe('20/08/2026 at 1:02 AM');
+  });
+
+  it('falls back to the default business timezone when none is given', () => {
+    expect(formatNextRun('2026-09-30T23:00:00.000Z')).toBe(
+      formatNextRun('2026-09-30T23:00:00.000Z', DEFAULT_BUSINESS_TIMEZONE)
+    );
+  });
+
+  it('ignores an unusable timezone rather than throwing', () => {
+    // Intl throws a RangeError on a bad zone. A schedule row carrying a stale
+    // or misspelled zone must still render its next run.
+    expect(formatNextRun('2026-09-30T23:00:00.000Z', 'Not/AZone')).toBe(
+      formatNextRun('2026-09-30T23:00:00.000Z', DEFAULT_BUSINESS_TIMEZONE)
+    );
   });
 });
 

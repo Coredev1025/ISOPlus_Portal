@@ -371,4 +371,105 @@ test.describe("Invoice & Statement Automation", () => {
     await expect(page).toHaveURL(new RegExp(`/workspace/${WORKSPACE}/board/${board}/invoice-generator`));
     await expect(page.getByText(/invoice generator/i).first()).toBeVisible();
   });
+
+  test("the status panel reports the saved schedule, not unsaved edits", async ({
+    page,
+  }) => {
+    // A full save-and-reload round trip against the dev server. The file's
+    // 30s default is tight for that on a loaded machine — this triples it
+    // rather than relaxing any assertion.
+    test.slow();
+
+    // The panel answers "is your automation healthy?" — a fact about the
+    // scheduler. It was fed the working draft, so switching a block off
+    // reported "Paused" while the schedule was still armed server-side.
+    await page.goto(AUTOMATION_URL);
+
+    const invoice = invoiceBlock(page);
+    await invoice.getByRole("switch").click();
+    await page.getByRole("button", { name: /save changes/i }).click();
+    await expect(page.getByText(/saved successfully/i)).toBeVisible();
+
+    // Asserted as "On track immediately after Invoices" rather than by locating
+    // the row: every candidate div ancestor also contains the Statements row,
+    // so a containment check there would pass on the wrong badge.
+    const status = page.getByRole("region", { name: /automation status/i });
+    await expect(status).toContainText(/Invoices\s*On track/);
+
+    // Turn the form off but do NOT save. Nothing has changed on the server.
+    await invoice.getByRole("switch").click();
+    await expect(invoice.getByRole("switch")).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+    await expect(status).toContainText(/Invoices\s*On track/);
+
+    // Restore Defaults writes nothing either, so it cannot retire the badge.
+    await page.getByRole("button", { name: /restore defaults/i }).click();
+    await expect(status).toContainText(/Invoices\s*On track/);
+  });
+
+  test("the automation tab survives a failed business-profile load", async ({
+    page,
+  }) => {
+    test.slow();
+
+    // The feature flag rides on the profile response, and every failure used
+    // to collapse to "flag off" — so a transient 503 hid the tab and rewrote
+    // ?tab=automation to ?tab=financial with nothing said.
+    await page.route("**/api/business/profile*", (route) =>
+      route.fulfill({ status: 503, body: "{}" }),
+    );
+
+    await page.goto(AUTOMATION_URL);
+
+    await expect(
+      page.getByRole("tab", { name: /invoice & statement automation/i }),
+    ).toBeVisible();
+    await expect(page).toHaveURL(/tab=automation/);
+  });
+  /**
+   * Read in a browser deliberately NOT in the schedule's timezone.
+   *
+   * `runAt` is a wall-clock time in the schedule's zone and `nextRun` is an
+   * instant, so rendering the instant locally put two clocks in one row: a
+   * workspace set to 09:00 Sydney read "7:00 AM" to this context.
+   *
+   * Nested inside the serial describe on purpose. It drives the same workspace
+   * and the parent's beforeEach resets it, so as a sibling under the config's
+   * fullyParallel the two would reset one another mid-test — the exact failure
+   * the file header warns about.
+   */
+  test.describe("Next Run is read in the schedule timezone", () => {
+    test.use({ timezoneId: "Asia/Manila" });
+
+    test("shows the configured Run At, not the reader's local conversion", async ({
+      page,
+    }) => {
+      test.slow();
+
+      await page.goto(AUTOMATION_URL);
+
+      const invoice = invoiceBlock(page);
+      await invoice.getByRole("switch").click();
+      await invoice.getByLabel(/run at/i).fill("09:00");
+
+      await page.getByRole("button", { name: /save changes/i }).click();
+      await expect(page.getByText(/saved successfully/i)).toBeVisible();
+      await page.reload();
+
+      const reloaded = invoiceBlock(page);
+      await expect(reloaded.getByLabel(/run at/i)).toHaveValue("09:00");
+
+      // The invariant, independent of the date the scheduler picks: every run of
+      // this schedule happens at 09:00 in its own zone, so the time half of Next
+      // Run must equal Run At. Formatted in Manila (UTC+8) it would read 7:00 AM.
+      await expect(reloaded.getByLabel(/next run/i)).toHaveValue(
+        /\d{2}\/\d{2}\/\d{4} at 9:00 AM$/,
+      );
+
+      // And the row says which clock it is, so the reader does not assume theirs.
+      await expect(reloaded.getByText(/times shown in/i)).toBeVisible();
+    });
+  });
 });

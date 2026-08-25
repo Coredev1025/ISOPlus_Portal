@@ -24,14 +24,28 @@ describe('parseFinanceSettingsTab (Epic 1 / KAN-6)', () => {
 
 describe('resolveActiveFinanceTab (Epic 1 / KAN-6)', () => {
   it('allows automation only when the workspace flag is enabled', () => {
-    expect(resolveActiveFinanceTab('automation', true)).toBe('automation');
-    expect(resolveActiveFinanceTab('automation', false)).toBe('financial');
+    expect(resolveActiveFinanceTab('automation', 'on')).toBe('automation');
+    expect(resolveActiveFinanceTab('automation', 'off')).toBe('financial');
+  });
+
+  /**
+   * Only a definite "off" redirects. When the profile call did not answer we
+   * do not know whether the workspace has the feature, and silently sending
+   * the reader to Financial Settings tells them it does not.
+   *
+   * Keeping them on the tab is safe because the server, not this function, is
+   * the gate: GET /automation-settings is deliberately open so a workspace
+   * that lost the feature can still see what it had, and PUT answers 403.
+   * The worst case is a panel that reports its own error, which is honest.
+   */
+  it('keeps automation when the flag could not be determined', () => {
+    expect(resolveActiveFinanceTab('automation', 'unavailable')).toBe('automation');
   });
 
   it('leaves other tabs unchanged regardless of flag', () => {
-    expect(resolveActiveFinanceTab('financial', false)).toBe('financial');
-    expect(resolveActiveFinanceTab('financial', true)).toBe('financial');
-    expect(resolveActiveFinanceTab('accounting', false)).toBe('accounting');
-    expect(resolveActiveFinanceTab('accounting', true)).toBe('accounting');
+    for (const state of ['on', 'off', 'unavailable'] as const) {
+      expect(resolveActiveFinanceTab('financial', state)).toBe('financial');
+      expect(resolveActiveFinanceTab('accounting', state)).toBe('accounting');
+    }
   });
 });

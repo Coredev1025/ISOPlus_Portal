@@ -131,6 +131,16 @@ export function InvoiceStatementAutomationPanel({
   workspaceId,
 }: InvoiceStatementAutomationPanelProps) {
   const [settings, setSettings] = useState<AutomationSettings>(defaultSettings);
+  /**
+   * The last state the SERVER confirmed, which is what the status panel
+   * reports. `settings` is the working draft and changes on every keystroke;
+   * feeding that to the status panel made it answer "is your automation
+   * healthy?" from an unsaved form — switching a block off read "Paused" while
+   * the schedule was still armed, and Restore Defaults erased a Last run that
+   * had actually happened. Only a load or a successful save moves this.
+   */
+  const [savedSettings, setSavedSettings] =
+    useState<AutomationSettings>(defaultSettings);
   // Held apart from settings because the PUT echo does not carry it — a save
   // must not blank the recent-documents list.
   const [recentDocuments, setRecentDocuments] = useState<
@@ -147,6 +157,7 @@ export function InvoiceStatementAutomationPanel({
       .then((loaded) => {
         if (!cancelled) {
           setSettings(loaded);
+          setSavedSettings(loaded);
           setRecentDocuments(loaded.recentDocuments ?? []);
           setLoadState("loaded");
         }
@@ -176,7 +187,10 @@ export function InvoiceStatementAutomationPanel({
     setErrorMessage("");
     setShowSuccess(false);
     try {
-      setSettings(await saveAutomationSettings(workspaceId, settings));
+      const saved = await saveAutomationSettings(workspaceId, settings);
+      setSettings(saved);
+      // The echo is now the server's state, so the status panel moves with it.
+      setSavedSettings(saved);
       setShowSuccess(true);
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
@@ -198,8 +212,8 @@ export function InvoiceStatementAutomationPanel({
   return (
     <div className="space-y-[18px]">
       <AutomationStatusPanel
-        invoice={settings.invoice}
-        statement={settings.statement}
+        invoice={savedSettings.invoice}
+        statement={savedSettings.statement}
         recentDocuments={recentDocuments}
       />
 

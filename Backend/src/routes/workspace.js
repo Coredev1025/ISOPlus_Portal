@@ -420,7 +420,7 @@ async function loadAutomationJobs(workspaceId) {
     kind: { $in: [KIND_INVOICE, KIND_STATEMENT] },
     targetId: { $eq: workspaceId },
   })
-    .select('kind enabled nextRunAt lastRunAt lastError consecutiveFailures')
+    .select('kind enabled nextRunAt lastRunAt lastError consecutiveFailures timezone')
     .lean();
 
   return Object.fromEntries(jobs.map((job) => [job.kind, job]));

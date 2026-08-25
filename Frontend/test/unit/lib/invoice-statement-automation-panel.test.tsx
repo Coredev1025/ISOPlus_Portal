@@ -517,4 +517,74 @@ describe('InvoiceStatementAutomationPanel', () => {
     expect(within(section).getByLabelText(/run on/i)).toBeInTheDocument();
     expect(within(section).getByLabelText(/reply-to email/i)).toBeInTheDocument();
   });
+
+  /**
+   * The reproduction for the defect this replaced.
+   *
+   * The status panel answers "whether your automation is healthy" — a fact
+   * about the scheduler, held on the server. It was being fed the working
+   * draft, so editing the form rewrote it: flipping the switch off reported
+   * "Paused" while the schedule was still armed, and it erased Last run, which
+   * is history no form can change.
+   */
+  describe('the status panel reports saved state, not the working draft', () => {
+    const armed = () =>
+      settings({
+        enabled: true,
+        nextRun: '2027-08-20T09:02:00.000Z',
+        lastRunAt: '2026-08-20T09:02:42.820Z',
+      });
+
+    const statusRegion = () =>
+      within(screen.getByRole('region', { name: /automation status/i }));
+
+    it('keeps reporting the armed schedule while the switch is toggled off', async () => {
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      fetchMock.mockResolvedValue(armed());
+      await renderPanel();
+
+      // Scoped to the Invoices row: the Statements row is legitimately Paused
+      // in this fixture, so a panel-wide /paused/i matcher proves nothing.
+      const invoiceRow = () => statusRegion().getByText('Invoices').parentElement!;
+
+      expect(within(invoiceRow()).getByText(/on track/i)).toBeInTheDocument();
+
+      await user.click(within(invoiceSection()).getByRole('switch'));
+
+      // The form is now off; the schedule on the server is not.
+      expect(
+        within(invoiceSection()).getByRole('switch')
+      ).toHaveAttribute('aria-checked', 'false');
+      expect(within(invoiceRow()).getByText(/on track/i)).toBeInTheDocument();
+      expect(within(invoiceRow()).queryByText(/paused/i)).not.toBeInTheDocument();
+    });
+
+    it('does not let Restore Defaults erase the last run', async () => {
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      fetchMock.mockResolvedValue(armed());
+      await renderPanel();
+
+      await user.click(screen.getByRole('button', { name: /restore defaults/i }));
+
+      // Restore Defaults writes nothing, so every word here is still true.
+      expect(statusRegion().getByText(/on track/i)).toBeInTheDocument();
+      expect(statusRegion().getByText(/succeeded/i)).toBeInTheDocument();
+    });
+
+    it('adopts the server echo once a save succeeds', async () => {
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      fetchMock.mockResolvedValue(armed());
+      // What the server made of the save: the block is now paused.
+      saveMock.mockResolvedValue(settings({ enabled: false }));
+      await renderPanel();
+
+      await user.click(within(invoiceSection()).getByRole('switch'));
+      await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+      await waitFor(() =>
+        expect(statusRegion().getAllByText(/paused/i).length).toBeGreaterThan(0)
+      );
+      expect(statusRegion().queryByText(/on track/i)).not.toBeInTheDocument();
+    });
+  });
 });

@@ -22,7 +22,9 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/lib/workspace-feature-toggles', () => ({
-  fetchInvoiceStatementAutomationFlag: vi.fn().mockResolvedValue(false),
+  // Tri-state since the tab gate had to tell "the workspace does not have the
+  // feature" apart from "the profile call did not answer".
+  fetchInvoiceStatementAutomationFlag: vi.fn().mockResolvedValue('off'),
 }));
 
 vi.mock('@/lib/financial-settings-panel', () => ({
