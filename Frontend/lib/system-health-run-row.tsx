@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { formatDuration, formatStartedAt, runStatusLabel } from "@/lib/system-health-helpers";
 import type { RunRow } from "@/lib/system-health-types";
+import { SKIP_REASON_LABELS } from "@/constants/system-health";
 
 const TRIGGER_LABELS: Record<RunRow["trigger"], string> = {
   schedule: "Scheduled",
@@ -20,13 +21,18 @@ type RowProps = Readonly<{
 
 /**
  * One run: identity (board, period, kind, trigger) on top, outcome below.
- * Retry only ever applies to a `failed` row — nothing can reach that state
- * today (the worker is inert), so this branch is only exercised by a fixture
- * in tests until Epic 5.6/5.7 ships a worker that can actually fail a run.
+ * Retry only ever applies to a `failed` row. That state is reachable in
+ * production now — the worker marks a run failed on its last attempt — so this
+ * branch is live rather than fixture-only, which is what the comment here used
+ * to say while Epic 5.6/5.7 was still unbuilt.
  */
 function RunRowItem({ run, onRetry, retrying, dispatching }: RowProps) {
   const isFailed = run.status === RETRIABLE_STATUS;
-  const showFooter = isFailed || Boolean(run.error);
+  // A skip with no mapped reason renders nothing extra rather than a raw code:
+  // an unrecognised value is a backend this build has not caught up with, and
+  // "skipped" alone is still true.
+  const skipExplanation = run.skipReason ? SKIP_REASON_LABELS[run.skipReason] : undefined;
+  const showFooter = isFailed || Boolean(run.error) || Boolean(skipExplanation);
 
   return (
     <li className="space-y-1 px-4 py-3 text-sm">
@@ -45,7 +51,13 @@ function RunRowItem({ run, onRetry, retrying, dispatching }: RowProps) {
 
       {showFooter ? (
         <div className="flex items-center justify-between gap-3">
-          {run.error ? <p className="text-xs text-destructive">{run.error}</p> : <span />}
+          {run.error ? (
+            <p className="text-xs text-destructive">{run.error}</p>
+          ) : skipExplanation ? (
+            <p className="text-xs text-muted-foreground">{skipExplanation}</p>
+          ) : (
+            <span />
+          )}
           {isFailed ? (
             <Button
               type="button"

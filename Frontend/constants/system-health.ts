@@ -61,3 +61,22 @@ export const SCHEDULER_HEARTBEAT_NEVER_TICKED =
  * Touchpoints: lib/system-health-drilldown-view.tsx.
  */
 export const HISTORY_PAGE_SIZE = 50;
+
+/**
+ * Why a run did nothing, in words an operator can act on.
+ *
+ * Keys are the values `Backend/src/constants/systemHealth.js` defines and the
+ * worker writes to `AutomationRun.skipReason`. The field was stored, returned
+ * by the route and declared on the client type, but never rendered — so every
+ * skip looked identical, and the four causes need four different responses:
+ * one is a settings toggle, one is a deployment variable, one is a participant
+ * profile, one is a Xero reconnection.
+ *
+ * Touchpoints: lib/system-health-run-row.tsx (the only reader).
+ */
+export const SKIP_REASON_LABELS: Record<string, string> = {
+  settings_disabled: "Skipped because automation is switched off for this block",
+  no_email_backend: "Skipped because no email backend is configured in this environment",
+  no_recipient: "Skipped because the client has no email address on file",
+  accounting_not_connected: "Skipped because the accounting platform is not connected",
+};

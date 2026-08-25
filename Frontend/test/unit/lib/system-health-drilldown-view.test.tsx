@@ -318,3 +318,36 @@ describe("SystemHealthDrilldownView", () => {
     expect(await screen.findByText(/no runs yet/i)).toBeInTheDocument();
   });
 });
+
+/**
+ * `skipReason` is computed by the worker, stored, returned by the route and
+ * declared on the client type — and rendered nowhere. A skipped run showed the
+ * bare word "Skipped", so an operator could not tell a disabled block from a
+ * missing Xero connection from a participant with no address. Telling them
+ * apart is the whole reason the drill-down exists.
+ */
+describe("skipped runs say why", () => {
+  it("names the reason a run was skipped", async () => {
+    respondWith({ runs: [{ ...RUN, skipReason: "accounting_not_connected" }], total: 1 });
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+
+    expect(await screen.findByText(/accounting platform is not connected/i)).toBeInTheDocument();
+  });
+
+  it("reads no_recipient as a missing address, not as a system fault", async () => {
+    respondWith({ runs: [{ ...RUN, skipReason: "no_recipient" }], total: 1 });
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+
+    expect(await screen.findByText(/no email address/i)).toBeInTheDocument();
+  });
+
+  it("says nothing extra when a skip carries no reason", async () => {
+    respondWith({ runs: [{ ...RUN, skipReason: null }], total: 1 });
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+
+    expect(await screen.findByText("Skipped")).toBeInTheDocument();
+  });
+});
