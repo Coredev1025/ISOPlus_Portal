@@ -21,6 +21,7 @@ import { readQueueDepth } from '../services/automation/queueMetrics.js';
 import { getAutomationQueue } from '../services/automation/queue.js';
 import { KIND_INVOICE } from '../constants/automation.js';
 import { recordQueuedRuns } from '../services/automation/runs.js';
+import { emailsForRun } from '../services/automation/runEmails.js';
 import {
   ERROR_RATE_WINDOW_HOURS,
   WEEK_WINDOW_HOURS,
@@ -226,6 +227,35 @@ router.post('/workspace/:workspaceId/run', async (req, res) => {
   } catch (err) {
     logError('SystemHealth', 'Manual run failed', { message: err.message, stack: err.stack }, req);
     res.status(500).json({ message: 'Could not start the run' });
+  }
+});
+
+/**
+ * Every email one run produced, and what became of each.
+ *
+ * A separate request rather than part of the history page: 50 runs times their
+ * messages would make the page that answers "what happened lately" pay for
+ * detail an operator wants on one row at a time.
+ */
+router.get('/workspace/:workspaceId/runs/:runId/emails', async (req, res) => {
+  try {
+    const workspaceId = mongoEq(req.params.workspaceId);
+    // Scoped by workspace as well as id, so a run id from another tenant is a
+    // 404 rather than a read.
+    const run = await AutomationRun.findOne({
+      _id: mongoEq(req.params.runId),
+      workspaceId,
+    }).lean();
+
+    if (!run) {
+      res.status(404).json({ message: 'Run not found' });
+      return;
+    }
+
+    res.json({ emails: await emailsForRun(run) });
+  } catch (err) {
+    logError('SystemHealth', 'Run emails failed', { message: err.message, stack: err.stack }, req);
+    res.status(500).json({ message: 'Could not load the run\'s emails' });
   }
 });
 

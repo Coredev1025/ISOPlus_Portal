@@ -351,3 +351,74 @@ describe("skipped runs say why", () => {
     expect(await screen.findByText("Skipped")).toBeInTheDocument();
   });
 });
+
+/**
+ * 6.5 asks the drill-down for "every email sent". The run row carried one
+ * `recipient` string that is a participant key, not an address, and null for
+ * the billing-contact route — so an operator could see a run happened and never
+ * which messages it produced or what became of them.
+ */
+describe("per-run email detail", () => {
+  const EMAILS = {
+    emails: [
+      {
+        messageId: "m-1", recipient: "Mike Bird", recipientType: "billing_contact",
+        sentAt: "2026-08-13T00:01:00.000Z", state: "delivered", detail: null,
+      },
+      {
+        messageId: "m-2", recipient: "Jane Smith", recipientType: "client_participant",
+        sentAt: "2026-08-13T00:02:00.000Z", state: "bounced",
+        detail: "Email address doesn't exist.",
+      },
+    ],
+  };
+
+  it("is not fetched until the operator asks for it", async () => {
+    respondWith({ runs: [RUN], total: 1 });
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await screen.findByText(RUN.boardId);
+
+    // 50 runs times their messages would make the history page pay for detail
+    // wanted one row at a time.
+    expect(get.mock.calls.some(([url]) => String(url).includes("/emails"))).toBe(false);
+  });
+
+  it("lists each message with its recipient once expanded", async () => {
+    const user = userEvent.setup();
+    respondWith({ runs: [RUN], total: 1 });
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await screen.findByText(RUN.boardId);
+
+    get.mockResolvedValueOnce({ data: EMAILS });
+    await user.click(screen.getByRole("button", { name: /emails/i }));
+
+    expect(await screen.findByText("Mike Bird")).toBeInTheDocument();
+    expect(screen.getByText("Jane Smith")).toBeInTheDocument();
+  });
+
+  it("shows a bounce reason against the message that bounced", async () => {
+    const user = userEvent.setup();
+    respondWith({ runs: [RUN], total: 1 });
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await screen.findByText(RUN.boardId);
+
+    get.mockResolvedValueOnce({ data: EMAILS });
+    await user.click(screen.getByRole("button", { name: /emails/i }));
+
+    expect(await screen.findByText(/doesn't exist/i)).toBeInTheDocument();
+  });
+
+  it("says so plainly when a run sent nothing", async () => {
+    const user = userEvent.setup();
+    respondWith({ runs: [RUN], total: 1 });
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await screen.findByText(RUN.boardId);
+
+    get.mockResolvedValueOnce({ data: { emails: [] } });
+    await user.click(screen.getByRole("button", { name: /emails/i }));
+
+    // A skipped run, or one whose documents went to Xero instead. Empty is an
+    // answer, not a loading state.
+    expect(await screen.findByText(/no emails/i)).toBeInTheDocument();
+  });
+});

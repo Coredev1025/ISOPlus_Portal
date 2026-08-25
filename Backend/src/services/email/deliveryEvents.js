@@ -163,6 +163,28 @@ export function describeSesEvent(event) {
 }
 
 /**
+ * The delivery state one SES event type implies, or null for a type we do not
+ * record against a document (Open, Click).
+ *
+ * Exported so the System Health per-email listing can fold a message's events
+ * into one outcome without keeping a second copy of this mapping — two copies
+ * is how the panel and the drill-down come to disagree about what "bounced"
+ * means.
+ */
+export function stateForEventType(type) {
+  return EVENT_STATES[type] ?? null;
+}
+
+/**
+ * How final a state is, for callers folding several events into one outcome.
+ * Same ranking applyDeliveryEvent guards with, so a late Delivery cannot
+ * outrank an earlier Bounce here either.
+ */
+export function rankOfState(state) {
+  return DELIVERY_STATE_RANK[state] ?? 0;
+}
+
+/**
  * States an incoming event is allowed to overwrite: everything it outranks.
  * Equal rank is excluded, which is what makes a redelivered notification a
  * no-op rather than a second write.

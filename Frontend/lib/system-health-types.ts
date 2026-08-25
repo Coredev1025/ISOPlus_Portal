@@ -57,7 +57,6 @@ export type Overview = {
   succeeded: number;
   failed: number;
   errorRate24h: number;
-  trend: number[];
   errorRateWindowHours: number;
   delivery: DeliveryIssues;
   // The "is the scheduler even ticking" signal. With no ticks every other
@@ -65,12 +64,28 @@ export type Overview = {
   // optional to render.
   lastTickAt: string | null;
   queue: {
-    waiting: number;
-    active: number;
-    delayed: number;
+    // Only the figures the screen renders. waiting/active/delayed are on the
+    // wire but nothing reads them apart, and `total` already sums them.
     failed: number;
     total: number;
     backlogged: boolean;
     available: boolean;
   };
+};
+
+/**
+ * One email a run actually sent, from
+ * `GET /system-health/workspace/:id/runs/:runId/emails`.
+ *
+ * `recipient` is the participant key the message was addressed under, which is
+ * what EmailSend records — not the address itself, which stays out of the admin
+ * screen deliberately.
+ */
+export type RunEmailRow = {
+  messageId: string;
+  recipient: string | null;
+  recipientType: string | null;
+  sentAt: string;
+  state: string;
+  detail: string | null;
 };

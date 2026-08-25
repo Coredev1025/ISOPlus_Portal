@@ -11,7 +11,7 @@ import { ErrorBanner } from "@/lib/system-health-banners";
 import { RunHistoryPager } from "@/lib/system-health-pager";
 import { RunList } from "@/lib/system-health-run-row";
 import { ScheduleSummary } from "@/lib/system-health-schedule-summary";
-import type { RunRow, ScheduleRow } from "@/lib/system-health-types";
+import type { RunEmailRow, RunRow, ScheduleRow } from "@/lib/system-health-types";
 
 type Refusal = { periodKey: string; runs: RunRow[] } | null;
 
@@ -30,6 +30,10 @@ function runUrl(workspaceId: string, suffix: string) {
 
 export function SystemHealthDrilldownView({ workspaceId }: Props) {
   const [runs, setRuns] = useState<RunRow[]>([]);
+  // Fetched per run, on request. Keyed by run id so an expanded row keeps its
+  // messages while another is opened.
+  const [emailsByRun, setEmailsByRun] = useState<Record<string, RunEmailRow[] | undefined>>({});
+  const [emailsLoadingId, setEmailsLoadingId] = useState<string | null>(null);
   const [schedules, setSchedules] = useState<ScheduleRow[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(HISTORY_PAGE_SIZE);
@@ -91,12 +95,17 @@ export function SystemHealthDrilldownView({ workspaceId }: Props) {
     };
   }, [workspaceId, page, reloadToken]);
 
+  // Which kind the in-flight / last-refused dispatch was for, so the force
+  // override re-runs the same one rather than silently switching to invoices.
+  const [lastKind, setLastKind] = useState<"invoice" | "statement">("invoice");
+
   const start = useCallback(
-    async (force: boolean) => {
+    async (force: boolean, kind: "invoice" | "statement" = lastKind) => {
       setBusy(true);
       setRunError(null);
+      setLastKind(kind);
       try {
-        await axios.post(runUrl(workspaceId, `/run${force ? "?force=1" : ""}`), { kind: "invoice" });
+        await axios.post(runUrl(workspaceId, `/run${force ? "?force=1" : ""}`), { kind });
         setRefusal(null);
         reload();
       } catch (err) {
@@ -114,7 +123,7 @@ export function SystemHealthDrilldownView({ workspaceId }: Props) {
         setBusy(false);
       }
     },
-    [workspaceId, reload],
+    [workspaceId, reload, lastKind],
   );
 
   const retry = useCallback(
@@ -136,6 +145,36 @@ export function SystemHealthDrilldownView({ workspaceId }: Props) {
     [workspaceId, reload],
   );
 
+  /**
+   * Fetch one run's emails, or collapse them again.
+   *
+   * Kept out of the history request on purpose: 50 runs times their messages
+   * would make the page that answers "what happened lately" pay for detail an
+   * operator wants one row at a time. A failed fetch collapses rather than
+   * leaving a spinner — the run row itself is still useful.
+   */
+  const toggleEmails = useCallback(
+    async (runId: string) => {
+      if (emailsByRun[runId]) {
+        setEmailsByRun((current) => ({ ...current, [runId]: undefined }));
+        return;
+      }
+
+      setEmailsLoadingId(runId);
+      try {
+        const res = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/system-health/workspace/${workspaceId}/runs/${runId}/emails`,
+        );
+        setEmailsByRun((current) => ({ ...current, [runId]: res.data?.emails ?? [] }));
+      } catch {
+        setEmailsByRun((current) => ({ ...current, [runId]: undefined }));
+      } finally {
+        setEmailsLoadingId(null);
+      }
+    },
+    [emailsByRun, workspaceId],
+  );
+
   if (loading) return <Spinner />;
 
   // One dispatch at a time: a forced re-run fired during a retry, or a retry
@@ -149,8 +188,19 @@ export function SystemHealthDrilldownView({ workspaceId }: Props) {
       <ScheduleSummary schedules={schedules} />
 
       <div className="flex items-center gap-3">
-        <Button type="button" disabled={dispatching} onClick={() => start(false)}>
+        {/* Both kinds. The backend has always accepted either — only the
+            frontend was invoice-only, so a statement-only workspace's single
+            action was one the API 404s. */}
+        <Button type="button" disabled={dispatching} onClick={() => start(false, "invoice")}>
           Run invoices now
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={dispatching}
+          onClick={() => start(false, "statement")}
+        >
+          Run statements now
         </Button>
       </div>
 
@@ -172,7 +222,15 @@ export function SystemHealthDrilldownView({ workspaceId }: Props) {
         </Card>
       ) : null}
 
-      <RunList runs={runs} onRetry={retry} retryingId={retryingId} dispatching={dispatching} />
+      <RunList
+        runs={runs}
+        onRetry={retry}
+        retryingId={retryingId}
+        dispatching={dispatching}
+        emailsByRun={emailsByRun}
+        emailsLoadingId={emailsLoadingId}
+        onToggleEmails={toggleEmails}
+      />
 
       {/* Gated on `total`, not on the rows returned: a page that comes back
           empty still needs the Previous button that is the only way off it. */}

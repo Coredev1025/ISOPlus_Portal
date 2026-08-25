@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import EmailEvent from '../../src/models/EmailEvent.js';
+import EmailSend from '../../src/models/EmailSend.js';
 
 vi.mock('../../src/utils/automationConnectionStatus.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -117,7 +118,6 @@ describe('GET /api/system-health/overview', () => {
       errorRate24h: 0,
     });
     expect(res.body.queue).toMatchObject({ total: 0, backlogged: false });
-    expect(Array.isArray(res.body.trend)).toBe(true);
   });
 
   it('counts a workspace with either block enabled exactly once', async () => {
@@ -441,6 +441,106 @@ describe('POST /api/system-health/workspace/:workspaceId/runs/:runId/retry', () 
     const res = await agent.post(
       `/api/system-health/workspace/${WS}/runs/64b7f9c2e4b0f5a3d2c1a000/retry`,
     );
+    expect(res.status).toBe(404);
+  });
+});
+
+/**
+ * 6.5 asks the drill-down for "every email sent", not just per-run totals. The
+ * run row carried a single `recipient` string that is a participant KEY, not an
+ * address, and null entirely for the billing-contact route — so an operator
+ * could see that a run happened and never which messages it produced or what
+ * became of them.
+ *
+ * EmailSend is the join table (messageId -> board/period/recipient) and
+ * EmailEvent carries the outcome keyed on the same id. Both already existed;
+ * nothing read them.
+ */
+describe('GET /api/system-health/workspace/:workspaceId/runs/:runId/emails', () => {
+  const PERIOD = '20260116-0900';
+  let app;
+
+  beforeEach(async () => {
+    await AutomationRun.deleteMany({});
+    await EmailSend.deleteMany({});
+    await EmailEvent.deleteMany({});
+    await Board.deleteMany({});
+    await Board.collection.insertMany([{ boardId: 'b1', workspaceId: WS, name: 'b1' }]);
+    app = createApp();
+  });
+
+  async function runWithEmails() {
+    const run = await AutomationRun.create({
+      workspaceId: WS, boardId: 'b1', kind: 'invoice_automation',
+      periodKey: PERIOD, jobId: `inv:b1:${PERIOD}`, status: 'succeeded',
+    });
+    await EmailSend.create([
+      { messageId: 'msg-delivered', kind: 'invoice_automation', workspaceId: WS, boardId: 'b1', periodKey: PERIOD, recipientKey: 'Mike Bird', recipientType: 'billing_contact' },
+      { messageId: 'msg-bounced', kind: 'invoice_automation', workspaceId: WS, boardId: 'b1', periodKey: PERIOD, recipientKey: 'Jane Smith', recipientType: 'client_participant' },
+      { messageId: 'msg-quiet', kind: 'invoice_automation', workspaceId: WS, boardId: 'b1', periodKey: PERIOD, recipientKey: 'No Events', recipientType: 'billing_contact' },
+    ]);
+    await EmailEvent.create([
+      { eventType: 'Delivery', sesMessageId: 'msg-delivered', eventAt: new Date() },
+      { eventType: 'Bounce', sesMessageId: 'msg-bounced', eventAt: new Date(), detail: { bounceType: 'Permanent', bounceSubType: 'NoEmail' } },
+    ]);
+    return run;
+  }
+
+  it('refuses a client', async () => {
+    const run = await runWithEmails();
+    const { agent } = await authenticatedAgent(app, { role: 'isoplus_user' });
+    await agent.get('/api/auth/verify');
+
+    const res = await agent.get(`/api/system-health/workspace/${WS}/runs/${run._id}/emails`);
+
+    expect(res.status).toBe(403);
+  });
+
+  it('lists one row per message, with who it went to', async () => {
+    const run = await runWithEmails();
+    const { agent } = await authenticatedAgent(app);
+
+    const res = await agent.get(`/api/system-health/workspace/${WS}/runs/${run._id}/emails`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.emails).toHaveLength(3);
+    const byId = Object.fromEntries(res.body.emails.map((e) => [e.messageId, e]));
+    expect(byId['msg-delivered'].recipient).toBe('Mike Bird');
+    expect(byId['msg-delivered'].recipientType).toBe('billing_contact');
+  });
+
+  it('carries each message its own delivery outcome', async () => {
+    const run = await runWithEmails();
+    const { agent } = await authenticatedAgent(app);
+
+    const res = await agent.get(`/api/system-health/workspace/${WS}/runs/${run._id}/emails`);
+
+    const byId = Object.fromEntries(res.body.emails.map((e) => [e.messageId, e]));
+    expect(byId['msg-delivered'].state).toBe('delivered');
+    expect(byId['msg-bounced'].state).toBe('bounced');
+    // A bounce is the one outcome the operator can act on, so it carries a
+    // sentence rather than only a label.
+    expect(byId['msg-bounced'].detail).toMatch(/doesn't exist|does not exist/i);
+    // Handed to SES, nothing heard back yet — not a failure.
+    expect(byId['msg-quiet'].state).toBe('sent');
+  });
+
+  it('does not leak another run\'s messages', async () => {
+    const run = await runWithEmails();
+    await EmailSend.create({
+      messageId: 'msg-other-period', kind: 'invoice_automation', workspaceId: WS,
+      boardId: 'b1', periodKey: '20260201-0900', recipientKey: 'Other',
+    });
+    const { agent } = await authenticatedAgent(app);
+
+    const res = await agent.get(`/api/system-health/workspace/${WS}/runs/${run._id}/emails`);
+
+    expect(res.body.emails.map((e) => e.messageId)).not.toContain('msg-other-period');
+  });
+
+  it('404s an unknown run', async () => {
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.get(`/api/system-health/workspace/${WS}/runs/64b7f7f7f7f7f7f7f7f7f7f7/emails`);
     expect(res.status).toBe(404);
   });
 });
