@@ -151,3 +151,35 @@ describe('AutomationStatusPanel recent-document delivery state', () => {
     ).toBeInTheDocument();
   });
 });
+
+/**
+ * Epic 5: "a short list (last 10) of generated invoices/statements with
+ * recipient, sent time, and delivery state". The recipient was the one part
+ * never rendered — the backend now sends `participant`, so the row has to show
+ * it, and show it as a recipient rather than silently reusing it as the link
+ * label the way `recentDocumentLabel` does for an unnumbered statement.
+ */
+describe('recipient on a recent document', () => {
+  it('names who the document went to', () => {
+    const status = renderPanel([doc({ participant: 'Samuel Rivers' })]);
+
+    expect(rowFor(status, /INV-1004/).getByText(/samuel rivers/i)).toBeInTheDocument();
+  });
+
+  it('says so plainly when no recipient was recorded', () => {
+    const status = renderPanel([doc({ participant: null })]);
+
+    // Silence would read as "sent to nobody in particular"; the panel exists to
+    // stop the client guessing.
+    expect(rowFor(status, /INV-1004/).getByText(/no recipient recorded/i)).toBeInTheDocument();
+  });
+
+  it('does not repeat the recipient when it is already the row label', () => {
+    // An unnumbered statement falls back to the participant as its link text.
+    const status = renderPanel([
+      doc({ type: 'Monthly Statement', invoiceNumber: null, participant: 'Jane Smith' }),
+    ]);
+
+    expect(rowFor(status, 'Jane Smith').getAllByText(/jane smith/i)).toHaveLength(1);
+  });
+});

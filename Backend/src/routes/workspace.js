@@ -455,6 +455,10 @@ async function loadRecentAutomationDocuments(workspaceId) {
         pdfLinkId: { $first: '$_id' },
         type: { $first: '$type' },
         invoiceNumber: { $first: '$invoiceNumber' },
+        // Who the document was for. Epic 5's status panel names the recipient
+        // beside the sent time; the field was already stored and already
+        // declared on the client type, and only the projection was missing.
+        participant: { $first: { $ifNull: ['$participant', null] } },
         periodKey: { $first: '$periodKey' },
         createdAt: { $first: '$createdAt' },
         // What became of the email that carried this document. `$ifNull`
@@ -474,6 +478,9 @@ async function loadRecentAutomationDocuments(workspaceId) {
   return rows.map((row) => ({
     type: row.type,
     invoiceNumber: row.invoiceNumber ?? null,
+    // Always present, null when the row carries none, so the client can tell
+    // "nobody was recorded" apart from "this build does not send the field".
+    participant: row.participant ?? null,
     periodKey: row.periodKey,
     // A backend PATH, not the stored URL. The stored one is a presigned S3 link
     // captured when the document was generated, and seven days is the longest

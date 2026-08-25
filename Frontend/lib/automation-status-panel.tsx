@@ -67,6 +67,24 @@ function StatusRow({
   );
 }
 
+/**
+ * The recipient to print beside a document, or null when there is nothing to
+ * add.
+ *
+ * Epic 5 asks each recent send to name its recipient. `participant` is the
+ * client the document was raised for, which is also the profile the send
+ * address is read from, so it is the recipient in the sense the panel needs.
+ *
+ * Null when it would duplicate the row's own label: `recentDocumentLabel`
+ * falls back to the participant for a statement that carries no number, and
+ * the same name twice on one row reads as two different facts.
+ */
+function recipientLabel(doc: AutomationRecentDocument): string | null {
+  const participant = doc.participant?.trim();
+  if (!participant) return "No recipient recorded";
+  return participant === recentDocumentLabel(doc) ? null : participant;
+}
+
 // Named `doc`, not `document`: this module's tests stub `document.elementFromPoint`,
 // and a prop that shadows the global is one rename away from a confusing failure.
 function RecentDocumentRow({
@@ -86,6 +104,12 @@ function RecentDocumentRow({
         {recentDocumentLabel(doc)}
       </a>
       <span className="text-muted-foreground">{doc.type}</span>
+      {/* Who it went to. Suppressed when the label already IS the participant —
+          an unnumbered statement falls back to it — so the row does not print
+          the same name twice. */}
+      {recipientLabel(doc) ? (
+        <span className="text-muted-foreground">{recipientLabel(doc)}</span>
+      ) : null}
       <span className="text-muted-foreground">
         {formatNextRun(doc.createdAt, timeZone)}
       </span>
