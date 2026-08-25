@@ -455,9 +455,13 @@ async function loadRecentAutomationDocuments(workspaceId) {
         pdfLinkId: { $first: '$_id' },
         type: { $first: '$type' },
         invoiceNumber: { $first: '$invoiceNumber' },
-        // Who the document was for. Epic 5's status panel names the recipient
-        // beside the sent time; the field was already stored and already
-        // declared on the client type, and only the projection was missing.
+        // The client the document was raised for. Epic 5's status panel names
+        // a recipient beside the sent time and this is the nearest thing
+        // stored — under Recipient = Billing Contact the mail can go to that
+        // profile's Billing Email instead, and no mailbox is recorded, so the
+        // panel renders this as "For <name>" rather than as the address. The
+        // field was already stored and already declared on the client type;
+        // only the projection was missing.
         participant: { $first: { $ifNull: ['$participant', null] } },
         periodKey: { $first: '$periodKey' },
         createdAt: { $first: '$createdAt' },

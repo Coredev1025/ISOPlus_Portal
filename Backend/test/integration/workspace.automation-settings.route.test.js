@@ -348,9 +348,14 @@ describe('GET/PUT /api/workspaces/:workspaceId/automation-settings', () => {
    * Epic 5 asks Recent sends to show the RECIPIENT beside the sent time and the
    * delivery state. `PDFLink.participant` is already stored and the frontend
    * type already declares it — the aggregation simply never projected it, so
-   * the panel had no recipient to render.
+   * the panel had no name to render at all.
+   *
+   * `participant` is the client the document was raised for, which under
+   * Recipient = Billing Contact need not own the mailbox the mail went to.
+   * The panel renders it "For <name>" for that reason; nothing here or in the
+   * response claims it is the address.
    */
-  it('carries the participant so the panel can name who each document went to', async () => {
+  it('carries the participant so the panel can name the client each document was raised for', async () => {
     await automationPdfLink({
       pdfLink: 'https://example.test/with-participant.pdf',
       invoiceNumber: 'INV-2001',

@@ -72,17 +72,23 @@ function StatusRow({
  * add.
  *
  * Epic 5 asks each recent send to name its recipient. `participant` is the
- * client the document was raised for, which is also the profile the send
- * address is read from, so it is the recipient in the sense the panel needs.
+ * closest thing stored: the client the document was raised for, and the
+ * profile the send address is read from.
+ *
+ * It is deliberately NOT presented as the recipient. With Recipient set to
+ * Billing Contact the address comes from that profile's Billing Email, which
+ * may be a different person's mailbox — so "For <name>" is the whole of what
+ * this data supports. The mailbox actually written to is not recorded
+ * anywhere; naming it is a follow-up, not something to imply here.
  *
  * Null when it would duplicate the row's own label: `recentDocumentLabel`
  * falls back to the participant for a statement that carries no number, and
  * the same name twice on one row reads as two different facts.
  */
-function recipientLabel(doc: AutomationRecentDocument): string | null {
+function clientLabel(doc: AutomationRecentDocument): string | null {
   const participant = doc.participant?.trim();
-  if (!participant) return "No recipient recorded";
-  return participant === recentDocumentLabel(doc) ? null : participant;
+  if (!participant) return "No client recorded";
+  return participant === recentDocumentLabel(doc) ? null : `For ${participant}`;
 }
 
 // Named `doc`, not `document`: this module's tests stub `document.elementFromPoint`,
@@ -92,7 +98,7 @@ function RecentDocumentRow({
   timeZone,
 }: Readonly<{ doc: AutomationRecentDocument; timeZone?: string }>) {
   const delivery = deliveryStatus(doc);
-  const recipient = recipientLabel(doc);
+  const client = clientLabel(doc);
 
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px]">
@@ -105,11 +111,12 @@ function RecentDocumentRow({
         {recentDocumentLabel(doc)}
       </a>
       <span className="text-muted-foreground">{doc.type}</span>
-      {/* Who it went to. Suppressed when the label already IS the participant —
-          an unnumbered statement falls back to it — so the row does not print
-          the same name twice. */}
-      {recipient ? (
-        <span className="text-muted-foreground">{recipient}</span>
+      {/* Who it is for — not who it was emailed to; see `clientLabel`.
+          Suppressed when the label already IS the participant — an unnumbered
+          statement falls back to it — so the row does not print the same name
+          twice. */}
+      {client ? (
+        <span className="text-muted-foreground">{client}</span>
       ) : null}
       <span className="text-muted-foreground">
         {formatNextRun(doc.createdAt, timeZone)}
