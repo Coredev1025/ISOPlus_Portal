@@ -1,5 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { test, expect, type Page } from "@playwright/test";
+import {
+  clearDeliveryFailures,
+  invoiceNumber,
+  seedDeliveryFailures,
+} from "./support/delivery-failures";
 
 /**
  * Epic 5 — the Invoice & Statement Automation tab, end to end.
@@ -143,6 +148,9 @@ function removeSeededDocument(): void {
 // alternative, but a workspace cannot be created locally: the list is proxied
 // from ISO+ rather than stored.
 test.describe.configure({ mode: "serial" });
+
+/** These rows belong to this file; see e2e/support/delivery-failures.ts. */
+const SUITE = "client-panel" as const;
 
 test.describe("Invoice & Statement Automation", () => {
   test.skip(
@@ -508,6 +516,46 @@ test.describe("Invoice & Statement Automation", () => {
       await expect(row).toContainText(/no email address/i);
     } finally {
       removeSeededDocument();
+    }
+  });
+
+  /**
+   * 6.2: a bounce has to reach the CLIENT, inline against the send it belongs
+   * to, in words naming the thing to fix — not buried in a log only support
+   * can read.
+   *
+   * The rows are seeded because the pipeline that produces them cannot run on
+   * a laptop; see e2e/support/delivery-failures.ts. Everything from the stored
+   * row to the rendered sentence is real.
+   */
+  test("a bounced document says so on the client panel, with the reason", async ({
+    page,
+  }) => {
+    test.slow();
+    // Rows carry this file's own marker, so the System Health spec running in
+    // a parallel worker cannot delete them mid-assertion.
+    seedDeliveryFailures({ suite: SUITE, workspaceId: WORKSPACE });
+
+    try {
+      await page.goto(AUTOMATION_URL);
+
+      const bounced = page
+        .getByRole("listitem")
+        .filter({ hasText: invoiceNumber(SUITE, "bounce") });
+      await expect(bounced).toBeVisible();
+      await expect(bounced).toContainText(/bounced/i);
+      // The sentence sits in the same row as the document it explains — the
+      // client has to know WHICH send to chase and which address to correct.
+      await expect(bounced).toContainText(/doesn't exist/i);
+
+      // And a delivered one is not dressed up as a problem.
+      const delivered = page
+        .getByRole("listitem")
+        .filter({ hasText: invoiceNumber(SUITE, "ok") });
+      await expect(delivered).toContainText(/delivered/i);
+      await expect(delivered).not.toContainText(/doesn't exist/i);
+    } finally {
+      clearDeliveryFailures(SUITE);
     }
   });
 

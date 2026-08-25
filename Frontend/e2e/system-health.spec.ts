@@ -1,4 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
+import {
+  clearDeliveryFailures,
+  messageId,
+  runMarker,
+  seedDeliveryFailures,
+} from "./support/delivery-failures";
 
 /**
  * Epic 6 — the System Health tab, its per-client drill-down, and the role gate.
@@ -133,3 +139,97 @@ test.describe("System Health", () => {
     await expect(page.getByRole("tab", { name: /system health/i })).toHaveCount(0);
   });
 });
+
+/** These rows belong to this file; see e2e/support/delivery-failures.ts. */
+const SUITE = "system-health" as const;
+
+/**
+ * The reporting half of 6.2/6.4/6.5, exercised against seeded delivery
+ * failures.
+ *
+ * The pipeline that PRODUCES a bounce cannot run locally — there is no SES, the
+ * worker falls back to the offline outbox, and no messageId exists for an event
+ * to match. What is testable, and what these cover, is everything downstream:
+ * that a bounce and a complaint reach the overview's counters, and that a
+ * per-message outcome reaches the drill-down attributed to the right recipient.
+ * See e2e/support/delivery-failures.ts for why the rows are seeded.
+ */
+test.describe("delivery failures are reported", () => {
+  // Serial: the three tests read one shared set of seeded rows. Under the
+  // config's fullyParallel they would otherwise land in different workers and
+  // one test's cleanup would delete the rows another is still asserting on.
+  test.describe.configure({ mode: "serial" });
+  test.skip(!EMAIL || !PASSWORD, "set E2E_EMAIL and E2E_PASSWORD — see npm run dev:user");
+
+  test.beforeAll(() => {
+    seedDeliveryFailures({ suite: SUITE, workspaceId: WORKSPACE });
+  });
+
+  test.afterAll(() => {
+    clearDeliveryFailures(SUITE);
+  });
+
+  test("the overview counts bounces and complaints", async ({ page }) => {
+    test.slow();
+    await signIn(page, EMAIL, PASSWORD);
+    await page.goto("/dashboard");
+    await page.getByRole("tab", { name: /system health/i }).click();
+
+    // The tiles replaced a paragraph that said delivery reporting was not
+    // built. Both must now be present AND numeric.
+    const bounced = page.getByText(/^Bounced \(/);
+    await expect(bounced).toBeVisible();
+    await expect(page.getByText(/^Complaints \(/)).toBeVisible();
+    await expect(page.getByText(/not built yet/i)).toHaveCount(0);
+
+    // At least the seeded ones. Not an exact count: a developer's database may
+    // legitimately hold other events, and pinning the total would make this
+    // test fail for reasons that have nothing to do with the screen.
+    const overview = await page.request.get(`${BACKEND}/api/system-health/overview`);
+    const body = await overview.json();
+    expect(body.delivery.bounced).toBeGreaterThanOrEqual(1);
+    expect(body.delivery.complained).toBeGreaterThanOrEqual(1);
+  });
+
+  test("the drill-down names each message and why it failed", async ({ page }) => {
+    test.slow();
+    await signIn(page, EMAIL, PASSWORD);
+    await page.goto(`/workspace/${WORKSPACE}/system-health`);
+
+    // Expand the seeded run. The listing is fetched on demand, so nothing
+    // about it is on screen until this is clicked.
+    await page.getByRole("button", { name: /show emails/i }).first().click();
+
+    await expect(page.getByText("Jane Smith")).toBeVisible();
+    await expect(page.getByText(/doesn't exist/i)).toBeVisible();
+    // The delivered one must not be dressed up as a failure.
+    await expect(page.getByText("Mike Bird")).toBeVisible();
+  });
+
+  test("a rendering failure is a failure, not a silent success", async ({ page }) => {
+    test.slow();
+    await signIn(page, EMAIL, PASSWORD);
+
+    // The defect this covers left the document reading "Sent" forever, because
+    // the event type was stored but had no mapped delivery state.
+    const res = await page.request.get(
+      `${BACKEND}/api/system-health/workspace/${WORKSPACE}/runs/${await seededRunId(page)}/emails`,
+    );
+    const { emails } = await res.json();
+    const render = emails.find((e: { messageId: string }) => e.messageId === messageId(SUITE, "render"));
+
+    expect(render.state).toBe("failed");
+    expect(render.detail).toMatch(/template/i);
+  });
+});
+
+/** The _id of the run seedDeliveryFailures wrote, read back through the API. */
+async function seededRunId(page: Page): Promise<string> {
+  const res = await page.request.get(
+    `${BACKEND}/api/system-health/workspace/${WORKSPACE}?page=1`,
+  );
+  const { runs } = await res.json();
+  const seeded = runs.find((r: { jobId: string }) => r.jobId === runMarker(SUITE));
+  expect(seeded, "seeded run not found in history").toBeTruthy();
+  return seeded._id;
+}
