@@ -145,17 +145,54 @@ function RecentDocumentRow({
   );
 }
 
+/**
+ * The two operational signals from `GET /automation-settings`'s `health` block.
+ *
+ * `queueBacklogged` is a boolean rather than a depth on purpose: the queue is
+ * global across tenants, so the count would disclose other clients' volume.
+ * The client only needs the part they can act on — that a run may be late.
+ */
+export type AutomationHealth = {
+  queueBacklogged: boolean;
+  queueAvailable: boolean;
+  accounting: string;
+};
+
 type AutomationStatusPanelProps = Readonly<{
   invoice: AutomationBlock;
   statement: AutomationBlock;
   recentDocuments: readonly AutomationRecentDocument[];
+  /** Absent on a response from a backend that predates the health block. */
+  health?: AutomationHealth;
 }>;
+
+/**
+ * The conditions worth interrupting a client about, and nothing else.
+ *
+ * `disconnected` is deliberately silent: plenty of workspaces never connect an
+ * accounting platform, and nagging them about a feature they do not use is how
+ * a status panel teaches people to ignore it. `needs_reauth` is the opposite —
+ * they had it working, it lapsed, and only they can restore it.
+ */
+function healthNotices(health: AutomationHealth | undefined): string[] {
+  if (!health) return [];
+  const notices: string[] = [];
+  if (health.queueBacklogged) {
+    notices.push("The automation queue is busy, so a run may start later than its scheduled time.");
+  }
+  if (health.accounting === "needs_reauth") {
+    notices.push("Your accounting platform connection has expired — reconnect it or invoices cannot be sent there.");
+  }
+  return notices;
+}
 
 export function AutomationStatusPanel({
   invoice,
   statement,
   recentDocuments,
+  health,
 }: AutomationStatusPanelProps) {
+  const notices = healthNotices(health);
   return (
     <section aria-labelledby="automation-status-heading">
       <Card className="border p-5 shadow-sm">
@@ -181,6 +218,20 @@ export function AutomationStatusPanel({
           <StatusRow title="Invoices" block={invoice} />
           <StatusRow title="Statements" block={statement} />
         </div>
+
+        {/* Operational conditions the schedule rows cannot express: a backlogged
+            queue and a lapsed accounting connection both leave a block reading
+            "On track" while nothing actually arrives. role="status" so a poll
+            that surfaces one announces it. */}
+        {notices.length > 0 ? (
+          <ul role="status" className="mt-3 space-y-1">
+            {notices.map((notice) => (
+              <li key={notice} className="text-[12px] text-amber-700 dark:text-amber-400">
+                {notice}
+              </li>
+            ))}
+          </ul>
+        ) : null}
 
         {recentDocuments.length > 0 ? (
           <div className="mt-4 border-t pt-3">

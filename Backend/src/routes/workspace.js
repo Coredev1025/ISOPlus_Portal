@@ -15,6 +15,8 @@ import {
   automationScheduleRejection,
 } from '../utils/automationSettingsHelpers.js';
 import { upsertSchedule, disableSchedule } from '../services/scheduler/schedules.js';
+import { readQueueDepth } from '../services/automation/queueMetrics.js';
+import { xeroConnectionStatus } from '../utils/automationConnectionStatus.js';
 import { DELIVERY_STATE_GENERATED, KIND_INVOICE, KIND_STATEMENT } from '../constants/automation.js';
 import { getWorkspace, getBoard, getWorkspacePage, getBoardPage, getMemberRole } from '../services/isoplus.js';
 import DynamicLinkingService from '../services/dynamicLinking.js';
@@ -436,6 +438,42 @@ async function loadAutomationJobs(workspaceId) {
  */
 const RECENT_DOCUMENTS_LIMIT = 10;
 
+/**
+ * The two operational signals a client needs about their own automation, from
+ * the same sources the admin System Health screen reads.
+ *
+ * `queueBacklogged` is a BOOLEAN on purpose. Queue depth is global across every
+ * tenant, so returning the count here would tell one client how much work the
+ * others are generating. The boolean carries the only part they can act on —
+ * "your run may be late" — and discloses nothing about volume.
+ *
+ * `accounting` is this workspace's own Xero state. It matters most to the
+ * client because they are the only party who can re-authorise it; before this
+ * it was visible only to owner/support, on a screen a client cannot open.
+ *
+ * Never throws: `readQueueDepth` already answers `available: false` rather than
+ * rejecting when Redis is down, and a missing Business row reads as
+ * not_connected. A degraded signal must not fail the settings load, which is
+ * the page's primary content.
+ */
+async function clientAutomationHealth(workspaceId) {
+  const [queue, business] = await Promise.all([
+    readQueueDepth(),
+    // The same lookup the feature-toggle routes use, rather than a second
+    // Business import in this file.
+    findBusinessByWorkspaceId(workspaceId),
+  ]);
+
+  return {
+    queueBacklogged: queue.backlogged === true,
+    // Distinguishes "the queue is fine" from "we could not ask it" — a false
+    // backlog reading and an unknown one are different things to a client
+    // wondering why nothing arrived.
+    queueAvailable: queue.available !== false,
+    accounting: xeroConnectionStatus(business, new Date()),
+  };
+}
+
 async function loadRecentAutomationDocuments(workspaceId) {
   // Dedupe in the database, not after a truncated read. The previous pipeline
   // took the newest 50 rows and deduped those, so a single 50-item invoice —
@@ -546,9 +584,11 @@ router.get('/:workspaceId/automation-settings', authenticateToken, async (req, r
     const settings = await AutomationSettings.findOne({ workspaceId: { $eq: workspaceId } }).lean();
     const jobs = await loadAutomationJobs(workspaceId);
     const recentDocuments = await loadRecentAutomationDocuments(workspaceId);
+    const health = await clientAutomationHealth(workspaceId);
     return res.status(200).json({
       ...buildAutomationSettingsPayload(settings, jobs),
       recentDocuments,
+      health,
     });
   } catch (err) {
     error(

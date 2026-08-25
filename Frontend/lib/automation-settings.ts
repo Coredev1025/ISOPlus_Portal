@@ -81,6 +81,16 @@ export type AutomationSettings = {
   statement: AutomationBlock;
   /** GET only — the PUT echo does not carry it. */
   recentDocuments?: AutomationRecentDocument[];
+  /**
+   * GET only, like recentDocuments. Queue and accounting-connection signals
+   * from the same sources the admin System Health screen reads — see
+   * `AutomationHealth` in lib/automation-status-panel.tsx.
+   */
+  health?: {
+    queueBacklogged: boolean;
+    queueAvailable: boolean;
+    accounting: string;
+  };
 };
 
 /** Frozen: consumers must deep-copy, not spread, or they alias `every`. */

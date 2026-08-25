@@ -5,6 +5,11 @@ import { server } from '../msw/server.js';
 import { createApp } from '../../src/app.js';
 import AutomationSettings from '../../src/models/AutomationSettings.js';
 import Business from '../../src/models/Business.js';
+import {
+  CONNECTED,
+  DISCONNECTED,
+  NEEDS_REAUTH,
+} from '../../src/utils/automationConnectionStatus.js';
 import PDFLink from '../../src/models/PDFLink.js';
 import ScheduledJob from '../../src/models/ScheduledJob.js';
 import { KIND_INVOICE, KIND_STATEMENT } from '../../src/constants/automation.js';
@@ -644,6 +649,47 @@ describe('GET/PUT /api/workspaces/:workspaceId/automation-settings', () => {
     const stored = await AutomationSettings.findOne({ workspaceId: WS });
     expect(stored.statement.enabled).toBe(false);
     expect(stored.statement.runAt).toBe('09:00');
+  });
+
+  /**
+   * 6.6 asks for queue depth and Accounting Integrations connection status to
+   * reach BOTH the admin screens and the client panel. They reached only the
+   * admin screens: `readQueueDepth` and `xeroConnectionStatus` had one consumer
+   * each, inside the System Health router, which 403s an `isoplus_user`.
+   *
+   * The queue figure is deliberately NOT the raw count. Queue depth is global,
+   * so handing a tenant "217 waiting" leaks how much work other clients are
+   * generating. The client needs only the actionable half — is my run stuck
+   * behind a backlog — which a boolean carries without the disclosure.
+   */
+  describe('automation health for the client panel', () => {
+    it('reports a queue backlog as a boolean, never as a cross-tenant count', async () => {
+      const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.health).toBeDefined();
+      expect(typeof res.body.health.queueBacklogged).toBe('boolean');
+      expect(res.body.health.queueTotal).toBeUndefined();
+      expect(res.body.health.waiting).toBeUndefined();
+    });
+
+    it("carries this workspace's own accounting connection status", async () => {
+      // The client is the only party who can re-authorise Xero, so
+      // needs_reauth has to be visible to them, not only to support.
+      const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
+
+      expect([CONNECTED, DISCONNECTED, NEEDS_REAUTH]).toContain(
+        res.body.health.accounting,
+      );
+    });
+
+    it('still answers when the queue cannot be reached', async () => {
+      // Redis down must degrade the panel, not break the settings load.
+      const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.health).toHaveProperty('queueBacklogged');
+    });
   });
 
   it('enables both blocks independently', async () => {

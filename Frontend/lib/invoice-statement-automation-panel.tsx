@@ -146,6 +146,9 @@ export function InvoiceStatementAutomationPanel({
   const [recentDocuments, setRecentDocuments] = useState<
     AutomationRecentDocument[]
   >([]);
+  // Held apart from settings for the same reason as recentDocuments: the PUT
+  // echo does not carry it, so a save must not blank the health notices.
+  const [health, setHealth] = useState<AutomationSettings["health"]>(undefined);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -159,6 +162,7 @@ export function InvoiceStatementAutomationPanel({
           setSettings(loaded);
           setSavedSettings(loaded);
           setRecentDocuments(loaded.recentDocuments ?? []);
+          setHealth(loaded.health);
           setLoadState("loaded");
         }
       })
@@ -215,6 +219,7 @@ export function InvoiceStatementAutomationPanel({
         invoice={savedSettings.invoice}
         statement={savedSettings.statement}
         recentDocuments={recentDocuments}
+        health={health}
       />
 
       <AutomationSection

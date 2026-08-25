@@ -49,6 +49,23 @@ function doc(
   };
 }
 
+/** Renders the panel with a health block, for the 6.6 signals. */
+function renderPanelWithHealth(health: {
+  queueBacklogged: boolean;
+  queueAvailable: boolean;
+  accounting: string;
+}) {
+  render(
+    <AutomationStatusPanel
+      invoice={block({ enabled: true })}
+      statement={block()}
+      recentDocuments={[]}
+      health={health}
+    />
+  );
+  return within(screen.getByRole("region", { name: /automation status/i }));
+}
+
 function renderPanel(recentDocuments: AutomationRecentDocument[]) {
   render(
     <AutomationStatusPanel
@@ -197,5 +214,42 @@ describe('the client on a recent document', () => {
     ]);
 
     expect(rowFor(status, 'Jane Smith').getAllByText(/jane smith/i)).toHaveLength(1);
+  });
+});
+
+/**
+ * 6.6 asks for queue depth and accounting connection status on BOTH the admin
+ * screens and the client panel. They reached only the admin screens, so a
+ * client whose run was stuck behind a backlog, or whose Xero token had
+ * expired, saw a panel that said "On track".
+ *
+ * The queue signal is a boolean by design — the depth is global, and the count
+ * would leak other tenants' volume.
+ */
+describe("automation health on the client panel", () => {
+  it("warns when the run may be delayed by a backlog", () => {
+    const status = renderPanelWithHealth({ queueBacklogged: true, queueAvailable: true, accounting: "connected" });
+
+    expect(status.getByText(/busy|backlog|delayed/i)).toBeInTheDocument();
+  });
+
+  it("says nothing about the queue when it is clear", () => {
+    const status = renderPanelWithHealth({ queueBacklogged: false, queueAvailable: true, accounting: "connected" });
+
+    expect(status.queryByText(/backlog/i)).not.toBeInTheDocument();
+  });
+
+  it("tells the client when Xero needs re-authorising", () => {
+    // The client is the only party who can fix this.
+    const status = renderPanelWithHealth({ queueBacklogged: false, queueAvailable: true, accounting: "needs_reauth" });
+
+    expect(status.getByText(/reconnect|re-authorise|reauthorise/i)).toBeInTheDocument();
+  });
+
+  it("stays quiet when accounting is simply not in use", () => {
+    const status = renderPanelWithHealth({ queueBacklogged: false, queueAvailable: true, accounting: "disconnected" });
+
+    // Not every workspace uses Xero; "disconnected" is not a fault to nag about.
+    expect(status.queryByText(/reconnect/i)).not.toBeInTheDocument();
   });
 });
