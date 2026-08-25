@@ -15,14 +15,18 @@ import {
 } from '../../../src/constants/scheduler.js';
 
 describe('buildPortalBoardSyncMeta', () => {
-  const original = process.env.BOARD_SYNC_CRON;
+  const originalCron = process.env.BOARD_SYNC_CRON;
+  const originalEnabled = process.env.BOARD_SYNC_ENABLED;
   afterEach(() => {
-    if (original === undefined) delete process.env.BOARD_SYNC_CRON;
-    else process.env.BOARD_SYNC_CRON = original;
+    if (originalCron === undefined) delete process.env.BOARD_SYNC_CRON;
+    else process.env.BOARD_SYNC_CRON = originalCron;
+    if (originalEnabled === undefined) delete process.env.BOARD_SYNC_ENABLED;
+    else process.env.BOARD_SYNC_ENABLED = originalEnabled;
   });
 
   it('returns cron, timezone, and nextRunAt from the env cron', () => {
     delete process.env.BOARD_SYNC_CRON;
+    delete process.env.BOARD_SYNC_ENABLED;
     const now = new Date('2026-08-11T04:05:00Z');
     const meta = buildPortalBoardSyncMeta({ now });
 
@@ -31,20 +35,32 @@ describe('buildPortalBoardSyncMeta', () => {
     expect(meta.nextRunAt).toBeInstanceOf(Date);
     expect(meta.nextRunAt.getTime()).toBeGreaterThan(now.getTime());
   });
+
+  it('returns nextRunAt null when BOARD_SYNC_ENABLED is off', () => {
+    delete process.env.BOARD_SYNC_CRON;
+    process.env.BOARD_SYNC_ENABLED = 'false';
+    const meta = buildPortalBoardSyncMeta({ now: new Date('2026-08-11T04:05:00Z') });
+    expect(meta.nextRunAt).toBeNull();
+    expect(meta.cron).toBe(BOARD_SYNC_CRON_DEFAULT);
+  });
 });
 
 describe('startBoardSyncCron', () => {
   const original = process.env.BOARD_SYNC_CRON;
+  const originalEnabled = process.env.BOARD_SYNC_ENABLED;
   const originalEnv = process.env.NODE_ENV;
 
   beforeEach(() => {
     runBoardSyncSweep.mockClear();
     process.env.NODE_ENV = 'production';
+    delete process.env.BOARD_SYNC_ENABLED;
   });
 
   afterEach(() => {
     if (original === undefined) delete process.env.BOARD_SYNC_CRON;
     else process.env.BOARD_SYNC_CRON = original;
+    if (originalEnabled === undefined) delete process.env.BOARD_SYNC_ENABLED;
+    else process.env.BOARD_SYNC_ENABLED = originalEnabled;
     process.env.NODE_ENV = originalEnv;
     vi.useRealTimers();
     vi.restoreAllMocks();
@@ -99,6 +115,12 @@ describe('startBoardSyncCron', () => {
 
   it('does not schedule when the expression is invalid', () => {
     process.env.BOARD_SYNC_CRON = 'not a cron';
+    expect(startBoardSyncCron()).toBeNull();
+  });
+
+  it('does not schedule when BOARD_SYNC_ENABLED is false', () => {
+    process.env.BOARD_SYNC_CRON = '0 2 * * *';
+    process.env.BOARD_SYNC_ENABLED = 'false';
     expect(startBoardSyncCron()).toBeNull();
   });
 

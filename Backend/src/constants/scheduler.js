@@ -108,7 +108,7 @@ export const AT_LEAST_ONCE_MIN_INTERVAL_MINUTES = 5;
 /**
  * Log kind for the portal-wide ISO+ board catch-up sweep.
  * Touchpoints: handlers.js (runBoardSyncSweep), portalSchedule.js
- * (startBoardSyncCron, buildPortalBoardSyncMeta), sync.js (schedule on status).
+ * (startBoardSyncCron, buildPortalBoardSyncMeta).
  */
 export const BOARD_SYNC_KIND = 'board_sync';
 
@@ -117,6 +117,13 @@ export const BOARD_SYNC_KIND = 'board_sync';
  * Touchpoints: boardSyncSweepHelpers.js (resolveBoardSyncCron), portalSchedule.js.
  */
 export const BOARD_SYNC_CRON_DEFAULT = '0 2 * * *';
+
+/**
+ * Minimum start spacing between consecutive scheduled_sync jobs in one sweep
+ * when BOARD_SYNC_GAP_MS is unset. 0 means back-to-back (today's behaviour).
+ * Touchpoints: boardSyncSweepHelpers.js (resolveBoardSyncGapMs).
+ */
+export const BOARD_SYNC_GAP_MS_DEFAULT = 0;
 
 // ── Persistence ─────────────────────────────────────────────────────────────
 

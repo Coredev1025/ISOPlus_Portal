@@ -338,6 +338,15 @@ webhooks are unchanged. Board Configuration reads previous / current /
 next from the workspace sync status poll (next run is computed from the
 cron, not from a `ScheduledJob` row).
 
+**Env controls (scheduled catch-up only — not per-board Sync / webhooks /
+manual Resync):**
+
+| Variable | Default | Effect |
+|---|---|---|
+| `BOARD_SYNC_ENABLED` | on (unset) | `false` / `0` / `off` / `no` → cron not started; sweep is a no-op; status shows no next run. Restart required after change. Does **not** cancel delayed/waiting `scheduled_sync` jobs already in the queue from a prior sweep — drain or remove those separately. |
+| `BOARD_SYNC_GAP_MS` | `0` | Minimum start spacing between consecutive `scheduled_sync` jobs (`delay = index * gap`). Raise to reduce ISO+ 429 risk. Not a post-completion cool-down: if a board runs longer than the gap, the next may start immediately — set gap ≥ typical board duration for a real rest. Manual Resync is unaffected (higher priority, no delay). Boards still stamp `syncJobId` / `scheduled_sync` at enqueue, so delayed boards can show Queued before their delay elapses; Resync removes waiting/delayed catch-up for that board. |
+| `BOARD_SYNC_CRON` | `0 2 * * *` | Cadence of the portal sweep |
+
 Leftover portal `ScheduledJob` rows (`kind: board_sync`, `targetId: portal`)
 are disabled by migration so EventBridge ticks cannot claim them.
 Invoice/statement automation remain on the tick.

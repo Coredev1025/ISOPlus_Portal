@@ -19,6 +19,7 @@ before this design. Do not implement per-board `ScheduledJob` rows.
 | Queued when a waiting BullMQ job exists | Sweep stamps `syncJobId` (and `scheduled_sync` when safe) on enqueue | Worker previously set those only when active, so Current stayed Idle while waiting. |
 | Waiting `scheduled_sync` blocks manual Resync | Waiting/delayed `scheduled_sync` is removed (re-checked before remove; remove failure refuses Resync). Active catch-up still blocks. Sweep jobs use `priority: 10` (BullMQ: lower number first; yields to manual's `2`) | Operator Resync must not wait for a portal-wide wave to drain. |
 | Failed nightly catch-up hidden after 60s | Indicator also surfaces sticky `Board.lastSyncError` until the next successful sync clears it | Operators opening the app in the morning still see the overnight failure. |
+| No env kill switch / inter-board pacing | `BOARD_SYNC_ENABLED` (scheduled catch-up only) + `BOARD_SYNC_GAP_MS` (BullMQ `delay = index * gap` on fan-out) | Operators need an off switch without tearing down per-board Sync; gap reduces ISO+ 429 pressure without blocking manual Resync via worker sleep. Disable does not drain already-queued delayed jobs (restart + drain). Gap is start-spacing — size ≥ typical board duration for real rest. |
 
 ## What already exists (do not rebuild)
 
@@ -84,8 +85,10 @@ Rejected:
 | Clock | In-process `setTimeout` + `cron-parser` (not EventBridge) |
 | Default cron | `0 2 * * *` (02:00 in the schedule timezone) |
 | Override | `BOARD_SYNC_CRON` in `Backend/.env` (and `.env.example`) |
+| Enable | `BOARD_SYNC_ENABLED` — unset = on; `false`/`0`/`off`/`no` stops cron + sweep |
+| Inter-board gap | `BOARD_SYNC_GAP_MS` — default `0`; `delay = index * gap` on bulk jobs |
 | Timezone | `DEFAULT_TIMEZONE` (`Australia/Sydney`) |
-| Who edits the cron | Operators via env. **Board Configuration does not edit it.** |
+| Who edits these | Operators via env. **Board Configuration does not edit them.** |
 
 Invalid `BOARD_SYNC_CRON` must refuse to start the timer at boot (warn + skip),
 not silently fall through to `* * * * *`.

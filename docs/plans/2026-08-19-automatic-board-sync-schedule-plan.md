@@ -32,7 +32,7 @@ Full rationale is in the design spec's "Changes since approval" table.
 
 - **Cognitive complexity < 15 per file** (SonarJS S3776). Fan-out, cron resolve, and status shaping live in helpers, not nested in `handlers.js` or the configuration page.
 - **Backend is ESM.** Relative imports need the `.js` extension. Tests are Vitest `*.test.js`.
-- **No new runtime dependencies.** Reuse the KAN-15 tick, `upsertSchedule`, `automationPeriodKey`, and `board-sync` queue.
+- **No new runtime dependencies.** Reuse the existing `board-sync` queue and `cron-parser` / `computeNextRun` (do not add `node-cron` / `node-schedule`). Board sync does **not** use the KAN-15 tick, `upsertSchedule`, or `automationPeriodKey` — see the deviation table above.
 - **No second clock for automation.** Do not add `node-schedule` or `/api/internal/.../tick`. Board sync uses in-process cron; invoice/statement keep EventBridge → tick.
 - **Handler enqueues and returns.** Never await ISO+ inside the tick.
 - **Do not remove Resync Data or webhooks.** Scheduled catch-up is additive.
@@ -74,6 +74,8 @@ Full rationale is in the design spec's "Changes since approval" table.
 ---
 
 ### Task 1: Constants, eligibility, and fan-out specs
+
+> **Deviation:** No `BOARD_SYNC_TARGET_ID`; period keys use `scheduledSyncPeriodKey`, not `automationPeriodKey`. Snippets below are historical.
 
 **Files:**
 - Create: `Backend/src/constants/sync.js`
@@ -740,6 +742,8 @@ EOF
 
 ### Task 5: Status payload — previous, current, next
 
+> **Deviation:** Next run comes from `buildPortalBoardSyncMeta()` / `computeNextRun`, not `ScheduledJob.findOne({ targetId: BOARD_SYNC_TARGET_ID })`. Snippets below are historical.
+
 **Files:**
 - Create: `Backend/src/utils/boardSyncScheduleViewHelpers.js`
 - Modify: `Backend/src/services/sync.js` (`getBoardSyncStatus`)
@@ -886,6 +890,8 @@ EOF
 ---
 
 ### Task 6: Board Configuration status panel
+
+> **Deviation:** Panel reads `schedule` from the Header workspace status poll (`workspaceBoardStatuses`), not a per-page `GET /api/sync/board/status/:boardId` fetch. Snippets below are historical.
 
 **Files:**
 - Create: `Frontend/lib/board-sync-status-helpers.ts`
