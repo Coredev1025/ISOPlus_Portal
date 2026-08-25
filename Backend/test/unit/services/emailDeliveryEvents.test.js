@@ -318,6 +318,39 @@ describe('recordEmailFailure', () => {
     expect(row.deliveryDetail).toBeFalsy();
   });
 
+  /**
+   * The refusal has no message of its own, so it must not leave the row
+   * answering to the previous send's id. SES publishes minutes late: a Bounce
+   * for that earlier message outranks `failed` (6 > 5) and would replace the
+   * sentence naming the field to fix with a bounce reason for a message that
+   * is no longer what this row's state is about.
+   */
+  it('stops answering to the previous send\'s message id', async () => {
+    await automationPdfLink();
+    await recordEmailSend({
+      messageId: '<msg-1@provider.test>',
+      workspaceId: WS,
+      documentUrls: [INVOICE_URL],
+    });
+
+    await recordEmailFailure({
+      workspaceId: WS,
+      documentUrls: [INVOICE_URL],
+      reason: 'no_address_on_profile',
+    });
+
+    const refused = await PDFLink.findOne({ workspaceId: WS, pdfLink: INVOICE_URL }).lean();
+    expect(refused.deliveryMessageId).toBeFalsy();
+
+    // The late event for the message that has been superseded.
+    const { matched } = await applyDeliveryEvent(sesEvent('Bounce', BOUNCE));
+    expect(matched).toBe(0);
+
+    const row = await PDFLink.findOne({ workspaceId: WS, pdfLink: INVOICE_URL }).lean();
+    expect(row.deliveryState).toBe('failed');
+    expect(row.deliveryDetail).toMatch(/no email address/i);
+  });
+
   it('does nothing without a workspace or any documents', async () => {
     expect(await recordEmailFailure({ workspaceId: WS, documentUrls: [], reason: 'access_denied' })).toBe(0);
     expect(await recordEmailFailure({ workspaceId: '', documentUrls: [INVOICE_URL], reason: 'access_denied' })).toBe(0);

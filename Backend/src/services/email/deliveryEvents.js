@@ -203,10 +203,12 @@ export async function recordEmailSend({ messageId, workspaceId, documentUrls = [
  * `deliveryDetail` carries a sentence naming the field to fix rather than the
  * internal reason code, because the reader is the client, not an operator.
  *
- * No message id: there is no message. That also means a later successful
- * re-send — which the refusal path deliberately leaves possible, by keeping the
- * documents rather than discarding them — overwrites this through
- * `recordEmailSend`, which sets state unconditionally and clears the detail.
+ * No message id: there is no message, and any id from an earlier send is
+ * cleared, so no late SES event can speak for a row whose state did not come
+ * from a message. A later successful re-send — which the refusal path
+ * deliberately leaves possible, by keeping the documents rather than
+ * discarding them — overwrites this through `recordEmailSend`, which sets the
+ * state and a fresh id unconditionally and clears the detail.
  *
  * Never throws, for the same reason `recordEmailSend` does not: it is called
  * after the send attempt is over, and failing the job would retry a send that
@@ -231,6 +233,12 @@ export async function recordEmailFailure({ workspaceId, documentUrls = [], reaso
           deliveryDetail: detail,
           deliveryUpdatedAt: new Date(),
         },
+        // There is no message, so the row must stop answering to the previous
+        // send's id. Left in place, a Bounce for that superseded message —
+        // which SES publishes minutes later — outranks `failed` and replaces
+        // the sentence naming the field to fix with a bounce reason for mail
+        // that is no longer what this row's state describes.
+        $unset: { deliveryMessageId: '' },
       },
     );
     return result?.modifiedCount ?? 0;
