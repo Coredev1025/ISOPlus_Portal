@@ -1,4 +1,5 @@
 import { warn } from '../utils/logger.js';
+import { PORTAL_STAFF_ROLES } from '../constants/roles.js';
 
 /**
  * Admin-only gate for the System Health screens.
@@ -13,7 +14,7 @@ import { warn } from '../utils/logger.js';
 export function requireOwnerOrSupport(req, res, next) {
   const role = req.user?.role;
 
-  if (role === 'owner' || role === 'support_admin') {
+  if (PORTAL_STAFF_ROLES.has(role)) {
     next();
     return;
   }
