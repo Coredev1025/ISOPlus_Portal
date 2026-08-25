@@ -477,11 +477,16 @@ test.describe("Invoice & Statement Automation", () => {
    *
    * A send the backend refused wrote nothing to its documents, so they stayed
    * at `generated` — muted, and rendered "never as an error". On portal-dev ten
-   * statements were produced, none delivered, and the panel still read
-   * "On track ... Succeeded". Epic 5 wants the delivery problem flagged against
-   * the send in plain English, with the recipient beside it.
+   * statements were produced and none delivered, with nothing on the page
+   * saying so. Epic 5 wants the delivery problem flagged against the send in
+   * plain English, naming the client it was raised for.
+   *
+   * What this asserts is the document row. The block badge is out of scope and
+   * still reads "On track ... Succeeded" after an all-refused run: it reports
+   * the job, which did succeed in generating the documents. Whether a delivery
+   * failure should also mark the schedule needs a product ruling.
    */
-  test("a refused send is reported against the document, with its recipient", async ({
+  test("a refused send is reported against the document, naming its client", async ({
     page,
   }) => {
     test.slow();
@@ -493,8 +498,10 @@ test.describe("Invoice & Statement Automation", () => {
       const row = page.getByRole("listitem").filter({ hasText: "INV-E2E-1" });
       await expect(row).toBeVisible();
 
-      // Who it was for — the part the panel never showed.
-      await expect(row).toContainText("Samuel Rivers");
+      // Who it was raised for — the part the panel never showed. "For", not
+      // "Recipient": under Recipient = Billing Contact the mail can go to a
+      // different mailbox, and nothing stores which one.
+      await expect(row).toContainText("For Samuel Rivers");
       // Not the muted "Generated": a send that reached nobody reads as failed.
       await expect(row).toContainText(/failed to send/i);
       // And the reason, in words that name the thing to go and fix.

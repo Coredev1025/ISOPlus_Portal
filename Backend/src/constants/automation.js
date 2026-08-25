@@ -245,9 +245,17 @@ export const DELIVERY_STATE_RANK = {
  * These are the `reason` codes `services/email/recipients.js` and the SES
  * backend answer with. They were only ever logged, so a run that delivered
  * nothing left its documents at `generated` — muted, and explicitly "never as
- * an error" — while the panel's badge still read On track. Epic 5 asks for the
- * opposite: the delivery problem flagged against the send, in plain English,
- * "so the client knows to fix the Recipient/Send a Copy To field".
+ * an error". Epic 5 asks for the opposite: the delivery problem flagged
+ * against the send, in plain English, "so the client knows to fix the
+ * Recipient/Send a Copy To field".
+ *
+ * Scope, stated because it is easy to over-read: this changes the *document*
+ * rows. The block badge above them is unchanged and still reads On track after
+ * an all-refused run — it describes the job, and the job did succeed; it
+ * generated the documents. `blockNeedsAttention` reads the schedule's own
+ * error fields, which a refusal never sets because a refusal does not throw.
+ * Whether a delivery failure should also mark the schedule as needing
+ * attention is a product decision and is deliberately not taken here.
  *
  * Each sentence therefore names the field to go and change, not the internal
  * code. `DEFAULT_DELIVERY_REFUSAL_MESSAGE` covers a reason added later: the
