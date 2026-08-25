@@ -9,32 +9,39 @@
 
 import EmailSend from '../../models/EmailSend.js';
 import EmailEvent from '../../models/EmailEvent.js';
-import {
-  bounceReason,
-  rankOfState,
-  stateForEventType,
-} from '../../services/email/deliveryEvents.js';
+import { describeSesEvent, rankOfState } from '../../services/email/deliveryEvents.js';
 import { DELIVERY_STATE_SENT } from '../../constants/automation.js';
 
 /**
- * The most final outcome among a message's events.
+ * The most final outcome among a message's events, and the sentence for it.
  *
  * Ranked rather than latest-wins for the same reason applyDeliveryEvent ranks:
  * SES does not order its notifications, so a Delivery published after a Bounce
  * would otherwise erase the one outcome the operator can act on.
+ *
+ * The state AND its sentence both come from `describeSesEvent`, the same
+ * function the client panel's ingestion path uses. An earlier version mapped
+ * the state here and wrote its own detail rule — "only a bounce gets a
+ * sentence" — which silently dropped the reason for a Rendering Failure and
+ * left the drill-down showing "failed" with nothing to act on. One reducer,
+ * one vocabulary.
+ *
+ * `EmailEvent` stores the type-specific block under a generic `detail` field,
+ * so it is handed back under `bounce`, the only key describeSesEvent reads it
+ * from. Every other type's sentence is a constant. The `mail` block it uses to
+ * collect message ids is not passed: the id is already known here, and the
+ * returned `messageIds` is discarded.
  */
 function foldEvents(events) {
   let best = { state: DELIVERY_STATE_SENT, detail: null };
 
   for (const event of events) {
-    const state = stateForEventType(event.eventType);
-    if (!state || rankOfState(state) <= rankOfState(best.state)) continue;
-    best = {
-      state,
-      // Only a bounce carries a sentence worth showing; the others are
-      // self-explanatory from the state alone.
-      detail: state === 'bounced' ? bounceReason(event.detail ?? {}) : null,
-    };
+    const described = describeSesEvent({
+      eventType: event.eventType,
+      bounce: event.detail ?? {},
+    });
+    if (!described || rankOfState(described.state) <= rankOfState(best.state)) continue;
+    best = { state: described.state, detail: described.detail };
   }
 
   return best;
