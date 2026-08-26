@@ -224,6 +224,7 @@ export function SystemHealthDrilldownView({ workspaceId }: Props) {
 
       <RunList
         runs={runs}
+        schedules={schedules}
         onRetry={retry}
         retryingId={retryingId}
         dispatching={dispatching}

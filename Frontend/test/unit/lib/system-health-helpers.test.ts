@@ -5,6 +5,7 @@ import {
   formatDuration,
   formatStartedAt,
   runStatusLabel,
+  timezoneForKind,
   sortClientsBySeverity,
 } from "@/lib/system-health-helpers";
 
@@ -35,14 +36,24 @@ describe("formatDuration", () => {
 });
 
 describe("formatStartedAt", () => {
-  it("renders an absolute timestamp in the reader's local time", () => {
-    const iso = "2026-08-13T09:00:00.000Z";
-    const expected = new Intl.DateTimeFormat("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    }).format(new Date(iso));
-    expect(formatStartedAt(iso)).toContain(expected);
+  /**
+   * The schedule's zone, not the reader's. A run history sits beside a Run At
+   * field that is a wall-clock time in the schedule's own zone, so formatting
+   * the instant locally puts two clocks on one screen: a workspace running at
+   * 21:54 Sydney read "7:54 PM" to a reader in Manila, contradicting the
+   * Automation tab directly. Same defect PR #880 fixed there, via formatNextRun.
+   */
+  it("renders a timestamp in the schedule's zone, not the reader's", () => {
+    const iso = "2026-08-26T11:54:00.000Z";
+    expect(formatStartedAt(iso, "Australia/Sydney")).toBe("26/08/2026 at 9:54 PM");
+    expect(formatStartedAt(iso, "Asia/Manila")).toBe("26/08/2026 at 7:54 PM");
+  });
+
+  it("falls back to the business default when the zone is absent or rejected", () => {
+    const iso = "2026-08-26T11:54:00.000Z";
+    const expected = "26/08/2026 at 9:54 PM";
+    expect(formatStartedAt(iso)).toBe(expected);
+    expect(formatStartedAt(iso, "Not/AZone")).toBe(expected);
   });
 
   it("renders a missing timestamp as a dash, not an empty string", () => {
@@ -92,5 +103,30 @@ describe("sortClientsBySeverity", () => {
     sortClientsBySeverity(rows);
 
     expect(rows).toEqual(copy);
+  });
+});
+
+describe("timezoneForKind", () => {
+  const schedules = [
+    { kind: "invoice_automation", timezone: "Australia/Sydney" },
+    { kind: "statement_automation", timezone: "Australia/Perth" },
+  ] as const;
+
+  it("takes the zone from the schedule of the same kind", () => {
+    expect(timezoneForKind(schedules, "invoice_automation")).toBe("Australia/Sydney");
+    expect(timezoneForKind(schedules, "statement_automation")).toBe("Australia/Perth");
+  });
+
+  /**
+   * A run whose schedule has since been deleted still has to render. Any
+   * workspace schedule is a better guess than the reader's browser, because
+   * every schedule on a workspace carries that workspace's zone.
+   */
+  it("falls back to another schedule's zone when the kind has none", () => {
+    expect(timezoneForKind(schedules, "board_sync")).toBe("Australia/Sydney");
+  });
+
+  it("returns undefined when there are no schedules, so the formatter defaults", () => {
+    expect(timezoneForKind([], "invoice_automation")).toBeUndefined();
   });
 });

@@ -73,6 +73,26 @@ export const SPELLING_VARIANTS = [
   [' and ', ' & '],
 ];
 
+/**
+ * Every column a board might hold its shift status in.
+ *
+ * The spec's table names this field "Job Status"; the Master Shift Plan boards
+ * name it "Shift Status". The Invoice Generator list already tolerates both —
+ * SHIFT_STATUS_KEYS in utils/ndisInvoiceGeneratorRouteHelpers.js — and this is
+ * the same list so that the two stages cannot disagree. When they did, the
+ * list returned rows and selection dropped every one of them, which surfaces
+ * only as the "removed listed items" warn in utils/automationItemSelection.js
+ * (observed on portal-dev 2026-08-26: listed 5, selected 0).
+ *
+ * SPELLING_VARIANTS does not cover this: it swaps ' & ' for ' and ', which is
+ * a different axis from what the column is called.
+ *
+ * Read by: utils/invoiceSelectionFields.js (readStatusField).
+ */
+export const STATUS_FIELD_ALIASES = Object.freeze({
+  'Job Status': ['Job Status', 'Job status', 'JobStatus', 'Shift Status', 'ShiftStatus'],
+});
+
 const NDIS_STATUSES = ['Completed', 'Cancelled'];
 
 /**

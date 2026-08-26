@@ -18,7 +18,7 @@ import {
 import {
   hasDateInPeriod,
   normalizeStatus,
-  readField,
+  readStatusField,
 } from './invoiceSelectionFields.js';
 
 /**
@@ -69,7 +69,7 @@ export function isAlreadyInvoiced(item) {
  */
 export function isItemInvoiceable(item, invoiceType, period) {
   const { statusField, statuses, dateFields } = selectionConfigFor(invoiceType);
-  const status = normalizeStatus(readField(item, statusField));
+  const status = normalizeStatus(readStatusField(item, statusField));
   if (!status) return false;
   const qualifies = statuses.some((candidate) => normalizeStatus(candidate) === status);
   if (!qualifies) return false;

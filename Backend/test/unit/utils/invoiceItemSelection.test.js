@@ -39,6 +39,32 @@ const ndisItem = (data) => ({ itemId: 'i1', data });
 const sahItem = (data) => ({ itemId: 's1', data });
 
 describe('isItemInvoiceable — NDIS certification and verification', () => {
+  /**
+   * The Master Shift Plan boards name this column "Shift Status"; the spec's
+   * table names it "Job Status". The Invoice Generator list already tolerates
+   * both (SHIFT_STATUS_KEYS), so selection has to as well — otherwise the list
+   * returns rows selection silently drops, which is exactly the seam
+   * automationItemSelection.js warns about.
+   *
+   * Observed on portal-dev 2026-08-26: listed=5, selected=0, dropped=5 on
+   * board eNiJpH14PN3, whose column is "Shift Status".
+   */
+  it('reads the status from "Shift Status" as well as "Job Status"', () => {
+    const item = ndisItem({
+      'Shift Status': 'Completed',
+      'Actual Shift Start Date and Time': '2025-01-07T11:00:00.000000+11:00',
+    });
+    expect(isItemInvoiceable(item, INVOICE_TYPE_NDIS_CERTIFICATION, JAN_PERIOD)).toBe(true);
+  });
+
+  it('still drops an item whose status does not qualify under either spelling', () => {
+    const item = ndisItem({
+      'Shift Status': 'Scheduled',
+      'Actual Shift Start Date and Time': '2025-01-07T11:00:00.000000+11:00',
+    });
+    expect(isItemInvoiceable(item, INVOICE_TYPE_NDIS_CERTIFICATION, JAN_PERIOD)).toBe(false);
+  });
+
   it('includes a Completed shift whose actual start falls in the period', () => {
     const item = ndisItem({
       'Job Status': 'Completed',

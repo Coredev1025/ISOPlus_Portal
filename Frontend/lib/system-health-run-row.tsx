@@ -1,8 +1,13 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { formatDuration, formatStartedAt, runStatusLabel } from "@/lib/system-health-helpers";
-import type { RunEmailRow, RunRow } from "@/lib/system-health-types";
+import {
+  formatDuration,
+  formatStartedAt,
+  runStatusLabel,
+  timezoneForKind,
+} from "@/lib/system-health-helpers";
+import type { RunEmailRow, RunRow, ScheduleRow } from "@/lib/system-health-types";
 import { SKIP_REASON_LABELS } from "@/constants/system-health";
 
 const TRIGGER_LABELS: Record<RunRow["trigger"], string> = {
@@ -14,6 +19,8 @@ const RETRIABLE_STATUS: RunRow["status"] = "failed";
 
 type RowProps = Readonly<{
   run: RunRow;
+  /** The run's schedule zone — see timezoneForKind. */
+  timeZone: string | undefined;
   onRetry: (runId: string) => void;
   retrying: boolean;
   dispatching: boolean;
@@ -27,7 +34,11 @@ type RowProps = Readonly<{
  * onToggleEmails — because a history page of 50 runs would otherwise pay for
  * detail an operator wants on one row at a time.
  */
-function RunEmails({ emails, loading }: Readonly<{ emails: RunEmailRow[] | undefined; loading: boolean }>) {
+function RunEmails({ emails, loading, timeZone }: Readonly<{
+  emails: RunEmailRow[] | undefined;
+  loading: boolean;
+  timeZone: string | undefined;
+}>) {
   if (loading) return <p className="text-xs text-muted-foreground">Loading emails…</p>;
   if (!emails) return null;
   // Empty is an answer: a skipped run, or one whose documents went to the
@@ -44,7 +55,7 @@ function RunEmails({ emails, loading }: Readonly<{ emails: RunEmailRow[] | undef
           {email.recipientType ? (
             <span className="text-muted-foreground">{email.recipientType}</span>
           ) : null}
-          <span className="text-muted-foreground">{formatStartedAt(email.sentAt)}</span>
+          <span className="text-muted-foreground">{formatStartedAt(email.sentAt, timeZone)}</span>
           <span className="text-muted-foreground">{email.state}</span>
           {email.detail ? (
             <span className="w-full text-destructive">{email.detail}</span>
@@ -62,7 +73,9 @@ function RunEmails({ emails, loading }: Readonly<{ emails: RunEmailRow[] | undef
  * branch is live rather than fixture-only, which is what the comment here used
  * to say while Epic 5.6/5.7 was still unbuilt.
  */
-function RunRowItem({ run, onRetry, retrying, dispatching, emails, emailsLoading, onToggleEmails }: RowProps) {
+function RunRowItem({
+  run, timeZone, onRetry, retrying, dispatching, emails, emailsLoading, onToggleEmails,
+}: RowProps) {
   const isFailed = run.status === RETRIABLE_STATUS;
   // A skip with no mapped reason renders nothing extra rather than a raw code:
   // an unrecognised value is a backend this build has not caught up with, and
@@ -75,7 +88,7 @@ function RunRowItem({ run, onRetry, retrying, dispatching, emails, emailsLoading
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
         <span className="font-medium">{run.boardId}</span>
         <span className="flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground">
-          <span>{formatStartedAt(run.startedAt)}</span>
+          <span>{formatStartedAt(run.startedAt, timeZone)}</span>
           <span>{run.periodKey}</span>
           <span>{run.kind}</span>
           <span>{TRIGGER_LABELS[run.trigger]}</span>
@@ -96,7 +109,7 @@ function RunRowItem({ run, onRetry, retrying, dispatching, emails, emailsLoading
       </div>
 
       {emails || emailsLoading ? (
-        <RunEmails emails={emails} loading={emailsLoading} />
+        <RunEmails emails={emails} loading={emailsLoading} timeZone={timeZone} />
       ) : null}
 
       {showFooter ? (
@@ -127,6 +140,8 @@ function RunRowItem({ run, onRetry, retrying, dispatching, emails, emailsLoading
 
 type ListProps = Readonly<{
   runs: readonly RunRow[];
+  /** Carries the per-kind timezone each row is rendered in. */
+  schedules: readonly ScheduleRow[];
   onRetry: (runId: string) => void;
   retryingId: string | null;
   // True while ANY dispatch is in flight — a run, or another row's retry. Every
@@ -140,7 +155,7 @@ type ListProps = Readonly<{
 }>;
 
 export function RunList({
-  runs, onRetry, retryingId, dispatching, emailsByRun, emailsLoadingId, onToggleEmails,
+  runs, schedules, onRetry, retryingId, dispatching, emailsByRun, emailsLoadingId, onToggleEmails,
 }: ListProps) {
   // Explicit copy rather than an empty <ul>: a genuinely empty history has to
   // read differently from "still loading" and "failed to load", the same
@@ -155,6 +170,7 @@ export function RunList({
         <RunRowItem
           key={run._id}
           run={run}
+          timeZone={timezoneForKind(schedules, run.kind)}
           onRetry={onRetry}
           retrying={retryingId === run._id}
           dispatching={dispatching}
