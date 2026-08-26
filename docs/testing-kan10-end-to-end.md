@@ -504,13 +504,42 @@ anything.
 `nextRun`, and a time already past advances to the next period — a month, for a
 monthly block. Leave a few minutes' margin to type and save.
 
-**Not yet proven, and the next thing to check.** The same query also passes
-`status: 'pending'`, which `filterNdisByInvoiceStatus` derives from the
-`InvoiceNumber` collection (`type: 'PDF'`) rather than from the board's
-"Generated NDIS Invoice Number" column. An item that already carries a PDF
-invoice number derives as `invoiced` and is excluded. In the 2026-08-26 session
-the delivery date was corrected and the run still generated nothing, so this
-remains the leading unexplained gate.
+**Selection is two stages, and the second one is where this actually failed.**
+The list decides what the period CONTAINS; `selectBillableItemIds` decides what
+of it is BILLABLE, applying the spec's status-and-date table. A run whose list
+is non-empty but whose selection is empty says so at warn — and that line is the
+one worth going after:
+
+```
+warn Invoice selection removed listed items from this period
+     boardId=eNiJpH14PN3 invoiceType=ndis-certification
+     listed=5 selected=0 dropped=5
+```
+
+The cause on 2026-08-26 was the two stages disagreeing about where the shift
+status lives. The list tolerates five spellings (`SHIFT_STATUS_KEYS`); selection
+knew only the spec's `Job Status`, and these boards name the column
+**`Shift Status`**. Every item failed the status test whatever its dates were —
+so no amount of date editing could have worked. Fixed by `STATUS_FIELD_ALIASES`,
+which is the same list, so the two cannot drift apart again.
+
+**Where to read that warn.** Not the portal's Application Logs screen — it did
+not surface any of it. The line is in the Elastic Beanstalk application stdout:
+
+```bash
+aws elasticbeanstalk request-environment-info  --environment-name isoplus-be-dev-blue --info-type bundle
+aws elasticbeanstalk retrieve-environment-info --environment-name isoplus-be-dev-blue --info-type bundle
+# then unzip and: grep -o '"source":"Automation"[^}]*' var/log/web.stdout.log
+```
+
+`--info-type tail` is quicker but holds only the last ~100 lines, which will not
+reach a run from more than a few minutes ago. There is no CloudWatch log group
+for the dev environment — only prod has one.
+
+**A note on `status: 'pending'`.** The list also filters on it, derived from the
+`InvoiceNumber` collection (`type: 'PDF'`) and not from the board's "Generated
+NDIS Invoice Number" column — so a Xero number in that column does not exclude
+an item. This was checked and was not the blocker.
 
 ### Track A quick reference
 
