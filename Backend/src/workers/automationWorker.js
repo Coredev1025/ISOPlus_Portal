@@ -17,6 +17,12 @@ import Board from '../models/Board.js';
 import Business from '../models/Business.js';
 import { mongoEq } from '../utils/securityHelpers.js';
 import { substituteEmailTemplate } from '../utils/emailTemplateHelpers.js';
+import { markRunFailed, markRunSkipped, markRunSucceeded } from '../services/automation/runs.js';
+import {
+  SKIP_ACCOUNTING_NOT_CONNECTED,
+  SKIP_NO_EMAIL_BACKEND,
+  SKIP_SETTINGS_DISABLED,
+} from '../constants/systemHealth.js';
 import { info, warn, error } from '../utils/logger.js';
 
 const LOG_LABEL = 'Automation-Worker';
@@ -220,7 +226,7 @@ async function deliverToAccountingPlatform(job) {
     error('Automation', 'Accounting delivery is not possible; generated nothing', {
       kind, workspaceId, boardId, periodKey, reason: preflight.reason,
     });
-    return;
+    return { skipReason: SKIP_ACCOUNTING_NOT_CONNECTED };
   }
 
   const results = await generateDocumentResults(job);
@@ -238,6 +244,8 @@ async function deliverToAccountingPlatform(job) {
   info('Automation', 'Automation invoices pushed to the accounting platform as drafts', {
     kind, workspaceId, boardId, periodKey, documents: results.length, drafts: pushed.length,
   });
+  // No recipient: this route creates drafts in Xero and emails nobody.
+  return { recipient: null };
 }
 
 async function composeAndDeliver(job) {
@@ -249,7 +257,7 @@ async function composeAndDeliver(job) {
     warn('Automation', 'Job fired with no enabled settings block; nothing composed', {
       kind, workspaceId, boardId, periodKey,
     });
-    return;
+    return { skipReason: SKIP_SETTINGS_DISABLED };
   }
 
   if (isAccountingDelivery(kind, block)) return deliverToAccountingPlatform(job);
@@ -269,7 +277,7 @@ async function composeAndDeliver(job) {
     warn('Automation', 'No email backend configured; generated nothing rather than discarding it', {
       kind, workspaceId, boardId, periodKey,
     });
-    return;
+    return { skipReason: SKIP_NO_EMAIL_BACKEND };
   }
 
   // There is deliberately no second, pre-generation check that the recipients
@@ -285,7 +293,8 @@ async function composeAndDeliver(job) {
   // the display one; either beats the boardId these emails used to quote.
   const board = await Board.findOne({ boardId: mongoEq(String(boardId)) }).lean();
 
-  for (const group of deliveryGroups(results)) {
+  const groups = deliveryGroups(results);
+  for (const group of groups) {
     await deliverGroup({
       kind,
       workspaceId,
@@ -298,12 +307,50 @@ async function composeAndDeliver(job) {
       bypassEmail: job.data.bypassEmail ?? null,
     });
   }
+
+  // The recipient KEY this run delivered under, not an address: deliverEmail
+  // resolves addresses inside the backend and does not hand one back. Null for
+  // the billing-contact route, which is one message with no per-person key.
+  return { recipient: distinctValues(groups.map((g) => g.participant)).join(', ') || null };
+}
+
+/**
+ * Close the AutomationRun this job was recorded under.
+ *
+ * The bookkeeping is deliberately outside composeAndDeliver: that function's
+ * job is to generate and send, and threading a run id through every early
+ * return would put it in the business of its own audit trail.
+ *
+ * Failure is recorded only on the LAST attempt. closeRun refuses to overwrite
+ * a terminal row (services/automation/runs.js), so marking failed on attempt 1
+ * of 3 would lock the run as failed even when attempt 2 delivers — the run
+ * history would then contradict the mail the client actually received.
+ */
+async function processAutomationJob(job) {
+  const attemptsTotal = job.opts?.attempts ?? 1;
+  // attemptsMade is absent on a hand-built job object; 0 makes this the first
+  // AND last attempt, which is what a single-shot dispatch is.
+  const isLastAttempt = (job.attemptsMade ?? 0) + 1 >= attemptsTotal;
+
+  try {
+    const outcome = await composeAndDeliver(job);
+    if (outcome?.skipReason) {
+      await markRunSkipped({ jobId: job.id, skipReason: outcome.skipReason });
+    } else {
+      await markRunSucceeded({ jobId: job.id, recipient: outcome?.recipient ?? null });
+    }
+  } catch (err) {
+    if (isLastAttempt) await markRunFailed({ jobId: job.id, error: err.message });
+    // Rethrown either way: BullMQ owns the retry decision, and swallowing here
+    // would retire a job that never did its work.
+    throw err;
+  }
 }
 
 export function startAutomationWorker() {
   const worker = new Worker(
     AUTOMATION_QUEUE_NAME,
-    (job) => composeAndDeliver(job),
+    (job) => processAutomationJob(job),
     {
       connection: buildRedisConnection(LOG_LABEL),
       // 1, not syncWorker.js's 2: one job renders every PDF for a whole board

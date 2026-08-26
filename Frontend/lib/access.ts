@@ -1,3 +1,8 @@
+import {
+  PORTAL_STAFF_ROLES,
+  ROLE_ISOPLUS_USER,
+} from "@/constants/roles";
+
 export type UserLike = {
   role?: string | null;
 };
@@ -7,7 +12,7 @@ export type WorkspaceLike = {
 };
 
 export function isOwnerOrSupport(user: UserLike | null | undefined): boolean {
-  return user?.role === "owner" || user?.role === "support_admin";
+  return PORTAL_STAFF_ROLES.includes(user?.role ?? "");
 }
 
 export function isIsoPlusWorkspaceAdminOrOwner(
@@ -15,7 +20,7 @@ export function isIsoPlusWorkspaceAdminOrOwner(
   workspace: WorkspaceLike | null | undefined
 ): boolean {
   return (
-    user?.role === "isoplus_user" &&
+    user?.role === ROLE_ISOPLUS_USER &&
     (workspace?.user_role === "admin" || workspace?.user_role === "owner")
   );
 }

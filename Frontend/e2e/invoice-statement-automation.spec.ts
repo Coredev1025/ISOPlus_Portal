@@ -1,5 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { test, expect, type Page } from "@playwright/test";
+import {
+  clearDeliveryFailures,
+  invoiceNumber,
+  seedDeliveryFailures,
+} from "./support/delivery-failures";
 
 /**
  * Epic 5 — the Invoice & Statement Automation tab, end to end.
@@ -28,12 +33,21 @@ const WORKSPACE = process.env.E2E_WORKSPACE_ID ?? "55369";
 // A workspace whose flag is OFF, for the two tests that prove the gate. Create
 // one locally — it needs no boards or items, only the toggle:
 //
-//   docker exec -i isoplus-mongo mongosh business-dashboard --quiet --eval '
+//   docker exec -i isoplus-mongo mongosh "$E2E_MONGO_DB" --quiet --eval '
 //     db.businesses.updateOne({workspaceId:"55999"},
 //       {$set:{workspaceId:"55999",name:"Flag-off fixture (e2e)",
 //              "featureToggles.invoiceStatementAutomation":false}},
 //       {upsert:true})'
 const WORKSPACE_NO_FLAG = process.env.E2E_WORKSPACE_ID_NO_FLAG;
+
+// Which database the Mongo escape hatches below write to.
+//
+// Not hardcoded, for the reason e2e/support/delivery-failures.ts spells out:
+// `npm run worktree -- new --isolated-db` gives a worktree its own database
+// named after the branch, so seeding `business-dashboard` from there writes to
+// a database the app under test is not reading. The seed succeeds and the
+// assertion then fails for a reason that looks nothing like the cause.
+const MONGO_DB = process.env.E2E_MONGO_DB ?? "business-dashboard";
 
 // Login is a backend call; the frontend proxies nothing. Ports differ per
 // worktree, so read it rather than assuming 4001.
@@ -119,7 +133,7 @@ function seedFailedDocument(): void {
   // a plain object there reaches the panel as an unparseable timestamp.
   execFileSync(
     "docker",
-    ["exec", "-i", "isoplus-mongo", "mongosh", "business-dashboard", "--quiet", "--eval",
+    ["exec", "-i", "isoplus-mongo", "mongosh", MONGO_DB, "--quiet", "--eval",
       `db.pdflinks.deleteMany({itemId:"e2e-delivery-report"}); `
       + `db.pdflinks.insertOne(Object.assign(${JSON.stringify(doc)}, `
       + `{createdAt: new Date("2026-04-01T09:00:00Z")}));`],
@@ -130,7 +144,7 @@ function seedFailedDocument(): void {
 function removeSeededDocument(): void {
   execFileSync(
     "docker",
-    ["exec", "-i", "isoplus-mongo", "mongosh", "business-dashboard", "--quiet", "--eval",
+    ["exec", "-i", "isoplus-mongo", "mongosh", MONGO_DB, "--quiet", "--eval",
       'db.pdflinks.deleteMany({itemId:"e2e-delivery-report"});'],
     { stdio: "pipe" },
   );
@@ -143,6 +157,9 @@ function removeSeededDocument(): void {
 // alternative, but a workspace cannot be created locally: the list is proxied
 // from ISO+ rather than stored.
 test.describe.configure({ mode: "serial" });
+
+/** These rows belong to this file; see e2e/support/delivery-failures.ts. */
+const SUITE = "client-panel" as const;
 
 test.describe("Invoice & Statement Automation", () => {
   test.skip(
@@ -508,6 +525,46 @@ test.describe("Invoice & Statement Automation", () => {
       await expect(row).toContainText(/no email address/i);
     } finally {
       removeSeededDocument();
+    }
+  });
+
+  /**
+   * 6.2: a bounce has to reach the CLIENT, inline against the send it belongs
+   * to, in words naming the thing to fix — not buried in a log only support
+   * can read.
+   *
+   * The rows are seeded because the pipeline that produces them cannot run on
+   * a laptop; see e2e/support/delivery-failures.ts. Everything from the stored
+   * row to the rendered sentence is real.
+   */
+  test("a bounced document says so on the client panel, with the reason", async ({
+    page,
+  }) => {
+    test.slow();
+    // Rows carry this file's own marker, so the System Health spec running in
+    // a parallel worker cannot delete them mid-assertion.
+    seedDeliveryFailures({ suite: SUITE, workspaceId: WORKSPACE });
+
+    try {
+      await page.goto(AUTOMATION_URL);
+
+      const bounced = page
+        .getByRole("listitem")
+        .filter({ hasText: invoiceNumber(SUITE, "bounce") });
+      await expect(bounced).toBeVisible();
+      await expect(bounced).toContainText(/bounced/i);
+      // The sentence sits in the same row as the document it explains — the
+      // client has to know WHICH send to chase and which address to correct.
+      await expect(bounced).toContainText(/doesn't exist/i);
+
+      // And a delivered one is not dressed up as a problem.
+      const delivered = page
+        .getByRole("listitem")
+        .filter({ hasText: invoiceNumber(SUITE, "ok") });
+      await expect(delivered).toContainText(/delivered/i);
+      await expect(delivered).not.toContainText(/doesn't exist/i);
+    } finally {
+      clearDeliveryFailures(SUITE);
     }
   });
 

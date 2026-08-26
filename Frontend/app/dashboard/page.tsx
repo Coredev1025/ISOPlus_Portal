@@ -15,12 +15,14 @@ import Spinner from "@/components/ui/spin";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import axios from "@/app/utils/axiosConfig";
 import { isAxiosError } from "axios";
-import { Search, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle, ChevronRight, LayoutGrid } from "lucide-react";
+import { Search, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle, ChevronRight, LayoutGrid, Activity } from "lucide-react";
 import { Header } from "@/components/ui/header";
 import { Card } from "@/components/ui/card";
 import { XeroOAuthReturnBoundary } from "@/lib/xero-oauth-return-listener";
 import { secureRandomFloat, secureRandomInt } from "@/lib/secure-random";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { isOwnerOrSupport } from "@/lib/access";
+import { SystemHealthPageView } from "@/lib/system-health-page-view";
 import {
   Select,
   SelectContent,
@@ -1307,7 +1309,7 @@ export default function Dashboard() {
             </p>
           </div>
           {user.id &&
-            (user.role === "support_admin" || user.role === "owner") && (
+            isOwnerOrSupport(user) && (
             <Button
               type="button"
               variant="outline"
@@ -1324,8 +1326,8 @@ export default function Dashboard() {
         <Tabs defaultValue="workspaces" className="space-y-6">
           <TabsList
             className={`grid h-auto w-full gap-1 rounded-xl border border-border/60 bg-muted/40 p-1.5 shadow-sm ${
-              user.role === "support_admin" || user.role === "owner"
-                ? "grid-cols-1 sm:grid-cols-2"
+              isOwnerOrSupport(user)
+                ? "grid-cols-1 sm:grid-cols-3"
                 : "grid-cols-1"
             }`}
           >
@@ -1335,7 +1337,7 @@ export default function Dashboard() {
             >
               Workspaces
             </TabsTrigger>
-            {(user.role === "support_admin" || user.role === "owner") && (
+            {isOwnerOrSupport(user) && (
               <TabsTrigger
                 value="logs"
                 className="gap-2 rounded-lg py-2.5 text-left leading-tight data-[state=active]:bg-background data-[state=active]:shadow-sm sm:text-center"
@@ -1346,14 +1348,30 @@ export default function Dashboard() {
                 </span>
               </TabsTrigger>
             )}
+            {isOwnerOrSupport(user) && (
+              <TabsTrigger
+                value="system-health"
+                className="gap-2 rounded-lg py-2.5 text-left leading-tight data-[state=active]:bg-background data-[state=active]:shadow-sm sm:text-center"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Activity className="h-4 w-4 shrink-0" />
+                  <span>System Health</span>
+                </span>
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="workspaces">
             <WorkspacesList />
           </TabsContent>
-          {(user.role === "support_admin" || user.role === "owner") && (
+          {isOwnerOrSupport(user) && (
             <TabsContent value="logs">
               <GlobalApplicationLogs />
+            </TabsContent>
+          )}
+          {isOwnerOrSupport(user) && (
+            <TabsContent value="system-health">
+              <SystemHealthPageView />
             </TabsContent>
           )}
         </Tabs>

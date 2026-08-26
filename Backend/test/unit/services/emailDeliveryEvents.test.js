@@ -356,3 +356,59 @@ describe('recordEmailFailure', () => {
     expect(await recordEmailFailure({ workspaceId: '', documentUrls: [INVOICE_URL], reason: 'access_denied' })).toBe(0);
   });
 });
+
+/**
+ * SES publishes `Rendering Failure` when a template placeholder cannot be
+ * filled. `services/email/events.js` already recognises the type and stores
+ * the audit row, but `EVENT_STATES` had no entry for it — so describeSesEvent
+ * returned null, applyDeliveryEvent matched nothing, and the document sat at
+ * "Sent" forever.
+ *
+ * That is precisely the class of delivery failure the client panel exists to
+ * surface: the email never went out, and the only person who can fix the
+ * template is the one reading the panel.
+ */
+describe('Rendering Failure', () => {
+  it('is a delivery failure, not an unrecognised event', () => {
+    const described = describeSesEvent({
+      eventType: 'Rendering Failure',
+      mail: { messageId: 'ses-render-1' },
+      failure: { errorMessage: 'Attribute "client_name" is not present in the rendering data.' },
+    });
+
+    expect(described).not.toBeNull();
+    expect(described.state).toBe('failed');
+  });
+
+  it('says the template failed, not that SES rejected the send', () => {
+    const described = describeSesEvent({
+      eventType: 'Rendering Failure',
+      mail: { messageId: 'ses-render-2' },
+      failure: { errorMessage: 'boom' },
+    });
+
+    // Reject and Rendering Failure share the `failed` state but are different
+    // faults: one is SES refusing, the other is our own template. Telling a
+    // client "Amazon SES rejected the email" for a placeholder typo sends them
+    // to the wrong place.
+    expect(described.detail).toMatch(/template/i);
+    expect(described.detail).not.toMatch(/rejected the email before sending/i);
+  });
+
+  it('moves a document off "sent" when the render fails', async () => {
+    await automationPdfLink({ deliveryMessageId: 'ses-render-3', deliveryState: 'sent' });
+
+    const { state, matched } = await applyDeliveryEvent({
+      eventType: 'Rendering Failure',
+      mail: { messageId: 'ses-render-3' },
+      failure: { errorMessage: 'boom' },
+    });
+
+    expect(state).toBe('failed');
+    expect(matched).toBe(1);
+
+    const row = await PDFLink.findOne({ deliveryMessageId: 'ses-render-3' }).lean();
+    expect(row.deliveryState).toBe('failed');
+    expect(row.deliveryDetail).toMatch(/template/i);
+  });
+});

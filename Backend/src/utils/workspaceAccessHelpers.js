@@ -15,14 +15,11 @@
 import { getMemberRole } from '../services/isoplus.js';
 import { isOfflineMode } from '../services/offlineIsoplus.js';
 import { warn } from './logger.js';
+import { PORTAL_STAFF_ROLES } from '../constants/roles.js';
 
 const LOG_SCOPE = 'Workspace-Access';
 
-// Portal staff, who are not ISO+ members of the client workspaces they support.
-// applyPrivilegedSessionAuth already hands them the personal access token for
-// exactly that reason, so a membership check would take away access they are
-// meant to have. This is the same split middleware/auth.js makes.
-const PORTAL_STAFF_ROLES = new Set(['owner', 'support_admin']);
+
 
 /**
  * Statuses that are ISO+ answering the question, rather than failing to.

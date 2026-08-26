@@ -41,6 +41,13 @@ const EVENT_STATES = {
   Bounce: DELIVERY_STATE_BOUNCED,
   Complaint: DELIVERY_STATE_COMPLAINED,
   Reject: DELIVERY_STATE_FAILED,
+  // A template placeholder that could not be filled. services/email/events.js
+  // already stores the audit row for this type; without an entry here
+  // describeSesEvent returned null and the document sat at "Sent" forever,
+  // which is the one outcome the panel must never show for mail that never
+  // left. Shares `failed` with Reject — see detailFor, which keeps the two
+  // faults apart in what the client is told.
+  'Rendering Failure': DELIVERY_STATE_FAILED,
 };
 
 /**
@@ -68,6 +75,12 @@ const BOUNCE_REASONS = {
 
 const COMPLAINT_REASON = 'The recipient marked this email as spam.';
 const REJECT_REASON = 'Amazon SES rejected the email before sending it.';
+// Deliberately distinct from REJECT_REASON despite sharing the `failed` state:
+// a rejection is SES refusing us, a rendering failure is our own template. The
+// error message SES returns names the missing placeholder, but it is unbounded
+// third-party text, so the sentence points at the field instead.
+const RENDERING_FAILURE_REASON =
+  'The email template could not be filled in, so nothing was sent. Check the Email Subject and Email Message fields.';
 const DELAY_REASON = 'Delivery is taking longer than usual; SES is still retrying.';
 
 /**
@@ -110,11 +123,19 @@ function safeLabel(value) {
   return cleaned || 'Unknown';
 }
 
-/** The detail line for a state, or null where the state speaks for itself. */
-function detailFor(state, event) {
+/**
+ * The detail line for a state, or null where the state speaks for itself.
+ *
+ * Takes the event TYPE as well as the state because two types share `failed`:
+ * Reject is SES refusing the send, Rendering Failure is our own template. The
+ * state cannot separate them and the client needs different advice for each.
+ */
+function detailFor(state, event, type) {
   if (state === DELIVERY_STATE_BOUNCED) return bounceReason(event.bounce);
   if (state === DELIVERY_STATE_COMPLAINED) return COMPLAINT_REASON;
-  if (state === DELIVERY_STATE_FAILED) return REJECT_REASON;
+  if (state === DELIVERY_STATE_FAILED) {
+    return type === 'Rendering Failure' ? RENDERING_FAILURE_REASON : REJECT_REASON;
+  }
   if (state === DELIVERY_STATE_DELAYED) return DELAY_REASON;
   return null;
 }
@@ -138,7 +159,16 @@ export function describeSesEvent(event) {
     .map(normalizeMessageId)
     .filter(Boolean);
 
-  return { state, detail: detailFor(state, event), messageIds: [...new Set(messageIds)] };
+  return { state, detail: detailFor(state, event, type), messageIds: [...new Set(messageIds)] };
+}
+
+/**
+ * How final a state is, for callers folding several events into one outcome.
+ * Same ranking applyDeliveryEvent guards with, so a late Delivery cannot
+ * outrank an earlier Bounce here either.
+ */
+export function rankOfState(state) {
+  return DELIVERY_STATE_RANK[state] ?? 0;
 }
 
 /**
