@@ -125,7 +125,7 @@ describe('FinancialSettingsPanel', () => {
     });
   });
 
-  it('restores default sequences and remaps save validation errors', async () => {
+  it('remaps save validation errors for missing business name', async () => {
     const user = userEvent.setup();
     (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: PROFILE });
     (axios.put as ReturnType<typeof vi.fn>).mockRejectedValue({
@@ -137,9 +137,9 @@ describe('FinancialSettingsPanel', () => {
     render(<FinancialSettingsPanel workspaceId="ws-1" />);
     await screen.findByDisplayValue('CBA');
 
-    await user.click(screen.getByRole('button', { name: /restore defaults/i }));
-    expect(await screen.findByDisplayValue('STM-')).toBeInTheDocument();
-    expect(screen.getAllByDisplayValue('1000').length).toBeGreaterThanOrEqual(4);
+    expect(
+      screen.queryByRole('button', { name: /restore defaults/i })
+    ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /save changes/i }));
 
