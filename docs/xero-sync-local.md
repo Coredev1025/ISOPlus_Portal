@@ -61,15 +61,20 @@ both go into `Backend/.env` by hand.
 
 ## Connecting — the Portal button, never a bare consent URL
 
-Tokens are persisted by the **frontend**: the callback page posts the token set
-to `window.opener`, and the Accounting Integrations tab then POSTs
-`/api/business/xero/connect`, which writes `Business.xeroTokens` +
-`xeroTenantId`. **A consent URL opened directly in a tab stores nothing** —
-the exchange succeeds server-side and the tokens go to a dead page.
+Tokens are persisted by the **backend OAuth callback** after the user completes
+consent (full-page redirect; see KAN-9 handover). Open the Accounting
+Integrations tab as a **workspace client or portal staff** — mapping APIs are
+`authenticateToken` only, not Owner/Support Admin:
 
-So: log into the local Portal → `/workspace/55369/finance-settings?tab=accounting`
-→ **Connect Xero** → approve in the popup (login + organisation are the
-human's). Verify persistence:
+`/workspace/<id>/finance-settings?tab=accounting`
+
+- **Connect Xero** when not integrated → approve login + organisation.
+- **Reconnect Xero** when tokens are present but reconnect is required (expired
+  auth / no organisation). **Disconnect is hidden** in that state so the user
+  re-authorises instead of wiping the link first.
+- **Disconnect Xero** when the connection is healthy.
+
+Verify persistence:
 
 ```bash
 docker exec -i isoplus-mongo mongosh business-dashboard --quiet --eval '
@@ -78,7 +83,10 @@ docker exec -i isoplus-mongo mongosh business-dashboard --quiet --eval '
 # true true true true
 ```
 
-The tab shows **Connected**; *Test Connection* exercises the stored tokens.
+The tab shows **Connected**; *Test Connection* exercises the stored tokens. A
+client hitting `GET /api/business/xero/account-tax-options` must **not** receive
+`403` Owner/Support Admin — that gate was removed so Finance Settings mapping
+works for `isoplus_user`.
 
 ## GST — how a tax rate is chosen, and how to test both
 

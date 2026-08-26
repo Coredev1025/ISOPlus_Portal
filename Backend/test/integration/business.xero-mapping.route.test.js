@@ -43,13 +43,77 @@ describe('Business Xero mapping routes', () => {
     expect(res.status).toBe(401);
   });
 
-  it('rejects isoplus_user for account-tax-options', async () => {
-    const { agent } = await authenticatedAgent(app, { role: 'isoplus_user' });
-    await agent.get('/api/auth/verify');
+  /**
+   * Client (ISO+) users configure their own Xero mapping on Finance Settings.
+   * Password login cannot produce session.Authorization — only the OAuth path
+   * does — so this mirrors a real client session the way production does.
+   */
+  async function isoplusUserAgent(email) {
+    const request = (await import('supertest')).default;
+    const agent = request.agent(app);
+    const res = await agent
+      .post('/api/auth/oauth-login')
+      .set('Authorization', 'Bearer isoplus-user-token')
+      .send({ oauthData: { id: `oauth-${email}`, email, name: 'ISO+ User' } });
+    expect(res.status).toBe(200);
+    return agent;
+  }
+
+  it('lets an isoplus_user load account-tax-options for their workspace', async () => {
+    await Business.create({
+      name: 'Client Xero',
+      workspaceId: 'ws-client-opts',
+      xeroIntegrated: true,
+    });
+    loadXeroChartOptions.mockResolvedValue({
+      accounts: [
+        {
+          Code: '200',
+          Name: 'Sales',
+          Type: 'REVENUE',
+          Class: 'REVENUE',
+          Status: 'ACTIVE',
+        },
+      ],
+      taxRates: [],
+    });
+
+    const agent = await isoplusUserAgent('client@workspace.test');
     const res = await agent
       .get('/api/business/xero/account-tax-options')
-      .query({ workspaceId: 'ws-1' });
-    expect(res.status).toBe(403);
+      .query({ workspaceId: 'ws-client-opts' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.accounts).toEqual([
+      {
+        code: '200',
+        name: 'Sales',
+        type: 'REVENUE',
+        class: 'REVENUE',
+        status: 'ACTIVE',
+      },
+    ]);
+  });
+
+  it('lets an isoplus_user save line-item mapping', async () => {
+    await Business.create({
+      name: 'Client Map',
+      workspaceId: 'ws-client-map',
+      xeroIntegrated: true,
+    });
+    loadXeroChartOptions.mockResolvedValue({ accounts: [], taxRates: [] });
+
+    const agent = await isoplusUserAgent('mapper@workspace.test');
+    const res = await agent.put('/api/business/xero/line-item-mapping').send({
+      workspaceId: 'ws-client-map',
+      mapping: {
+        invoice: { accountCode: '200', taxType: 'OUTPUT' },
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.xeroLineItemMapping.invoice.accountCode).toBe('200');
   });
 
   it('validates workspaceId for account-tax-options', async () => {

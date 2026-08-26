@@ -610,15 +610,35 @@ Each task below is a candidate for its own expanded plan when picked up. Track A
 
 **Interfaces produced:** `Business.xeroLineItemMapping: { quote, purchaseOrder, invoice, quoteOverrides: { quoteService, material } }` each `{ accountCode, taxType, taxRatePercent }`.
 
+**Authorization (client Finance Settings):** mapping routes are **not** Owner/Support-only.
+
+| Route | Gate |
+|---|---|
+| `GET /api/business/xero/account-tax-options` | `authenticateToken` only |
+| `PUT /api/business/xero/line-item-mapping` | `authenticateToken` only |
+| Connect / disconnect / profile / update-organization | `authenticateToken` only (unchanged) |
+| Workspace **feature-toggles** (whether the Automation tab exists) | still Owner / Support Admin |
+
+Any authenticated workspace client (`isoplus_user` via ISO+ OAuth) must be able to load chart options and save mapping on Accounting Integrations. An Owner/Support Admin gate on the two mapping routes was a regression that returned `403` with `Access denied. Owner or Support Admin permission required.` — removed.
+
+**Connection actions on the Accounting Integrations tab** (`xero-connect-section.tsx`):
+
+| State | Primary action | Disconnect |
+|---|---|---|
+| Not connected | **Connect Xero** | hidden |
+| Tokens present + reconnect required (`needsReconnect`) | **Reconnect Xero** | **hidden** |
+| Connected, healthy | — | **Disconnect Xero** |
+
 - [x] Tab shell with Xero / MYOB / QuickBooks sub-tabs, full page width (4.1).
-- [x] Relocate Connect Xero / Test Connection with **no behaviour change** — Task 5's baseline is the proof (4.2).
+- [x] Relocate Connect Xero / Test Connection with **no behaviour change** — Task 5's baseline is the proof (4.2). *(Post-ship: Reconnect hides Disconnect when reconnect is required; Disconnect label is **Disconnect Xero**.)*
 - [x] Invoice/Customer/Payment/Contact Sync toggles, disabled/greyed (4.3).
 - [x] MYOB and QuickBooks sub-tabs inactive (4.4).
 - [x] Default Account + Tax Rate per document type, plus the Quote line-item override table (4.5). Tax rates filtered by Xero `canApplyToRevenue` / `canApplyToExpenses` for the selected account class; accounts prefer REVENUE for Quote/Invoice and EXPENSE for Purchase Order (AU mockup names are examples, not hard-coded).
+- [x] Mapping APIs allow `isoplus_user` (same `authenticateToken` gate as connect/disconnect); integration tests cover OAuth client load + save.
 
 **Open question from the spec (doc 4, verbatim):** the line-item override table is Quote-only "for now" — confirmed Quote-only for this ship (matches mockup).
 
-**Covers:** 4.1–4.5. Status: gap-finished on `feature/KAN-9-epic-4-accounting-integrations-tab-track-a` (core UI already on develop).
+**Covers:** 4.1–4.5. Status: gap-finished on `feature/KAN-9-epic-4-accounting-integrations-tab-track-a` (core UI already on develop). Client access + reconnect button behaviour recorded above.
 
 ---
 

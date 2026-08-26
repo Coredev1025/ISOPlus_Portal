@@ -160,7 +160,7 @@ export function XeroConnectSection({
             Reconnect Xero
           </Button>
         ) : null}
-        {isConnected ? (
+        {isConnected && !needsReconnect ? (
           <Button
             variant="destructive"
             onClick={handleDisconnect}
@@ -169,9 +169,10 @@ export function XeroConnectSection({
             {isDisconnecting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : null}
-            Disconnect
+            Disconnect Xero
           </Button>
-        ) : (
+        ) : null}
+        {!isConnected ? (
           <Button onClick={handleConnect} disabled={isConnecting}>
             {isConnecting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -180,7 +181,7 @@ export function XeroConnectSection({
             )}
             Connect Xero
           </Button>
-        )}
+        ) : null}
         <Button
           variant="outline"
           onClick={handleTestConnection}
