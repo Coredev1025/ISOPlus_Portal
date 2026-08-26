@@ -33,12 +33,21 @@ const WORKSPACE = process.env.E2E_WORKSPACE_ID ?? "55369";
 // A workspace whose flag is OFF, for the two tests that prove the gate. Create
 // one locally — it needs no boards or items, only the toggle:
 //
-//   docker exec -i isoplus-mongo mongosh business-dashboard --quiet --eval '
+//   docker exec -i isoplus-mongo mongosh "$E2E_MONGO_DB" --quiet --eval '
 //     db.businesses.updateOne({workspaceId:"55999"},
 //       {$set:{workspaceId:"55999",name:"Flag-off fixture (e2e)",
 //              "featureToggles.invoiceStatementAutomation":false}},
 //       {upsert:true})'
 const WORKSPACE_NO_FLAG = process.env.E2E_WORKSPACE_ID_NO_FLAG;
+
+// Which database the Mongo escape hatches below write to.
+//
+// Not hardcoded, for the reason e2e/support/delivery-failures.ts spells out:
+// `npm run worktree -- new --isolated-db` gives a worktree its own database
+// named after the branch, so seeding `business-dashboard` from there writes to
+// a database the app under test is not reading. The seed succeeds and the
+// assertion then fails for a reason that looks nothing like the cause.
+const MONGO_DB = process.env.E2E_MONGO_DB ?? "business-dashboard";
 
 // Login is a backend call; the frontend proxies nothing. Ports differ per
 // worktree, so read it rather than assuming 4001.
@@ -124,7 +133,7 @@ function seedFailedDocument(): void {
   // a plain object there reaches the panel as an unparseable timestamp.
   execFileSync(
     "docker",
-    ["exec", "-i", "isoplus-mongo", "mongosh", "business-dashboard", "--quiet", "--eval",
+    ["exec", "-i", "isoplus-mongo", "mongosh", MONGO_DB, "--quiet", "--eval",
       `db.pdflinks.deleteMany({itemId:"e2e-delivery-report"}); `
       + `db.pdflinks.insertOne(Object.assign(${JSON.stringify(doc)}, `
       + `{createdAt: new Date("2026-04-01T09:00:00Z")}));`],
@@ -135,7 +144,7 @@ function seedFailedDocument(): void {
 function removeSeededDocument(): void {
   execFileSync(
     "docker",
-    ["exec", "-i", "isoplus-mongo", "mongosh", "business-dashboard", "--quiet", "--eval",
+    ["exec", "-i", "isoplus-mongo", "mongosh", MONGO_DB, "--quiet", "--eval",
       'db.pdflinks.deleteMany({itemId:"e2e-delivery-report"});'],
     { stdio: "pipe" },
   );

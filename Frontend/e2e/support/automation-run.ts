@@ -24,6 +24,15 @@ import path from "node:path";
 
 const repoRoot = path.resolve(__dirname, "..", "..", "..");
 
+/**
+ * Which database to reset. Not hardcoded, for the same reason
+ * delivery-failures.ts spells out: an isolated worktree has its own database
+ * named after the branch, and clearing `business-dashboard` from there resets
+ * one the app under test is not reading — silently, so the specs then fail
+ * for reasons that look nothing like the cause.
+ */
+const DB = process.env.E2E_MONGO_DB ?? "business-dashboard";
+
 /** Mongo and Redis run in the shared `isoplus-infra` project under fixed names. */
 function mongoEval(script: string): void {
   execFileSync(
@@ -33,7 +42,7 @@ function mongoEval(script: string): void {
       "-i",
       "isoplus-mongo",
       "mongosh",
-      "business-dashboard",
+      DB,
       "--quiet",
       "--eval",
       script,
