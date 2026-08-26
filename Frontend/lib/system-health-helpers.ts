@@ -1,6 +1,5 @@
-import { format, isValid, parseISO } from "date-fns";
-
 import { CONNECTION_ORDER } from "@/constants/system-health";
+import { formatNextRun } from "@/lib/automation-helpers";
 import type { ConnectionStatus, RunStatus } from "@/lib/system-health-types";
 
 const RUN_STATUS_LABELS: Record<RunStatus, string> = {
@@ -35,15 +34,47 @@ export function formatDuration(ms: number | null | undefined): string {
 }
 
 /**
- * An absolute started-at timestamp, in the reader's local time. Absolute
- * rather than relative (contrast formatDistanceToNow on the overview tiles):
- * an operator reading a run history compares rows against each other, not
- * against "now", matching automation-schedule-block.tsx's formatNextRun.
+ * An absolute started-at timestamp, in the SCHEDULE's zone. Absolute rather
+ * than relative (contrast formatDistanceToNow on the overview tiles): an
+ * operator reading a run history compares rows against each other, not against
+ * "now".
+ *
+ * `timeZone` comes from the API (ScheduledJob.timezone, already returned on
+ * every schedule row). Formatting locally instead put two clocks on one screen
+ * — a workspace running at 21:54 Sydney rendered "7:54 PM" to a reader in
+ * Manila, contradicting the Automation tab's Run At field for the same
+ * schedule. PR #880 fixed that on the Automation tab; this is the same defect
+ * on the System Health screens.
+ *
+ * Delegates to formatNextRun rather than repeating its Intl-parts formatter:
+ * the two must not disagree about how an instant is spelled, and that one
+ * already carries the zone fallback and the assembled-from-parts shape.
  */
-export function formatStartedAt(startedAt: string | null | undefined): string {
-  if (!startedAt) return "—";
-  const parsed = parseISO(startedAt);
-  return isValid(parsed) ? format(parsed, "dd/MM/yyyy 'at' h:mm a") : "—";
+export function formatStartedAt(
+  startedAt: string | null | undefined,
+  timeZone?: string,
+): string {
+  return formatNextRun(startedAt, timeZone);
+}
+
+/**
+ * The zone to render one run's timestamps in.
+ *
+ * Matched on `kind` so a workspace whose invoice and statement schedules ever
+ * disagree renders each row against its own schedule. Falls back to any
+ * schedule on the workspace — every schedule there carries that workspace's
+ * zone, so a run whose schedule has since been deleted is still better served
+ * by a sibling than by the reader's browser — and finally to undefined, which
+ * leaves formatStartedAt on the business default.
+ */
+export function timezoneForKind(
+  schedules: readonly { kind: string; timezone?: string }[],
+  kind: string,
+): string | undefined {
+  return (
+    schedules.find((schedule) => schedule.kind === kind)?.timezone
+    ?? schedules.find((schedule) => schedule.timezone)?.timezone
+  );
 }
 
 export function runStatusLabel(status: RunStatus): string {

@@ -26,8 +26,8 @@ export function ScheduleSummary({ schedules }: Props) {
                 <span>{schedule.enabled ? "Enabled" : "Disabled"}</span>
                 <span>Missed runs: {schedule.missedRuns}</span>
                 <span>Consecutive failures: {schedule.consecutiveFailures}</span>
-                <span>Next run: {formatStartedAt(schedule.nextRunAt)}</span>
-                <span>Last run: {formatStartedAt(schedule.lastRunAt)}</span>
+                <span>Next run: {formatStartedAt(schedule.nextRunAt, schedule.timezone)}</span>
+                <span>Last run: {formatStartedAt(schedule.lastRunAt, schedule.timezone)}</span>
               </span>
             </div>
             {schedule.lastError ? (
