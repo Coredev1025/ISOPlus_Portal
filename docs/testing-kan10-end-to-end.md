@@ -459,6 +459,59 @@ and the run that caused it. Events apply to the stamped `PDFLink` rows through a
 ranked state machine, so a duplicate matches nothing and a late `Delivery`
 cannot erase a `Bounce`.
 
+### Why a scheduled run "Succeeds" and generates nothing
+
+Established 2026-08-26 by driving three real EventBridge runs against
+portal-dev. Every one closed `Succeeded` and produced no documents. This is the
+most expensive trap in Track A, so work through it before assuming a defect.
+
+**A run that selects nothing is a success, and it is silent.** `Succeeded`,
+recipient `—`, no S3 object, and **nothing in Application logs under source
+`Automation`** — filtering to that source after three runs returned only the
+previous day's entries. `Succeeded` does not mean "generated". Check the
+drill-down's recipient column, or the object list under
+`output/<workspaceId>/` in the environment's bucket.
+
+**Selection is on Service Delivery Date, not Scheduled Service Date.**
+`invoiceGeneratorListQuery` spreads `schedulePeriodServiceDeliveryWindow(...)`,
+whose entire return is:
+
+```js
+serviceDeliveryStart: start.toISOString(),
+serviceDeliveryEnd: new Date(slotStart.getTime() - 1).toISOString(),
+```
+
+`filterNdisByDates` compares those against **Actual Shift Start Date & Time**.
+Editing *Scheduled* Shift Start moves the "Scheduled Service Date" column on the
+Invoice Generator and changes nothing about what a run picks up.
+
+Do not reason from `isItemInvoiceable`'s OR-across-two-date-fields rule. It is a
+different gate and does not govern the generator's list query.
+
+**The window excludes the run day.** One cadence step back from the slot's
+calendar day, in the schedule's timezone, ending at start-of-run-day minus 1ms.
+A monthly block run on 26/08/2026 bills
+`26/07/2026 00:00:00.000 → 25/08/2026 23:59:59.999`, so a delivery date of 26/08
+misses on the very day you are testing.
+
+**A board edit is invisible until a sync.** The portal reads synced `Item`
+documents and sync replaces `data` wholesale. After editing in ISO+, use
+**Resync Data** on the Invoice Generator page (or wait for the board-sync cron),
+then filter that page to the participant and read the dates back before arming
+anything.
+
+**Re-arming rolls forward if you are late.** Changing Run At recomputes
+`nextRun`, and a time already past advances to the next period — a month, for a
+monthly block. Leave a few minutes' margin to type and save.
+
+**Not yet proven, and the next thing to check.** The same query also passes
+`status: 'pending'`, which `filterNdisByInvoiceStatus` derives from the
+`InvoiceNumber` collection (`type: 'PDF'`) rather than from the board's
+"Generated NDIS Invoice Number" column. An item that already carries a PDF
+invoice number derives as `invoiced` and is excluded. In the 2026-08-26 session
+the delivery date was corrected and the run still generated nothing, so this
+remains the leading unexplained gate.
+
 ### Track A quick reference
 
 | Symptom | Cause |
@@ -470,6 +523,8 @@ cannot erase a `Bounce`.
 | Two jobs per board | real defect — the periodKey is being derived from `now` |
 | Jobs pile up `waiting` | automation worker not started |
 | Tick green, nothing generated | `AUTOMATION_ENABLED` unset — the pipeline is gated off by default |
+| Run `Succeeded`, recipient `—`, no PDFs | nothing fell in the period — see the section above; check **Actual Shift Start**, not Scheduled |
+| Board edit made no difference | no Resync — the portal reads synced Items, not the board |
 | PDFs generated but blank | real defect — run step 11; the source rows resolved no values |
 | An email lists another board's PDFs | real defect — a PDF lookup lost its `boardId` scope |
 | Online, tick green, nothing generated at all | no delivery backend resolved — `EMAIL_FROM` or an AWS variable is blank, so the worker refused before claiming invoice numbers |
