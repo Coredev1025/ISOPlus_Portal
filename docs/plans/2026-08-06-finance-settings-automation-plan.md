@@ -63,7 +63,7 @@ re-implement Task 8 / Task 9**. Next work starts at Epic 3+.
 | **2.1** Enable/disable on Workspace Configuration; System Owner + Support Admin only | Done | Switch on Configuration via `workspace-feature-toggles-card.tsx`; API gated with `requirePortalOwnerOrSupport` (`owner` / `support_admin`, per R1) |
 | **2.2** Default disabled for existing and new workspaces | Done | `Business.featureToggles.invoiceStatementAutomation` default `false` |
 | **2.3** Persist per workspace; FE can gate the Automation tab | Done | `GET` / `PUT /api/workspaces/:workspaceId/feature-toggles` body `{ invoiceStatementAutomation: boolean }`; also exposed on business profile as `featureToggles` |
-| **2.4** Docs for System Owner / Support Admin | Done | Expanded inline help on the Feature Toggles card (and related permission copy) — no separate markdown guide |
+| **2.4** Docs for System Owner / Support Admin | Removed | Inline help on the Feature Toggles card (and related permission copy) was removed — no separate markdown guide |
 
 **Departures from the original Task 8 sketch in this plan:**
 
@@ -566,9 +566,9 @@ Each task below is a candidate for its own expanded plan when picked up. Track A
 - [x] Add the field to the schema (`Business.featureToggles`).
 - [x] Add the routes using the **existing** `requirePortalOwnerOrSupport`, per R1.
 - [x] Expose the flag to the frontend for tab gating (profile + dedicated endpoints; not via proxied `GET /api/workspaces`).
-- [x] Update System Owner / Support Admin documentation (2.4) — inline help on the Feature Toggles card.
+- [x] ~~Update System Owner / Support Admin documentation (2.4) — inline help on the Feature Toggles card.~~ **Removed** — inline help and related permission copy were dropped from Workspace Configuration; no separate markdown guide.
 
-**Covers:** 2.1, 2.2, 2.3, 2.4. **Also satisfies** the doc-5 note that this same toggle hides the tab for NDIS/SaH/IMS workspaces — no separate toggle.
+**Covers:** 2.1, 2.2, 2.3. **2.4** inline docs removed. The same toggle still hides the tab for NDIS/SaH/IMS workspaces — no separate toggle.
 
 ---
 
