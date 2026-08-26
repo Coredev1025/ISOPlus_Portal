@@ -27,7 +27,6 @@ import {
 import { sanitizeLogValue } from '../utils/sanitizeLog.js';
 import { normalizeLineItemMapping, enrichMappingWithTaxRatePercents } from '../utils/xeroLineItemMapping.js';
 import { loadXeroChartOptions } from '../utils/xeroAccountTaxHelpers.js';
-import { requireOwnerOrSupportAdmin } from '../utils/workspaceFeatureToggleHelpers.js';
 
 function mapXeroAccountOptions(rawAccounts) {
   return (rawAccounts || [])
@@ -424,8 +423,6 @@ router.post('/xero/update-organization', authenticateToken, async (req, res) => 
 
 router.get('/xero/account-tax-options', authenticateToken, async (req, res) => {
   try {
-    if (!requireOwnerOrSupportAdmin(req, res)) return;
-
     const workspaceId = toRequiredQueryString(req.query.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
 
@@ -458,8 +455,6 @@ router.get('/xero/account-tax-options', authenticateToken, async (req, res) => {
 
 router.put('/xero/line-item-mapping', authenticateToken, async (req, res) => {
   try {
-    if (!requireOwnerOrSupportAdmin(req, res)) return;
-
     const workspaceId = toRequiredQueryString(req.body.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
 

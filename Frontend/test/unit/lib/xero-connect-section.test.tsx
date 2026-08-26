@@ -82,7 +82,7 @@ describe('XeroConnectSection', () => {
       />
     );
 
-    await userEvent.click(screen.getByRole('button', { name: /disconnect/i }));
+    await userEvent.click(screen.getByRole('button', { name: /disconnect xero/i }));
 
     await waitFor(() => {
       expect(axios.post).toHaveBeenCalledWith(
@@ -117,7 +117,7 @@ describe('XeroConnectSection', () => {
     });
   });
 
-  it('offers Reconnect Xero without disconnecting when organisation is missing', async () => {
+  it('offers Reconnect Xero and hides Disconnect when reconnect is required', async () => {
     const location = stubLocationHref();
     (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       data: { url: 'https://login.xero.com/identity/connect/authorize?state=abc' },
@@ -133,7 +133,7 @@ describe('XeroConnectSection', () => {
     );
 
     expect(screen.getByRole('button', { name: /reconnect xero/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /disconnect/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /disconnect/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^connect xero$/i })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: /reconnect xero/i }));
@@ -150,6 +150,19 @@ describe('XeroConnectSection', () => {
     );
   });
 
+  it('shows Disconnect Xero when connected and reconnect is not required', () => {
+    render(
+      <XeroConnectSection
+        workspaceId="ws-1"
+        isConnected
+        onConnectedChange={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: /disconnect xero/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /reconnect xero/i })).not.toBeInTheDocument();
+  });
+
   it('shows Connect only when Xero is not integrated', () => {
     render(
       <XeroConnectSection
@@ -160,7 +173,7 @@ describe('XeroConnectSection', () => {
     );
 
     expect(screen.getByRole('button', { name: /connect xero/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /disconnect/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /disconnect xero/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /reconnect xero/i })).not.toBeInTheDocument();
   });
 
@@ -285,7 +298,7 @@ describe('XeroConnectSection', () => {
       expect(onNeedsReconnectChange).toHaveBeenCalledWith(false);
     });
 
-    await userEvent.click(screen.getByRole('button', { name: /disconnect/i }));
+    await userEvent.click(screen.getByRole('button', { name: /disconnect xero/i }));
     await waitFor(() => {
       expect(showErrorToast).toHaveBeenCalledWith(
         'Failed to disconnect from Xero',

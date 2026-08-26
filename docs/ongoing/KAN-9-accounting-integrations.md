@@ -2,6 +2,38 @@
 
 Delete this file on merge.
 
+## Who can configure Xero (required reading)
+
+Finance Settings → Accounting Integrations is a **client** surface. Workspace
+`isoplus_user` sessions (ISO+ OAuth) must be able to connect Xero, load account/
+tax options, and save line-item mapping for **their** workspace.
+
+| Endpoint | Auth |
+|---|---|
+| `GET /api/business/xero/account-tax-options` | `authenticateToken` only |
+| `PUT /api/business/xero/line-item-mapping` | `authenticateToken` only |
+| `POST /api/business/xero/disconnect`, `update-organization`, profile | `authenticateToken` only |
+| `GET` / `PUT /api/workspaces/:id/feature-toggles` | Owner / Support Admin (unchanged — gates whether the Automation **tab** exists) |
+
+Do **not** put `requireOwnerOrSupportAdmin` back on the mapping routes. That
+gate returned `403` `{ "message": "Access denied. Owner or Support Admin permission required." }`
+for clients opening Accounting Integrations (e.g. `account-tax-options?workspaceId=…`)
+while the UI itself was reachable. Covered by
+`Backend/test/integration/business.xero-mapping.route.test.js` (OAuth `isoplus_user`
+load + save).
+
+## Connection buttons (`Frontend/lib/xero-connect-section.tsx`)
+
+| State | Show | Hide |
+|---|---|---|
+| Not integrated | **Connect Xero** | Reconnect, Disconnect |
+| Tokens present + reconnect required | **Reconnect Xero** (+ amber copy) | **Disconnect** (must stay hidden) |
+| Connected and healthy | **Disconnect Xero** | Reconnect, Connect |
+
+`needsReconnect` is set when Test Connection / org refresh reports expired
+tokens, missing organisation, or similar reconnect failures. Unit coverage:
+`Frontend/test/unit/lib/xero-connect-section.test.tsx`.
+
 ## PR description (paste into gh pr create)
 
 ### Summary
@@ -11,6 +43,10 @@ connect/test, account + tax mapping for Quote / Purchase Order / Invoice, quote 
 and disabled future sync toggles. Replaces the old popup OAuth flow with a full-page redirect using
 signed state and a one-time connect ticket — the old flow posted Xero tokens via `postMessage` to
 `*` and accepted client-supplied tokens on `POST /api/business/xero/connect`.
+
+**Client access:** mapping APIs use `authenticateToken` only (not Owner/Support Admin), matching
+connect/disconnect. **Reconnect Xero** shows when tokens exist but reconnect is required, without
+a Disconnect button; a healthy connection shows **Disconnect Xero**.
 
 ### Ticket
 
@@ -34,6 +70,8 @@ KAN-9
 - **Stored data:** migrations drop `businesses.xeroConnectionLogs` (events moved to AuditTrail).
 - **API responses:** audit list index added; no breaking changes to existing authenticated routes.
 - **Auth / sync / PDF / Xero:** Xero OAuth and invoice/quote/PO push mapping behaviour touched.
+  Mapping option/save routes are callable by authenticated clients (`isoplus_user`), not only
+  portal Owner/Support Admin.
 
 ### New dependencies
 
@@ -65,6 +103,8 @@ Frontend — npm test test/unit/toast-utils-dismiss.test.ts test/unit/lib/xero-o
   test/unit/lib/xero-account-tax-mapping-options.test.ts test/unit/lib/xero-integration-errors.test.ts: 22 passed
 Backend — npm test test/unit/utils/xeroOAuth*.test.js test/unit/utils/xeroConnectHelpers.test.js
   test/unit/models/oAuthTicket.test.js: 22 passed
+Backend — npm test test/integration/business.xero-mapping.route.test.js: isoplus_user load/save covered
+Frontend — npm test test/unit/lib/xero-connect-section.test.tsx: Reconnect hides Disconnect
 ```
 
 ### Follow-ups / open decisions
