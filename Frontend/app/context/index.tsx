@@ -1,6 +1,7 @@
 "use client"
 
 import React, { createContext, useState, Dispatch, SetStateAction, ReactNode, useContext, useEffect } from 'react';
+import type { BoardSyncSchedule } from '@/lib/board-sync-status-helpers';
 
 export interface User {
     id: string;
@@ -43,17 +44,10 @@ export interface SyncStatus {
     } | null;
 }
 
-/** Full board rows from `/api/sync/workspace/status` (includes `schedule`). */
+/** Board row subset from `/api/sync/workspace/status` that Configuration reads. */
 export type WorkspaceBoardStatus = {
     boardId: string;
-    schedule?: {
-        cron?: string | null;
-        timezone?: string | null;
-        previous: { at: string } | null;
-        current: { state: string; syncType?: string } | null;
-        upcoming: { at: string } | null;
-    } | null;
-    [key: string]: unknown;
+    schedule?: BoardSyncSchedule | null;
 };
 
 interface ContextProps {

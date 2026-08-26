@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   BOARD_SYNC_CRON_DEFAULT,
+  BOARD_SYNC_GAP_MS_DEFAULT,
+  BOARD_SYNC_GAP_MS_MAX,
   BOARD_SYNC_KIND,
 } from '../../../src/constants/scheduler.js';
 import { SCHEDULED_SYNC_JOB_TYPE } from '../../../src/constants/sync.js';
@@ -9,6 +11,8 @@ import {
   buildScheduledSyncBoardWrites,
   isEligibleSyncBoard,
   resolveBoardSyncCron,
+  resolveBoardSyncEnabled,
+  resolveBoardSyncGapMs,
   scheduledSyncPeriodKey,
 } from '../../../src/utils/boardSyncSweepHelpers.js';
 
@@ -27,6 +31,52 @@ describe('resolveBoardSyncCron', () => {
   });
 });
 
+describe('resolveBoardSyncEnabled', () => {
+  it('defaults to true when unset or blank', () => {
+    expect(resolveBoardSyncEnabled({})).toBe(true);
+    expect(resolveBoardSyncEnabled({ BOARD_SYNC_ENABLED: '   ' })).toBe(true);
+  });
+
+  it('is false for false, 0, off, and no (case-insensitive)', () => {
+    expect(resolveBoardSyncEnabled({ BOARD_SYNC_ENABLED: 'false' })).toBe(false);
+    expect(resolveBoardSyncEnabled({ BOARD_SYNC_ENABLED: '0' })).toBe(false);
+    expect(resolveBoardSyncEnabled({ BOARD_SYNC_ENABLED: 'OFF' })).toBe(false);
+    expect(resolveBoardSyncEnabled({ BOARD_SYNC_ENABLED: ' No ' })).toBe(false);
+  });
+
+  it('is true for true, 1, on, and yes', () => {
+    expect(resolveBoardSyncEnabled({ BOARD_SYNC_ENABLED: 'true' })).toBe(true);
+    expect(resolveBoardSyncEnabled({ BOARD_SYNC_ENABLED: '1' })).toBe(true);
+    expect(resolveBoardSyncEnabled({ BOARD_SYNC_ENABLED: 'on' })).toBe(true);
+    expect(resolveBoardSyncEnabled({ BOARD_SYNC_ENABLED: 'yes' })).toBe(true);
+  });
+});
+
+describe('resolveBoardSyncGapMs', () => {
+  it('defaults to 0 when unset, blank, or non-numeric', () => {
+    expect(BOARD_SYNC_GAP_MS_DEFAULT).toBe(0);
+    expect(resolveBoardSyncGapMs({})).toBe(0);
+    expect(resolveBoardSyncGapMs({ BOARD_SYNC_GAP_MS: '   ' })).toBe(0);
+    expect(resolveBoardSyncGapMs({ BOARD_SYNC_GAP_MS: 'abc' })).toBe(0);
+  });
+
+  it('uses a non-negative integer milliseconds value', () => {
+    expect(resolveBoardSyncGapMs({ BOARD_SYNC_GAP_MS: '60000' })).toBe(60000);
+    expect(resolveBoardSyncGapMs({ BOARD_SYNC_GAP_MS: ' 120000 ' })).toBe(120000);
+  });
+
+  it('treats negative values as 0', () => {
+    expect(resolveBoardSyncGapMs({ BOARD_SYNC_GAP_MS: '-1' })).toBe(0);
+  });
+
+  it('clamps absurd values to BOARD_SYNC_GAP_MS_MAX', () => {
+    expect(BOARD_SYNC_GAP_MS_MAX).toBe(60 * 60 * 1000);
+    expect(resolveBoardSyncGapMs({ BOARD_SYNC_GAP_MS: '1e9' })).toBe(BOARD_SYNC_GAP_MS_MAX);
+    expect(resolveBoardSyncGapMs({ BOARD_SYNC_GAP_MS: String(BOARD_SYNC_GAP_MS_MAX + 1) }))
+      .toBe(BOARD_SYNC_GAP_MS_MAX);
+  });
+});
+
 describe('isEligibleSyncBoard', () => {
   it('accepts a sync-enabled board with ids', () => {
     expect(isEligibleSyncBoard({
@@ -38,6 +88,12 @@ describe('isEligibleSyncBoard', () => {
     expect(isEligibleSyncBoard({ syncData: false, boardId: 'b1', workspaceId: 'ws-1' })).toBe(false);
     expect(isEligibleSyncBoard({ syncData: true, boardId: '', workspaceId: 'ws-1' })).toBe(false);
     expect(isEligibleSyncBoard({ syncData: true, boardId: 'b1', workspaceId: null })).toBe(false);
+  });
+
+  it('rejects missing or null syncData (allow-list, not deny-list)', () => {
+    expect(isEligibleSyncBoard({ boardId: 'b1', workspaceId: 'ws-1' })).toBe(false);
+    expect(isEligibleSyncBoard({ syncData: null, boardId: 'b1', workspaceId: 'ws-1' })).toBe(false);
+    expect(isEligibleSyncBoard({ syncData: undefined, boardId: 'b1', workspaceId: 'ws-1' })).toBe(false);
   });
 });
 
@@ -89,6 +145,38 @@ describe('buildScheduledSyncSpecs', () => {
     const boards = [{ syncData: true, boardId: 'b1', workspaceId: 'ws-1' }];
     buildScheduledSyncSpecs({ boards, slot, timezone: TZ, authorization: 'Bearer t' });
     expect(boards).toEqual([{ syncData: true, boardId: 'b1', workspaceId: 'ws-1' }]);
+  });
+
+  it('spaces consecutive starts by gapMs via BullMQ delay', () => {
+    const specs = buildScheduledSyncSpecs({
+      boards: [
+        { syncData: true, boardId: 'b1', workspaceId: 'ws-1' },
+        { syncData: true, boardId: 'b2', workspaceId: 'ws-1' },
+        { syncData: true, boardId: 'b3', workspaceId: 'ws-1' },
+      ],
+      slot,
+      timezone: TZ,
+      authorization: 'Bearer t',
+      gapMs: 60_000,
+    });
+
+    expect(specs.map((s) => s.opts.delay)).toEqual([0, 60_000, 120_000]);
+  });
+
+  it('omits delay when gapMs is 0', () => {
+    const specs = buildScheduledSyncSpecs({
+      boards: [
+        { syncData: true, boardId: 'b1', workspaceId: 'ws-1' },
+        { syncData: true, boardId: 'b2', workspaceId: 'ws-1' },
+      ],
+      slot,
+      timezone: TZ,
+      authorization: 'Bearer t',
+      gapMs: 0,
+    });
+
+    expect(specs[0].opts.delay).toBeUndefined();
+    expect(specs[1].opts.delay).toBeUndefined();
   });
 });
 

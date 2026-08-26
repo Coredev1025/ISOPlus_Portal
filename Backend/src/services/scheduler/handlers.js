@@ -12,10 +12,11 @@ import { isAutomationEnabled } from '../../utils/automationEnabled.js';
 import {
   AT_LEAST_ONCE,
   BOARD_SYNC_KIND,
+  BOARD_SYNC_SPAN_WARN_MS,
   DEFAULT_TIMEZONE,
   LOG_SCOPE,
 } from '../../constants/scheduler.js';
-import { buildScheduledSyncSpecs, buildScheduledSyncBoardWrites } from '../../utils/boardSyncSweepHelpers.js';
+import { buildScheduledSyncSpecs, buildScheduledSyncBoardWrites, resolveBoardSyncGapMs } from '../../utils/boardSyncSweepHelpers.js';
 import syncQueue from '../sync/queue.js';
 
 const BLOCK_FOR_KIND = { [KIND_INVOICE]: 'invoice', [KIND_STATEMENT]: 'statement' };
@@ -36,16 +37,30 @@ export async function runBoardSyncSweep({ slot, timezone = DEFAULT_TIMEZONE } = 
     .select('boardId workspaceId syncData')
     .lean();
 
+  const gapMs = resolveBoardSyncGapMs();
   const specs = buildScheduledSyncSpecs({
     boards,
     slot,
     timezone,
     authorization: getSchedulerAuthorization(),
+    gapMs,
   });
 
   if (specs.length === 0) {
     info(LOG_SCOPE, 'board_sync sweep: no sync-enabled boards', { count: 0 });
     return;
+  }
+
+  // index * gap can outrun the next cron slot; different periodKeys then do not
+  // collapse, so boards stay Queued across overlapping sweeps. Warn only — do
+  // not silently shrink the operator's gap.
+  const spanMs = specs.length > 1 ? (specs.length - 1) * gapMs : 0;
+  if (spanMs > BOARD_SYNC_SPAN_WARN_MS) {
+    warn(LOG_SCOPE, 'board_sync sweep span exceeds the cron interval', {
+      spanMs,
+      boards: specs.length,
+      gapMs,
+    });
   }
 
   await syncQueue.addBulk(specs);

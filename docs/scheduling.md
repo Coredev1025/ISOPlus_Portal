@@ -338,6 +338,15 @@ webhooks are unchanged. Board Configuration reads previous / current /
 next from the workspace sync status poll (next run is computed from the
 cron, not from a `ScheduledJob` row).
 
+**Env controls (scheduled catch-up only — not per-board Sync / webhooks /
+manual Resync):**
+
+| Variable | Default | Effect |
+|---|---|---|
+| `BOARD_SYNC_ENABLED` | on (unset) | `false` / `0` / `off` / `no` → `startBoardSyncCron` does not arm the timer; status meta returns `nextRunAt: null` (UI: Not scheduled). The sweep function itself is **not** gated — one check at boot. Per-board Sync, webhooks, and manual Resync are unaffected. The timer is armed **once at boot** — change the env and restart. Does **not** cancel delayed/waiting `scheduled_sync` jobs already in Redis from a prior sweep — drain Bull Board or remove those jobs before relying on "off". |
+| `BOARD_SYNC_GAP_MS` | `0` | Minimum start spacing between consecutive `scheduled_sync` jobs (`delay = index * gap`). Raise to reduce ISO+ 429 risk. Not a post-completion cool-down: if a board runs longer than the gap, the next may start immediately — set gap ≥ typical board duration for a real rest. Capped at **one hour** (`BOARD_SYNC_GAP_MS_MAX`) so typos like `1e9` cannot enqueue multi-day delayed jobs. If `(boards − 1) × gap` exceeds one day (`BOARD_SYNC_SPAN_WARN_MS`, the default cron interval), the sweep **warns** but does not shrink spacing — overlapping periodKeys would not dedupe. Manual Resync is unaffected (higher priority, no delay). Boards still stamp `syncJobId` / `scheduled_sync` at enqueue, so delayed boards can show Queued before their delay elapses; Resync removes waiting/delayed catch-up for that board. |
+| `BOARD_SYNC_CRON` | `0 2 * * *` | Cadence of the portal sweep |
+
 Leftover portal `ScheduledJob` rows (`kind: board_sync`, `targetId: portal`)
 are disabled by migration so EventBridge ticks cannot claim them.
 Invoice/statement automation remain on the tick.

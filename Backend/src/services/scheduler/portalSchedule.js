@@ -1,6 +1,9 @@
 import { computeNextRun, isValidSchedule } from './nextRun.js';
 import { runBoardSyncSweep } from './handlers.js';
-import { resolveBoardSyncCron } from '../../utils/boardSyncSweepHelpers.js';
+import {
+  resolveBoardSyncCron,
+  resolveBoardSyncEnabled,
+} from '../../utils/boardSyncSweepHelpers.js';
 import {
   BOARD_SYNC_KIND,
   DEFAULT_TIMEZONE,
@@ -15,7 +18,7 @@ import { info, warn, error } from '../../utils/logger.js';
 export function buildPortalBoardSyncMeta({ now = new Date() } = {}) {
   const expression = resolveBoardSyncCron();
   const timezone = DEFAULT_TIMEZONE;
-  if (!isValidSchedule(expression, timezone)) {
+  if (!resolveBoardSyncEnabled() || !isValidSchedule(expression, timezone)) {
     return { cron: expression, timezone, nextRunAt: null };
   }
   return {
@@ -38,8 +41,9 @@ async function fireBoardSyncSweep({ slot }) {
 
 /**
  * Starts the in-process board catch-up clock. Returns `{ stop }` or null when
- * skipped (test env / invalid cron). Uses cron-parser + setTimeout rather than
- * a third scheduling library — computeNextRun already exists for the same expr.
+ * skipped (test env / disabled / invalid cron). Uses cron-parser + setTimeout
+ * rather than a third scheduling library — computeNextRun already exists for
+ * the same expr.
  *
  * The slot is captured when the timer is armed and passed into the fire
  * callback. Re-deriving it from Date.now() inside the callback is unsafe:
@@ -48,6 +52,11 @@ async function fireBoardSyncSweep({ slot }) {
  */
 export function startBoardSyncCron({ env = process.env } = {}) {
   if (env.NODE_ENV === 'test') return null;
+
+  if (!resolveBoardSyncEnabled(env)) {
+    info(LOG_SCOPE, 'board_sync cron not started: BOARD_SYNC_ENABLED is off');
+    return null;
+  }
 
   const expression = resolveBoardSyncCron(env);
   if (!isValidSchedule(expression, DEFAULT_TIMEZONE)) {

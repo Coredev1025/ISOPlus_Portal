@@ -26,9 +26,9 @@
  *
  * Touchpoints: registry.js (validates against POLICIES), tick.js (claim
  * strategy), outcome.js (success/failure recording), intervalFloor.js
- * (which floor applies), handlers.js (which registers board_sync AND both
- * automation kinds under AT_LEAST_ONCE — see the comment there for why the
- * invoice kind is not AT_MOST_ONCE despite the guidance above).
+ * (which floor applies), handlers.js (registers invoice and statement
+ * automation under AT_LEAST_ONCE — see the comment there for why the invoice
+ * kind is not AT_MOST_ONCE despite the guidance above).
  */
 export const AT_MOST_ONCE = 'at_most_once';
 export const AT_LEAST_ONCE = 'at_least_once';
@@ -106,9 +106,9 @@ export const AT_LEAST_ONCE_MIN_INTERVAL_MINUTES = 5;
 // ── Portal board catch-up ───────────────────────────────────────────────────
 
 /**
- * Registry key / log kind for the portal-wide ISO+ board catch-up sweep.
- * Touchpoints: handlers.js (runBoardSyncSweep), portalSchedule.js,
- * boardSyncSweepHelpers.js.
+ * Log kind for the portal-wide ISO+ board catch-up sweep.
+ * Touchpoints: handlers.js (runBoardSyncSweep), portalSchedule.js
+ * (startBoardSyncCron, buildPortalBoardSyncMeta).
  */
 export const BOARD_SYNC_KIND = 'board_sync';
 
@@ -117,6 +117,29 @@ export const BOARD_SYNC_KIND = 'board_sync';
  * Touchpoints: boardSyncSweepHelpers.js (resolveBoardSyncCron), portalSchedule.js.
  */
 export const BOARD_SYNC_CRON_DEFAULT = '0 2 * * *';
+
+/**
+ * Minimum start spacing between consecutive scheduled_sync jobs in one sweep
+ * when BOARD_SYNC_GAP_MS is unset. 0 means back-to-back (today's behaviour).
+ * Touchpoints: boardSyncSweepHelpers.js (resolveBoardSyncGapMs),
+ * buildScheduledSyncSpecs (default param).
+ */
+export const BOARD_SYNC_GAP_MS_DEFAULT = 0;
+
+/**
+ * Ceiling for BOARD_SYNC_GAP_MS (one hour). Typos like `1e9` must not enqueue
+ * multi-day delayed jobs that survive BOARD_SYNC_ENABLED=false.
+ * Touchpoints: boardSyncSweepHelpers.js (resolveBoardSyncGapMs).
+ */
+export const BOARD_SYNC_GAP_MS_MAX = 60 * 60 * 1000;
+
+/**
+ * Warn when the last board's start delay `(n-1)*gap` exceeds this span.
+ * Matches the default daily BOARD_SYNC_CRON interval — overlapping sweeps with
+ * different periodKeys would not dedupe. Does not clamp spacing.
+ * Touchpoints: handlers.js (runBoardSyncSweep).
+ */
+export const BOARD_SYNC_SPAN_WARN_MS = 24 * 60 * 60 * 1000;
 
 // ── Persistence ─────────────────────────────────────────────────────────────
 
