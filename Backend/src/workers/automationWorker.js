@@ -4,6 +4,7 @@ import { KIND_INVOICE, KIND_STATEMENT } from '../constants/automation.js';
 import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
 import { AUTOMATION_QUEUE_NAME } from '../services/automation/queue.js';
 import { activeEmailBackendName, deliverEmail } from '../services/email/outbox.js';
+import { recordEmailFailure } from '../services/email/deliveryEvents.js';
 import { generateInvoicesForBoard } from '../services/automation/generateDocuments.js';
 import { generateStatementsForBoard } from '../services/automation/generateStatements.js';
 import {
@@ -151,10 +152,16 @@ async function deliverGroup({
   // operator has to go and fix on a profile — so it is an error, not the info
   // line a successful hand-over gets. The documents survive: their PDFLink rows
   // carry this slot's periodKey, so the next run hands back the same documents
-  // rather than minting new invoice numbers, and the status panel keeps showing
-  // them as 'generated' until the send succeeds. Nothing is thrown: the other
+  // rather than minting new invoice numbers. Nothing is thrown: the other
   // participants' messages have already gone, and a BullMQ retry would send
   // them a second time to fix a profile it cannot reach.
+  //
+  // The documents are also STAMPED, which they previously were not. Leaving
+  // them at the default 'generated' meant the status panel — muted badge, and
+  // deliberately "never as an error" — reported a run that reached nobody as
+  // healthy. A refusal is exactly the delivery problem Epic 5 asks to be
+  // flagged against the send, so it is recorded where the client reads it and
+  // not only in a log they cannot see. A later successful re-send clears it.
   if (result.delivered === false && result.reason) {
     error('Automation', 'Automation email was not delivered; documents kept for a re-send', {
       kind, workspaceId, boardId, periodKey,
@@ -163,6 +170,7 @@ async function deliverGroup({
       participant: group.participant,
       documents: attachments.length,
     });
+    await recordEmailFailure({ workspaceId, documentUrls: attachments, reason: result.reason });
     return;
   }
 

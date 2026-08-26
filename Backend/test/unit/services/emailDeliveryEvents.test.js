@@ -6,6 +6,7 @@ import {
   bounceReason,
   describeSesEvent,
   normalizeMessageId,
+  recordEmailFailure,
   recordEmailSend,
 } from '../../../src/services/email/deliveryEvents.js';
 
@@ -241,5 +242,117 @@ describe('applyDeliveryEvent', () => {
       matched: 0,
     });
     expect(await applyDeliveryEvent(null)).toMatchObject({ state: null, matched: 0 });
+  });
+});
+
+/**
+ * The reproduction for the defect this closes.
+ *
+ * A send the backend REFUSES wrote nothing at all, so its documents stayed at
+ * the default `generated` — which the status panel renders muted and
+ * explicitly "never as an error". A client whose statements reached nobody was
+ * shown ten neutral rows and a green "On track" badge, which is the one thing
+ * Epic 5's visibility panel exists to prevent.
+ *
+ * Observed on portal-dev 2026-08-25: ten statements generated, zero delivered,
+ * `ERROR Automation: Automation email was not delivered`, panel said Succeeded.
+ */
+describe('recordEmailFailure', () => {
+  it('stamps "failed" and a client-readable reason on the documents that went nowhere', async () => {
+    await automationPdfLink();
+    await automationPdfLink({ itemId: 'item-2', pdfLink: STATEMENT_URL, type: 'Monthly Statement' });
+    // Another tenant's row sharing the URL must not be claimed, exactly as for a send.
+    await automationPdfLink({ workspaceId: 'ws-other', itemId: 'item-3' });
+
+    const matched = await recordEmailFailure({
+      workspaceId: WS,
+      documentUrls: [INVOICE_URL, STATEMENT_URL],
+      reason: 'no_address_on_profile',
+    });
+
+    expect(matched).toBe(2);
+
+    const invoice = await PDFLink.findOne({ workspaceId: WS, pdfLink: INVOICE_URL }).lean();
+    expect(invoice.deliveryState).toBe('failed');
+    // Plain English, not the internal code — the client has to know what to fix.
+    expect(invoice.deliveryDetail).toMatch(/no email address/i);
+    expect(invoice.deliveryDetail).not.toMatch(/no_address_on_profile/);
+
+    const other = await PDFLink.findOne({ workspaceId: 'ws-other' }).lean();
+    expect(other.deliveryState ?? 'generated').toBe('generated');
+  });
+
+  it('still records a failure when the reason is one it has no sentence for', async () => {
+    await automationPdfLink();
+
+    await recordEmailFailure({
+      workspaceId: WS,
+      documentUrls: [INVOICE_URL],
+      reason: 'something_new_from_a_later_release',
+    });
+
+    const row = await PDFLink.findOne({ workspaceId: WS, pdfLink: INVOICE_URL }).lean();
+    // The state is the load-bearing part; an unmapped reason must not silently
+    // drop the row back to looking healthy.
+    expect(row.deliveryState).toBe('failed');
+    expect(row.deliveryDetail).toBeTruthy();
+  });
+
+  /**
+   * A refusal is not terminal: the documents are deliberately kept so the next
+   * run hands back the same ones rather than minting new invoice numbers. When
+   * that re-send succeeds the row has to stop claiming it failed.
+   */
+  it('is overwritten by a later successful send', async () => {
+    await automationPdfLink();
+    await recordEmailFailure({ workspaceId: WS, documentUrls: [INVOICE_URL], reason: 'access_denied' });
+
+    await recordEmailSend({
+      messageId: '<msg-2@provider.test>',
+      workspaceId: WS,
+      documentUrls: [INVOICE_URL],
+    });
+
+    const row = await PDFLink.findOne({ workspaceId: WS, pdfLink: INVOICE_URL }).lean();
+    expect(row.deliveryState).toBe('sent');
+    expect(row.deliveryDetail).toBeFalsy();
+  });
+
+  /**
+   * The refusal has no message of its own, so it must not leave the row
+   * answering to the previous send's id. SES publishes minutes late: a Bounce
+   * for that earlier message outranks `failed` (6 > 5) and would replace the
+   * sentence naming the field to fix with a bounce reason for a message that
+   * is no longer what this row's state is about.
+   */
+  it('stops answering to the previous send\'s message id', async () => {
+    await automationPdfLink();
+    await recordEmailSend({
+      messageId: '<msg-1@provider.test>',
+      workspaceId: WS,
+      documentUrls: [INVOICE_URL],
+    });
+
+    await recordEmailFailure({
+      workspaceId: WS,
+      documentUrls: [INVOICE_URL],
+      reason: 'no_address_on_profile',
+    });
+
+    const refused = await PDFLink.findOne({ workspaceId: WS, pdfLink: INVOICE_URL }).lean();
+    expect(refused.deliveryMessageId).toBeFalsy();
+
+    // The late event for the message that has been superseded.
+    const { matched } = await applyDeliveryEvent(sesEvent('Bounce', BOUNCE));
+    expect(matched).toBe(0);
+
+    const row = await PDFLink.findOne({ workspaceId: WS, pdfLink: INVOICE_URL }).lean();
+    expect(row.deliveryState).toBe('failed');
+    expect(row.deliveryDetail).toMatch(/no email address/i);
+  });
+
+  it('does nothing without a workspace or any documents', async () => {
+    expect(await recordEmailFailure({ workspaceId: WS, documentUrls: [], reason: 'access_denied' })).toBe(0);
+    expect(await recordEmailFailure({ workspaceId: '', documentUrls: [INVOICE_URL], reason: 'access_denied' })).toBe(0);
   });
 });

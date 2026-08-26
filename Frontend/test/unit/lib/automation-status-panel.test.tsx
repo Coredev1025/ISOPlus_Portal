@@ -151,3 +151,51 @@ describe('AutomationStatusPanel recent-document delivery state', () => {
     ).toBeInTheDocument();
   });
 });
+
+/**
+ * Epic 5: "a short list (last 10) of generated invoices/statements with
+ * recipient, sent time, and delivery state". That name was the one part never
+ * rendered — the backend now sends `participant`, so the row has to show it,
+ * rather than silently reusing it as the link label the way
+ * `recentDocumentLabel` does for an unnumbered statement.
+ *
+ * Rendered "For <name>", not as the recipient, and the distinction is not
+ * pedantry. `participant` is the client the document was raised for. With
+ * Recipient set to Billing Contact the mail goes to that profile's Billing
+ * Email, which can belong to somebody else entirely — so a row labelled as the
+ * recipient would assert something the stored data does not know. Nothing
+ * records the mailbox actually written to; until something does, the row says
+ * only what it can stand behind.
+ */
+describe('the client on a recent document', () => {
+  it('names the client the document was raised for', () => {
+    const status = renderPanel([doc({ participant: 'Samuel Rivers' })]);
+
+    expect(rowFor(status, /INV-1004/).getByText(/for samuel rivers/i)).toBeInTheDocument();
+  });
+
+  it('does not present that name as the address it was sent to', () => {
+    const status = renderPanel([doc({ participant: 'Samuel Rivers' })]);
+
+    // The guard on the claim itself: with Recipient = Billing Contact the mail
+    // may have gone to a different person, so the row must not say otherwise.
+    expect(rowFor(status, /INV-1004/).queryByText(/recipient/i)).not.toBeInTheDocument();
+  });
+
+  it('says so plainly when no client was recorded', () => {
+    const status = renderPanel([doc({ participant: null })]);
+
+    // Silence would read as "raised for nobody in particular"; the panel exists
+    // to stop the client guessing.
+    expect(rowFor(status, /INV-1004/).getByText(/no client recorded/i)).toBeInTheDocument();
+  });
+
+  it('does not repeat the name when it is already the row label', () => {
+    // An unnumbered statement falls back to the participant as its link text.
+    const status = renderPanel([
+      doc({ type: 'Monthly Statement', invoiceNumber: null, participant: 'Jane Smith' }),
+    ]);
+
+    expect(rowFor(status, 'Jane Smith').getAllByText(/jane smith/i)).toHaveLength(1);
+  });
+});

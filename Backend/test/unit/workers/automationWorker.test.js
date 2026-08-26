@@ -732,6 +732,54 @@ describe('startAutomationWorker', () => {
       await cleanupWorkerNdisBoard();
     });
 
+    /**
+     * The reproduction for the defect this closes.
+     *
+     * The refusal above was logged and nothing else, so the documents kept the
+     * default `generated` — which the status panel renders muted and never as
+     * an error. On portal-dev a statement run produced ten documents, delivered
+     * none, and the panel still read "On track ... Succeeded". Epic 5 asks for
+     * the delivery problem to be flagged against the send in plain English.
+     */
+    it('online, delivery refused: marks the documents failed with a readable reason', async () => {
+      process.env.ISOPLUS_OFFLINE = '0';
+      process.env.EMAIL_FROM = 'billing@dev.isoplus.online';
+      process.env.AWS_ACCESS_KEY_ID = 'test-key';
+      process.env.AWS_SECRET_ACCESS_KEY = 'test-secret';
+      process.env.AWS_REGION = 'ap-southeast-2';
+      const PDF_URL = 'https://b.s3.ap-southeast-2.amazonaws.com/out/refused.pdf';
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        invoice: { enabled: true, recipient: 'billing_contact', emailSubject: 'Invoice run' },
+      });
+      // The row the generator would have written for this document.
+      await PDFLink.create({
+        workspaceId: 'ws-1',
+        itemId: 'i-1',
+        type: 'NDIS Invoice',
+        pdfLink: PDF_URL,
+        periodKey: '20250201-0900',
+      });
+      const genSpy = vi.spyOn(generateDocuments, 'generateInvoicesForBoard').mockResolvedValue([
+        { itemId: 'i-1', invoiceNumber: 'IN-901', participant: 'Samuel Rivers', pdfUrl: PDF_URL },
+      ]);
+      const deliverSpy = vi.spyOn(outbox, 'deliverEmail')
+        .mockResolvedValue({ delivered: false, backend: 'ses', reason: 'no_address_on_profile' });
+      startAutomationWorker();
+
+      await registeredHandler()(JOB);
+
+      const row = await PDFLink.findOne({ workspaceId: 'ws-1', pdfLink: PDF_URL }).lean();
+      expect(row.deliveryState).toBe('failed');
+      expect(row.deliveryDetail).toMatch(/no email address/i);
+      // The internal code is for the log line, never for the client.
+      expect(row.deliveryDetail).not.toMatch(/no_address_on_profile/);
+
+      genSpy.mockRestore();
+      deliverSpy.mockRestore();
+      await cleanupWorkerNdisBoard();
+    });
+
     it('online with no transport: consumes no invoice number', async () => {
       process.env.ISOPLUS_OFFLINE = '0';
       delete process.env.EMAIL_FROM;

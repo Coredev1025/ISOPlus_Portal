@@ -237,3 +237,50 @@ export const DELIVERY_STATE_RANK = {
  * bounce sentences live beside the function that composes them: both are
  * read by exactly one module, and one of them is client-facing copy.
  */
+
+/**
+ * Why a send was refused before it ever reached SES, said the way the client
+ * has to hear it.
+ *
+ * These are the `reason` codes `services/email/recipients.js` and the SES
+ * backend answer with. They were only ever logged, so a run that delivered
+ * nothing left its documents at `generated` — muted, and explicitly "never as
+ * an error". Epic 5 asks for the opposite: the delivery problem flagged
+ * against the send, in plain English, "so the client knows to fix the
+ * Recipient/Send a Copy To field".
+ *
+ * Scope, stated because it is easy to over-read: this changes the *document*
+ * rows. The block badge above them is unchanged and still reads On track after
+ * an all-refused run — it describes the job, and the job did succeed; it
+ * generated the documents. `blockNeedsAttention` reads the schedule's own
+ * error fields, which a refusal never sets because a refusal does not throw.
+ * Whether a delivery failure should also mark the schedule as needing
+ * attention is a product decision and is deliberately not taken here.
+ *
+ * Each sentence therefore names the field to go and change, not the internal
+ * code. `DEFAULT_DELIVERY_REFUSAL_MESSAGE` covers a reason added later: the
+ * state still has to be recorded, because falling back to silence is the bug.
+ *
+ * An object, therefore a shared mutable — read-only by convention.
+ *
+ * Touchpoints: services/email/deliveryEvents.js (`recordEmailFailure`, the
+ * only reader).
+ */
+export const DELIVERY_REFUSAL_MESSAGES = {
+  no_participant_name: 'This document has no client on it, so there was no profile to read an address from.',
+  profile_not_found: "The client's profile could not be found in the Intake Register.",
+  no_address_on_profile: "The client's profile has no email address on it.",
+  billing_contact_has_no_address: 'The billing contact named on this profile has no email address.',
+  malformed_address: 'The email address on file is not a valid address.',
+  unsupported_recipient_type: 'The Recipient setting is not one this workspace can send to.',
+  access_denied: 'The mail service refused this recipient. The address is outside the domains this environment is allowed to send to.',
+};
+
+/**
+ * What an unmapped refusal reads as. Deliberately still a failure: a reason
+ * this build has no sentence for is not a reason to show the send as healthy.
+ *
+ * Touchpoints: services/email/deliveryEvents.js (`recordEmailFailure`).
+ */
+export const DEFAULT_DELIVERY_REFUSAL_MESSAGE =
+  'This document could not be emailed. Check the Recipient and Send a Copy To settings.';

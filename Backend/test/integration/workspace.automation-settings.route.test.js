@@ -344,6 +344,48 @@ describe('GET/PUT /api/workspaces/:workspaceId/automation-settings', () => {
     expect(res.body.recentDocuments[1].periodKey).toBe('20250201-0900');
   });
 
+  /**
+   * Epic 5 asks Recent sends to show the RECIPIENT beside the sent time and the
+   * delivery state. `PDFLink.participant` is already stored and the frontend
+   * type already declares it — the aggregation simply never projected it, so
+   * the panel had no name to render at all.
+   *
+   * `participant` is the client the document was raised for, which under
+   * Recipient = Billing Contact need not own the mailbox the mail went to.
+   * The panel renders it "For <name>" for that reason; nothing here or in the
+   * response claims it is the address.
+   */
+  it('carries the participant so the panel can name the client each document was raised for', async () => {
+    await automationPdfLink({
+      pdfLink: 'https://example.test/with-participant.pdf',
+      invoiceNumber: 'INV-2001',
+      participant: 'Samuel Rivers',
+      periodKey: '20250301-0900',
+      createdAt: new Date('2026-03-01T00:00:00.000Z'),
+    });
+
+    const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
+    expect(res.status).toBe(200);
+
+    const row = res.body.recentDocuments.find((d) => d.invoiceNumber === 'INV-2001');
+    expect(row.participant).toBe('Samuel Rivers');
+  });
+
+  it('leaves participant null when the row carries none, rather than omitting the key', async () => {
+    await automationPdfLink({
+      pdfLink: 'https://example.test/no-participant.pdf',
+      invoiceNumber: 'INV-2002',
+      periodKey: '20250301-0900',
+      createdAt: new Date('2026-03-02T00:00:00.000Z'),
+    });
+
+    const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
+    const row = res.body.recentDocuments.find((d) => d.invoiceNumber === 'INV-2002');
+    // Present and null, so the client can tell "nobody recorded" from "not sent
+    // by a build that knows about this field".
+    expect(row).toHaveProperty('participant', null);
+  });
+
   it('carries each document\'s delivery state and, for a bounce, its plain-English reason', async () => {
     await automationPdfLink({
       pdfLink: 'https://example.test/delivered.pdf',
