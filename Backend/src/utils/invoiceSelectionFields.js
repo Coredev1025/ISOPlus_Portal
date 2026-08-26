@@ -16,7 +16,7 @@
  */
 
 import { formatLabelValue } from './ndisServiceRecords.js';
-import { SPELLING_VARIANTS } from '../constants/invoiceSelection.js';
+import { SPELLING_VARIANTS, STATUS_FIELD_ALIASES } from '../constants/invoiceSelection.js';
 
 /**
  * Every spelling of `fieldName` worth trying, most likely first.
@@ -49,6 +49,24 @@ export function readField(item, fieldName) {
     const raw = data[name];
     if (raw === undefined || raw === null) continue;
     const value = formatLabelValue(raw).trim();
+    if (value) return value;
+  }
+  return '';
+}
+
+/**
+ * The status value, under whichever column this board calls it.
+ *
+ * A plain readField only tries the spec's own name and its ' & '/' and '
+ * variants, which is the wrong axis: the boards differ on "Job Status" vs
+ * "Shift Status", not on ampersands. Falls back to readField for a field with
+ * no aliases, so nothing else changes.
+ */
+export function readStatusField(item, fieldName) {
+  const aliases = STATUS_FIELD_ALIASES[fieldName];
+  if (!aliases) return readField(item, fieldName);
+  for (const name of aliases) {
+    const value = readField(item, name);
     if (value) return value;
   }
   return '';
