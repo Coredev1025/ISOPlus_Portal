@@ -48,6 +48,8 @@ describe('WorkspaceFeatureTogglesCard', () => {
       name: /enable invoice and statement automation/i,
     });
     expect(toggle).not.toBeChecked();
+    expect(screen.queryByText(/system owner/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ndis \/ sah \/ ims/i)).not.toBeInTheDocument();
 
     await user.click(toggle);
     await user.click(screen.getByRole('button', { name: /save changes/i }));

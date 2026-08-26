@@ -81,27 +81,6 @@ export function WorkspaceFeatureTogglesCard({
         <Flag className="mt-1 h-6 w-6 text-primary" />
         <div>
           <h3 className="mb-2 text-xl font-semibold">Feature Toggles</h3>
-          <p className="text-sm text-muted-foreground">
-            Visible to <strong>System Owner</strong> and{" "}
-            <strong>Support Admin</strong> roles only. These workspace-level
-            controls live on Workspace Configuration and default to off for
-            every new and existing workspace.
-          </p>
-          <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-            <li>
-              Location: Workspace Configuration → Feature Toggles (this card).
-            </li>
-            <li>
-              Effect: when enabled, Finance Settings &amp; Automation shows the
-              &quot;Invoice &amp; Statement Automation&quot; tab for that
-              workspace; when disabled, the tab is hidden for all users.
-            </li>
-            <li>
-              Audience: leave off for NDIS / SaH / IMS (and any workspace
-              without invoicing yet) so clients are not shown automation that
-              does not apply. No separate NDIS/SaH/IMS toggle is needed.
-            </li>
-          </ul>
         </div>
       </div>
 
@@ -112,8 +91,7 @@ export function WorkspaceFeatureTogglesCard({
           </div>
           <p className="text-sm text-muted-foreground">
             Turns the Invoice &amp; Statement Automation tab on or off for this
-            workspace only. The setting is stored per workspace and exposed to
-            the Finance Settings page so the third tab can render conditionally.
+            workspace only.
           </p>
         </div>
         {loading ? (

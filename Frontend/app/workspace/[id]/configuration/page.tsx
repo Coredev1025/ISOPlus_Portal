@@ -126,10 +126,8 @@ export default function WorkspaceConfiguration() {
               <div>
                 <h3 className="text-lg font-semibold mb-2">Permission Required</h3>
                 <p className="text-muted-foreground">
-                  Feature toggles and board linking tools on this page are available to{" "}
-                  <strong>System Owner</strong> and <strong>Support Admin</strong> users
-                  only. Use Feature Toggles below to enable Invoice &amp; Statement
-                  Automation for workspaces that support invoicing (defaults to off).
+                  Board linking tools on this page are available to System Owner
+                  and Support Admin users only.
                 </p>
               </div>
             </div>
