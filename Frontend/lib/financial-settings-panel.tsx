@@ -142,10 +142,6 @@ export function FinancialSettingsPanel({
     }));
   };
 
-  const handleRestoreDefaults = () => {
-    setSequences(cloneDefaultSequences());
-  };
-
   const handleSave = async () => {
     try {
       setSaving(true);
@@ -248,7 +244,6 @@ export function FinancialSettingsPanel({
       onBankChange={handleBankChange}
       onSequencePrefixChange={handleSequencePrefixChange}
       onSequenceNextChange={handleSequenceNextChange}
-      onRestoreDefaults={handleRestoreDefaults}
       onSave={handleSave}
     />
   );

@@ -158,7 +158,6 @@ type FinancialSettingsFormProps = Readonly<{
   onBankChange: (field: keyof BankDetailsForm, value: string) => void;
   onSequencePrefixChange: (type: DocumentSequenceType, value: string) => void;
   onSequenceNextChange: (type: DocumentSequenceType, value: number) => void;
-  onRestoreDefaults: () => void;
   onSave: () => void;
 }>;
 
@@ -172,7 +171,6 @@ export function FinancialSettingsForm({
   onBankChange,
   onSequencePrefixChange,
   onSequenceNextChange,
-  onRestoreDefaults,
   onSave,
 }: FinancialSettingsFormProps) {
   const [alertDialog, setAlertDialog] = useState<{
@@ -374,14 +372,6 @@ export function FinancialSettingsForm({
           ) : null}
 
           <div className="mt-4 flex justify-end gap-2.5">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onRestoreDefaults}
-              disabled={loading}
-            >
-              Restore Defaults
-            </Button>
             <Button type="button" onClick={onSave} disabled={loading}>
               {loading ? "Saving..." : "Save Changes"}
             </Button>

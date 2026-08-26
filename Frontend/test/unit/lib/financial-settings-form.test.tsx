@@ -37,7 +37,6 @@ function renderForm(
     onBankChange: vi.fn(),
     onSequencePrefixChange: vi.fn(),
     onSequenceNextChange: vi.fn(),
-    onRestoreDefaults: vi.fn(),
     onSave: vi.fn(),
     ...overrides,
   };
@@ -81,9 +80,9 @@ describe('FinancialSettingsForm', () => {
     expect(onBankChange).toHaveBeenCalledWith('bankName', expect.any(String));
   });
 
-  it('shows errors, api error, success, and save/restore actions', async () => {
+  it('shows errors, api error, success, and save action', async () => {
     const user = userEvent.setup();
-    const { onRestoreDefaults, onSave } = renderForm({
+    const { onSave } = renderForm({
       errors: ['BSB is invalid'],
       apiError: 'Server down',
       showSuccess: true,
@@ -95,8 +94,9 @@ describe('FinancialSettingsForm', () => {
       screen.getByText(/financial settings saved successfully/i)
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /restore defaults/i }));
-    expect(onRestoreDefaults).toHaveBeenCalled();
+    expect(
+      screen.queryByRole('button', { name: /restore defaults/i })
+    ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /save changes/i }));
     expect(onSave).toHaveBeenCalled();
