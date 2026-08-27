@@ -32,19 +32,27 @@ describe('BoardSyncScheduleSummary', () => {
     expect(screen.queryByLabelText('Sync schedule')).not.toBeInTheDocument();
   });
 
-  it('renders the compact line before Resync when schedule has data', () => {
+  it('renders bold label and instants in the compact line', () => {
     renderSummary('b-1', [{
       boardId: 'b-1',
       schedule: {
         timezone: 'Australia/Sydney',
-        previous: { at: '2026-08-26T09:11:00.000Z', status: 'completed' },
+        previous: { at: '2026-08-26T11:44:00.000Z', status: 'completed' },
         current: null,
-        upcoming: { at: '2026-08-27T09:00:00.000Z' },
+        upcoming: { at: '2026-08-27T08:00:00.000Z' },
       },
     }]);
 
     const summary = screen.getByLabelText('Sync schedule');
-    expect(summary.textContent).toMatch(/^Sync schedule: Previous .+ \(Success\), Next scheduled run .+$/);
+    expect(summary.textContent).toBe(
+      'Sync schedule: Previous run: 26 Aug 2026, 9:44 PM (successful). Next scheduled run: 27 Aug 2026, 6:00 PM.',
+    );
+    const bold = [...summary.querySelectorAll('.font-semibold')].map((el) => el.textContent);
+    expect(bold).toEqual([
+      'Sync schedule:',
+      '26 Aug 2026, 9:44 PM',
+      '27 Aug 2026, 6:00 PM',
+    ]);
     const resync = screen.getByRole('button', { name: /Resync Data/ });
     expect(
       summary.compareDocumentPosition(resync) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -56,14 +64,14 @@ describe('BoardSyncScheduleSummary', () => {
       boardId: 'b-1',
       schedule: {
         timezone: 'Australia/Sydney',
-        previous: { at: '2026-08-26T09:11:00.000Z', status: 'failed' },
+        previous: { at: '2026-08-26T11:44:00.000Z', status: 'failed' },
         current: { state: 'waiting', syncType: 'scheduled_sync' },
-        upcoming: { at: '2026-08-27T09:00:00.000Z' },
+        upcoming: { at: '2026-08-27T08:00:00.000Z' },
       },
     }]);
 
     expect(screen.getByLabelText('Sync schedule').textContent).toMatch(
-      /Previous .+ \(Failed\), Current \(In progress\)$/,
+      /Previous run: .+ \(failed\)\. Current \(In progress\)\.$/,
     );
   });
 });

@@ -328,6 +328,22 @@ describe('InvoiceGeneratorPageView last-refreshed line', () => {
     expect(screen.getByText('Last refreshed 5 minutes ago')).toBeInTheDocument();
     expect(screen.queryByText('Not refreshed yet')).not.toBeInTheDocument();
   });
+
+  it('stacks sync and actions below xl, then row-wraps at 1280px+', async () => {
+    await renderView();
+
+    const syncActions = document.querySelector('[data-slot="invoice-sync-actions"]');
+    expect(syncActions).not.toBeNull();
+    expect(syncActions).toHaveClass('flex-col', 'xl:flex-row', 'xl:flex-wrap');
+    expect(syncActions).toContainElement(screen.getByRole('button', { name: /Resync Data/ }));
+    expect(syncActions).toContainElement(screen.getByRole('button', { name: 'Export to CSV' }));
+    expect(syncActions).toContainElement(screen.getByRole('button', { name: 'Participant Tax Invoice' }));
+    expect(screen.getByRole('heading', { name: 'Invoice Generator' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Manage service records, submit claims and generate participant tax invoices.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Not refreshed yet')).toBeInTheDocument();
+  });
 });
 
 describe('InvoiceGeneratorPageView toolbar actions', () => {

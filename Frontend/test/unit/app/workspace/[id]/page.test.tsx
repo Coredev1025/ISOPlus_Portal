@@ -365,14 +365,14 @@ describe('workspace detail page', () => {
     );
     expect(router.push).toHaveBeenCalledWith('/workspace/ws-1/usage-report');
 
-    // Workspace Configuration sits inside the ISO+ member action grid, so
-    // portal staff do not see it on this page.
-    expect(
-      screen.queryByRole('button', { name: 'Configure Workspace' }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: 'Configure Business' }),
-    ).not.toBeInTheDocument();
+    // Workspace Configuration is portal-staff only (isOwnerOrSupportUser).
+    await user.click(
+      await screen.findByRole('button', { name: 'Configure Workspace' }),
+    );
+    expect(router.push).toHaveBeenCalledWith('/workspace/ws-1/configuration');
+
+    await user.click(screen.getByRole('button', { name: 'Configure Business' }));
+    expect(router.push).toHaveBeenCalledWith('/workspace/ws-1/configure-business');
 
     const careRow = await screen.findByRole('cell', { name: '901' })
       .then((cell) => cell.closest('tr') as HTMLElement);

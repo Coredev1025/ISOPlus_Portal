@@ -24,6 +24,11 @@ export type BoardSyncSchedule = {
   upcoming: ScheduleUpcoming;
 };
 
+export type SyncScheduleSummaryPart = {
+  text: string;
+  bold?: boolean;
+};
+
 const CURRENT_LABELS: Record<string, string> = {
   waiting: 'Queued',
   delayed: 'Queued',
@@ -46,15 +51,26 @@ const PREVIOUS_STATUS_LABELS: Record<PreviousSyncStatus, string> = {
   failed: 'Failed',
 };
 
+const SUMMARY_PREVIOUS_STATUS_LABELS: Record<PreviousSyncStatus, string> = {
+  completed: 'successful',
+  failed: 'failed',
+};
+
 export function formatScheduleInstant(
   iso: string,
   timezone: string = DEFAULT_BUSINESS_TIMEZONE,
 ) {
-  return new Intl.DateTimeFormat('en-AU', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
+  const formatted = new Intl.DateTimeFormat('en-AU', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
     timeZone: timezone,
   }).format(new Date(iso));
+
+  return formatted.replace(/\b(am|pm)\b/gi, (match) => match.toUpperCase());
 }
 
 export function labelInstant(
@@ -82,6 +98,60 @@ export function labelPreviousSync(
   return `${instant} (${PREVIOUS_STATUS_LABELS[statusKey]})`;
 }
 
+function pushText(
+  parts: SyncScheduleSummaryPart[],
+  text: string,
+  bold = false,
+) {
+  if (!text) return;
+  parts.push(bold ? { text, bold: true } : { text });
+}
+
+/**
+ * Structured compact sync line for Invoice / Statement generators.
+ * Bold the label and each instant; keep surrounding copy normal weight.
+ */
+export function boardSyncScheduleSummaryParts(
+  schedule: BoardSyncSchedule | null | undefined,
+): SyncScheduleSummaryPart[] | null {
+  if (!schedule) return null;
+
+  const timezone = schedule.timezone;
+  const parts: SyncScheduleSummaryPart[] = [];
+  let hasContent = false;
+
+  pushText(parts, 'Sync schedule:', true);
+
+  if (schedule.previous?.at) {
+    hasContent = true;
+    const statusKey = schedule.previous.status === 'failed' ? 'failed' : 'completed';
+    pushText(parts, ' Previous run: ');
+    pushText(
+      parts,
+      formatScheduleInstant(schedule.previous.at, timezone || undefined),
+      true,
+    );
+    pushText(parts, ` (${SUMMARY_PREVIOUS_STATUS_LABELS[statusKey]}).`);
+  }
+
+  if (schedule.current && LIVE_CURRENT_STATES.has(schedule.current.state)) {
+    hasContent = true;
+    pushText(parts, ' Current (In progress).');
+  } else if (schedule.upcoming?.at) {
+    hasContent = true;
+    pushText(parts, ' Next scheduled run: ');
+    pushText(
+      parts,
+      formatScheduleInstant(schedule.upcoming.at, timezone || undefined),
+      true,
+    );
+    pushText(parts, '.');
+  }
+
+  if (!hasContent) return null;
+  return parts;
+}
+
 /**
  * One-line copy for Invoice / Statement generators when auto-sync is on.
  * Returns null when there is nothing useful to show.
@@ -89,23 +159,6 @@ export function labelPreviousSync(
 export function formatBoardSyncScheduleSummary(
   schedule: BoardSyncSchedule | null | undefined,
 ): string | null {
-  if (!schedule) return null;
-
-  const timezone = schedule.timezone;
-  const parts: string[] = [];
-
-  if (schedule.previous?.at) {
-    parts.push(`Previous ${labelPreviousSync(schedule.previous, timezone)}`);
-  }
-
-  if (schedule.current && LIVE_CURRENT_STATES.has(schedule.current.state)) {
-    parts.push('Current (In progress)');
-  } else if (schedule.upcoming?.at) {
-    parts.push(
-      `Next scheduled run ${formatScheduleInstant(schedule.upcoming.at, timezone || undefined)}`,
-    );
-  }
-
-  if (parts.length === 0) return null;
-  return `Sync schedule: ${parts.join(', ')}`;
+  const parts = boardSyncScheduleSummaryParts(schedule);
+  return parts ? parts.map((part) => part.text).join('') : null;
 }

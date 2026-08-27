@@ -233,6 +233,20 @@ describe('MonthlyStatementPageView toolbar', () => {
     expect(screen.getByText(/generate the Support at Home monthly statement/)).toBeInTheDocument();
   });
 
+  it('keeps sync schedule separate from the action buttons', async () => {
+    await renderView();
+
+    const sync = document.querySelector('[data-slot="statement-sync"]');
+    const actions = document.querySelector('[data-slot="statement-actions"]');
+
+    expect(sync).not.toBeNull();
+    expect(actions).not.toBeNull();
+    expect(actions).toContainElement(screen.getByRole('button', { name: /Resync Data/ }));
+    expect(actions).toContainElement(screen.getByRole('button', { name: 'Load Statement' }));
+    expect(sync).not.toContainElement(screen.getByRole('button', { name: /Resync Data/ }));
+    expect(sync).not.toContainElement(screen.getByRole('button', { name: 'Load Statement' }));
+  });
+
   it('returns to the board when Back is pressed', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     await renderView({ id: 'ws-4', boardId: 'b-9' });

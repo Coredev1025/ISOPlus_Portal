@@ -71,19 +71,20 @@ export function InvoiceGeneratorPageView(props: InvoiceGeneratorPageViewProps) {
 
         <div className="page-enter-stagger space-y-6">
           <Card className="card-hover p-6 shadow-lg">
-            <PageHeader
-              title="Invoice Generator"
-              description={
-                isNdisBoard
-                  ? 'Manage NDIS service records and export NDIA claim CSV.'
-                  : isLowCatBoard
-                    ? 'Manage service records and generate tax invoices.'
-                    : 'Manage service records, submit claims and generate participant tax invoices.'
-              }
-              actions={
-                <div className="flex flex-col items-end gap-3">
-                  <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <h1 className="text-3xl font-semibold tracking-tight">Invoice Generator</h1>
+                </div>
+
+                <div
+                  data-slot="invoice-sync-actions"
+                  className="flex flex-col items-start gap-2 xl:flex-row xl:flex-wrap"
+                >
+                  <div className="max-w-[420px] flex-shrink-0">
                     <BoardSyncScheduleSummary boardId={boardId} />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
                     <ResyncDataButton
                       onSync={handleManualSync}
                       onHelp={() => setShowHelpDialog(true)}
@@ -104,17 +105,28 @@ export function InvoiceGeneratorPageView(props: InvoiceGeneratorPageViewProps) {
                       <span>{invoiceLabel}</span>
                     </Button>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Clock className="h-4 w-4 shrink-0" />
-                    {lastSyncedAt ? (
-                      <span>Last refreshed {formatDistanceToNow(lastSyncedAt, { addSuffix: true })}</span>
-                    ) : (
-                      <span>Not refreshed yet</span>
-                    )}
-                  </div>
                 </div>
-              }
-            />
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <p className="text-sm text-muted-foreground">
+                  {isNdisBoard
+                    ? 'Manage NDIS service records and export NDIA claim CSV.'
+                    : isLowCatBoard
+                      ? 'Manage service records and generate tax invoices.'
+                      : 'Manage service records, submit claims and generate participant tax invoices.'}
+                </p>
+
+                <div className="flex items-center gap-2 text-sm text-muted-foreground whitespace-nowrap">
+                  <Clock className="h-4 w-4 shrink-0" />
+                  {lastSyncedAt ? (
+                    <span>Last refreshed {formatDistanceToNow(lastSyncedAt, { addSuffix: true })}</span>
+                  ) : (
+                    <span>Not refreshed yet</span>
+                  )}
+                </div>
+              </div>
+            </div>
 
             {/* Search and Filters */}
             <InvoiceGeneratorFiltersRow
