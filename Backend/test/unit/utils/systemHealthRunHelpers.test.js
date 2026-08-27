@@ -2,6 +2,25 @@ import { describe, it, expect } from 'vitest';
 
 import { buildRetrySpec, withForceJobIds } from '../../../src/utils/systemHealthRunHelpers.js';
 
+/**
+ * BullMQ's rule, from Job.validateOptions:
+ *
+ *   if (jobId.includes(':') && jobId.split(':').length !== 3)
+ *     throw new Error('Custom Id cannot contain :');
+ *
+ * A colon-joined id is legal only at exactly three parts — a compatibility
+ * carve-out for old repeatable jobs. The scheduled fan-out (`inv:board:period`)
+ * satisfies it by accident of having exactly two colons; anything that appends
+ * a fourth segment throws at enqueue time.
+ *
+ * Observed on portal-dev 2026-08-27: Retry answered 500 "Could not retry the
+ * run" for every failed run, and the forced re-run path was broken the same
+ * way. Both are asserted here so neither can regress.
+ */
+const expectBullMqAccepts = (jobId) => {
+  expect(jobId.includes(':') && jobId.split(':').length !== 3).toBe(false);
+};
+
 describe('buildRetrySpec', () => {
   const run = {
     _id: 'run-1',
@@ -22,7 +41,17 @@ describe('buildRetrySpec', () => {
 
   it('keys the retry under a jobId distinct from the original run', () => {
     const spec = buildRetrySpec(run);
-    expect(spec.opts.jobId).toBe(`retry:${run.boardId}:${run.periodKey}:${run._id}`);
+    expect(spec.opts.jobId).toBe(`retry-${run._id}:${run.boardId}:${run.periodKey}`);
+    expect(spec.opts.jobId).not.toBe(`inv:${run.boardId}:${run.periodKey}`);
+  });
+
+  it('mints a jobId BullMQ will accept', () => {
+    expectBullMqAccepts(buildRetrySpec(run).opts.jobId);
+  });
+
+  it('keeps retries of different runs apart', () => {
+    const other = buildRetrySpec({ ...run, _id: 'run-2' });
+    expect(other.opts.jobId).not.toBe(buildRetrySpec(run).opts.jobId);
   });
 });
 
@@ -39,6 +68,17 @@ describe('withForceJobIds', () => {
     // A future fanOut.js option (attempts, backoff, removeOnComplete) must
     // survive a forced re-run, not just jobId.
     const [forced] = withForceJobIds({ specs, force: true, existing: 2 });
-    expect(forced.opts).toEqual({ attempts: 3, jobId: 'manual:b1:p:2' });
+    expect(forced.opts).toEqual({ attempts: 3, jobId: 'manual-2:b1:p' });
+  });
+
+  it('mints a jobId BullMQ will accept', () => {
+    const [forced] = withForceJobIds({ specs, force: true, existing: 2 });
+    expectBullMqAccepts(forced.opts.jobId);
+  });
+
+  it('keeps successive forced re-runs of one period apart', () => {
+    const [first] = withForceJobIds({ specs, force: true, existing: 1 });
+    const [second] = withForceJobIds({ specs, force: true, existing: 2 });
+    expect(first.opts.jobId).not.toBe(second.opts.jobId);
   });
 });

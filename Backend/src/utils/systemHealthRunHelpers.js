@@ -12,6 +12,13 @@ export const KIND_FOR_BODY = { invoice: KIND_INVOICE, statement: KIND_STATEMENT 
 // mistaken for — a scheduled one. Private to this module for the same reason
 // fanOut.js keeps its own prefixes unexported: callers work through the
 // functions below, never the prefix string itself.
+//
+// The discriminator goes IN the prefix, not on the end. BullMQ accepts a
+// colon-joined custom id only at exactly three parts (Job.validateOptions:
+// `jobId.includes(':') && jobId.split(':').length !== 3` throws "Custom Id
+// cannot contain :"). The scheduled fan-out clears that bar by having exactly
+// two colons; appending a fourth segment threw at enqueue time and made both
+// Retry and the forced re-run answer 500 on every call.
 const MANUAL_JOB_PREFIX = 'manual';
 const RETRY_JOB_PREFIX = 'retry';
 
@@ -59,7 +66,7 @@ export function withForceJobIds({ specs, force, existing }) {
     ...spec,
     // Spread, not replace: a future fanOut.js option (attempts, backoff,
     // removeOnComplete) must survive a forced re-run, not just jobId.
-    opts: { ...spec.opts, jobId: `${MANUAL_JOB_PREFIX}:${spec.data.boardId}:${spec.data.periodKey}:${existing}` },
+    opts: { ...spec.opts, jobId: `${MANUAL_JOB_PREFIX}-${existing}:${spec.data.boardId}:${spec.data.periodKey}` },
   }));
 }
 
@@ -84,6 +91,6 @@ export function buildRetrySpec(run) {
       // AutomationRun is the proper fix and is out of scope here.
       slot: run.startedAt,
     },
-    opts: { jobId: `${RETRY_JOB_PREFIX}:${run.boardId}:${run.periodKey}:${run._id}` },
+    opts: { jobId: `${RETRY_JOB_PREFIX}-${run._id}:${run.boardId}:${run.periodKey}` },
   };
 }
