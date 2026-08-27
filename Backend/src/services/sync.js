@@ -559,7 +559,10 @@ export async function getBoardSyncStatus(boardId) {
             progress,
             attemptsMade: job.attemptsMade,
             processedOn: job.processedOn,
-            finishedOn: job.finishedOn
+            finishedOn: job.finishedOn,
+            // Lets the floating SyncStatusIndicator hide scheduled_sync failures
+            // without treating sticky lastSyncError as a header card.
+            jobType: job.data?.jobType || job.name || null,
           };
         }
       } catch (jobErr) {

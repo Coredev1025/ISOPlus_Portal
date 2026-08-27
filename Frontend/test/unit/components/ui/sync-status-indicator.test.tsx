@@ -177,10 +177,12 @@ describe('SyncStatusIndicator', () => {
     });
   });
 
-  it('surfaces a failed nightly scheduled_sync (hidden only while in progress)', async () => {
+  it('does not surface a failed nightly scheduled_sync on the floating card', async () => {
+    let polled = false;
     server.use(
-      http.get(`*/api/sync/workspace/status/ws-1`, () =>
-        HttpResponse.json({
+      http.get(`*/api/sync/workspace/status/ws-1`, () => {
+        polled = true;
+        return HttpResponse.json({
           boards: [
             inProgressBoard({
               syncStatus: 'scheduled_sync',
@@ -195,44 +197,82 @@ describe('SyncStatusIndicator', () => {
               },
             }),
           ],
-        }),
-      ),
+        });
+      }),
     );
 
     const { container } = renderIndicator('ws-1');
 
-    expect(await screen.findByText('Sync Failed')).toBeInTheDocument();
     await waitFor(() => {
-      expect(container.textContent).toContain('Nightly catch-up failed');
+      expect(polled).toBe(true);
     });
+    expect(container.textContent).not.toContain('Sync Failed');
+    expect(container.textContent).not.toContain('Nightly catch-up failed');
   });
 
-  it('keeps an overnight catch-up failure visible via lastSyncError after the short window', async () => {
+  it('does not sticky-show overnight catch-up failures on the floating card', async () => {
+    let polled = false;
     server.use(
-      http.get(`*/api/sync/workspace/status/ws-1`, () =>
-        HttpResponse.json({
+      http.get(`*/api/sync/workspace/status/ws-1`, () => {
+        polled = true;
+        return HttpResponse.json({
           boards: [
             {
               boardId: 'b-1',
               boardName: 'NDIS Services',
               // Worker sets syncStatus to failed and stamps lastSyncError; the
               // in-progress SyncExecution is gone from the poll by morning.
+              // Schedule / config panels still read lastSyncError — floating UI does not.
               syncStatus: 'failed',
               lastSyncError: 'ISO+ returned 429 at 02:00',
               jobStatus: null,
               syncExecution: null,
             },
           ],
-        }),
-      ),
+        });
+      }),
     );
 
     const { container } = renderIndicator('ws-1');
 
-    expect(await screen.findByText('Sync Failed')).toBeInTheDocument();
     await waitFor(() => {
-      expect(container.textContent).toContain('ISO+ returned 429 at 02:00');
+      expect(polled).toBe(true);
     });
+    expect(container.textContent).not.toContain('Sync Failed');
+    expect(container.textContent).not.toContain('ISO+ returned 429 at 02:00');
+  });
+
+  it('does not surface a failed scheduled_sync BullMQ job on the floating card', async () => {
+    let polled = false;
+    server.use(
+      http.get(`*/api/sync/workspace/status/ws-1`, () => {
+        polled = true;
+        return HttpResponse.json({
+          boards: [
+            {
+              boardId: 'b-1',
+              boardName: 'NDIS Services',
+              syncStatus: 'failed',
+              lastSyncError: 'ISO+ returned 502',
+              jobStatus: {
+                state: 'failed',
+                jobType: 'scheduled_sync',
+                finishedOn: Date.now(),
+                failedReason: 'ISO+ returned 502',
+              },
+              syncExecution: null,
+            },
+          ],
+        });
+      }),
+    );
+
+    const { container } = renderIndicator('ws-1');
+
+    await waitFor(() => {
+      expect(polled).toBe(true);
+    });
+    expect(container.textContent).not.toContain('Sync Failed');
   });
 
   it('does not sticky-fail a board the user deliberately cancelled', async () => {

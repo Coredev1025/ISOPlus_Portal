@@ -10,8 +10,8 @@ import { Progress } from "@/components/ui/progress";
 const MANUAL_SYNC_STATES = new Set(['active', 'waiting', 'failed']);
 const FAILED_EXECUTION_STATUSES = new Set(['failed', 'timeout']);
 const ACTIVE_EXECUTION_STATUSES = new Set(['started', 'in-progress']);
-/** Catch-up from the portal cron — no floating progress card while in flight.
- * Failures still surface (see hasFailedSyncExecution / hasFailedJobStatus). */
+/** Catch-up from the portal cron — no floating progress or failure card.
+ * Failures still surface on Configuration / generator schedule lines via lastSyncError. */
 const HIDDEN_INDICATOR_SYNC_TYPES = new Set(['scheduled_sync', 'realtime_sync']);
 
 function buildSyncError(board: any, message: string) {
@@ -23,12 +23,15 @@ function buildSyncError(board: any, message: string) {
 }
 
 function isHiddenFromIndicator(board: any) {
-  const syncType = board.syncExecution?.syncType || board.syncStatus;
+  const syncType = board.syncExecution?.syncType
+    || board.jobStatus?.jobType
+    || board.syncStatus;
   return HIDDEN_INDICATOR_SYNC_TYPES.has(syncType);
 }
 
 function isManualSyncBoard(board: any) {
-  return MANUAL_SYNC_STATES.has(board.jobStatus?.state);
+  return MANUAL_SYNC_STATES.has(board.jobStatus?.state)
+    && !isHiddenFromIndicator(board);
 }
 
 function isFailedSyncBoard(board: any) {
@@ -113,6 +116,7 @@ function hasFailedSyncExecution(board: any) {
   const execution = board.syncExecution;
   return execution
     && FAILED_EXECUTION_STATUSES.has(execution.status)
+    && !HIDDEN_INDICATOR_SYNC_TYPES.has(execution.syncType)
     && isRecentFailure(execution.endTime, 60 * 1000);
 }
 
@@ -127,44 +131,20 @@ function hasFailedJobStatus(board: any) {
   const jobStatus = board.jobStatus;
   return jobStatus
     && jobStatus.state === 'failed'
+    && !isHiddenFromIndicator(board)
     && isRecentFailure(jobStatus.finishedOn, 5 * 60 * 1000);
-}
-
-/** Overnight / finished failures survive on the board after SyncExecution leaves the poll. */
-function hasStickyLastSyncError(board: any) {
-  if (!board?.lastSyncError) return false;
-  // cancelSync stamps lastSyncError with "Sync cancelled by user" — not a failure.
-  if (board.syncStatus === 'sync_cancelled') return false;
-  if (hasActiveSyncExecution(board) || hasActiveJobStatus(board)) return false;
-  return true;
-}
-
-function mapStickyErrorBoard(board: any) {
-  return {
-    boardId: board.boardId,
-    boardName: board.boardName || board.boardId,
-    status: 'failed' as const,
-    syncType: board.syncStatus || 'scheduled_sync',
-    startTime: board.lastSyncedAt
-      ? new Date(board.lastSyncedAt).toISOString()
-      : new Date().toISOString(),
-    isManualSync: false,
-    error: buildSyncError(board, board.lastSyncError),
-  };
 }
 
 function mapSyncBoardFromPoll(board: any) {
   if (isManualSyncBoard(board)) return mapManualSyncBoard(board);
-  if (board.syncExecution) return mapExecutionSyncBoard(board);
-  return mapStickyErrorBoard(board);
+  return mapExecutionSyncBoard(board);
 }
 
 function isActiveSyncBoard(board: any) {
   return hasActiveSyncExecution(board)
     || hasFailedSyncExecution(board)
     || hasActiveJobStatus(board)
-    || hasFailedJobStatus(board)
-    || hasStickyLastSyncError(board);
+    || hasFailedJobStatus(board);
 }
 
 function getElapsedTime(startTime: string, currentTime: number): number {
