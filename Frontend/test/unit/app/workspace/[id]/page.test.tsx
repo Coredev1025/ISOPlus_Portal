@@ -296,7 +296,7 @@ describe('workspace detail page', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('lets an ISO+ workspace member load boards without admin action cards', async () => {
+  it('lets an ISO+ workspace member load boards and member action cards', async () => {
     localStorage.clear();
     seedContextStorage(ISOPLUS_USER, [
       { id: 'ws-1', name: 'Hillsgrade Care', user_role: 'member' },
@@ -312,14 +312,25 @@ describe('workspace detail page', () => {
     expect(boardRequests).toHaveLength(1);
     expect(router.replace).not.toHaveBeenCalled();
     expect(
-      screen.queryByRole('button', { name: 'Configure Business' }),
+      screen.getByRole('button', { name: 'Configure Business' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Finance Settings & Automation' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Configure Workspace' }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole('heading', { name: 'Finance Settings & Automation' }),
+      screen.queryByRole('button', { name: /View Usage Report/ }),
     ).not.toBeInTheDocument();
   });
 
-  it('sends each action card to the matching workspace sub-page', async () => {
+  it('sends ISO+ member action cards to the matching workspace sub-pages', async () => {
+    localStorage.clear();
+    seedContextStorage(ISOPLUS_USER, [
+      { id: 'ws-1', name: 'Hillsgrade Care', user_role: 'owner' },
+    ]);
+    stubChromeRequests(ISOPLUS_USER);
     stubBoards();
     const user = userEvent.setup();
     renderPage();
@@ -338,14 +349,33 @@ describe('workspace detail page', () => {
     await user.click(screen.getByRole('button', { name: 'View Audit Trail' }));
     expect(router.push).toHaveBeenCalledWith('/workspace/ws-1/audit-trail');
 
-    await user.click(screen.getByRole('button', { name: 'Configure Workspace' }));
-    expect(router.push).toHaveBeenCalledWith('/workspace/ws-1/configuration');
-
-    await user.click(screen.getByRole('button', { name: /View Usage Report/ }));
-    expect(router.push).toHaveBeenCalledWith('/workspace/ws-1/usage-report');
-
     const careRow = screen.getByRole('cell', { name: '901' })
       .closest('tr') as HTMLElement;
+    await user.click(within(careRow).getByRole('button', { name: 'Open' }));
+    expect(router.push).toHaveBeenCalledWith('/workspace/ws-1/board/901');
+  });
+
+  it('sends portal staff action cards to the matching workspace sub-pages', async () => {
+    stubBoards();
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: /View Usage Report/ }),
+    );
+    expect(router.push).toHaveBeenCalledWith('/workspace/ws-1/usage-report');
+
+    // Workspace Configuration sits inside the ISO+ member action grid, so
+    // portal staff do not see it on this page.
+    expect(
+      screen.queryByRole('button', { name: 'Configure Workspace' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Configure Business' }),
+    ).not.toBeInTheDocument();
+
+    const careRow = await screen.findByRole('cell', { name: '901' })
+      .then((cell) => cell.closest('tr') as HTMLElement);
     await user.click(within(careRow).getByRole('button', { name: 'Open' }));
     expect(router.push).toHaveBeenCalledWith('/workspace/ws-1/board/901');
   });
