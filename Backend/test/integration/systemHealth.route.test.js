@@ -374,7 +374,7 @@ describe('POST /api/system-health/workspace/:workspaceId/run', () => {
     expect(runs).toHaveLength(2);
     // The forced run must not collide with the original, or BullMQ drops it.
     expect(new Set(runs.map((r) => r.jobId)).size).toBe(2);
-    expect(runs.some((r) => r.jobId.startsWith('manual:'))).toBe(true);
+    expect(runs.some((r) => r.jobId.startsWith('manual-'))).toBe(true);
   });
 
   it('404s a workspace with no enabled block for that kind', async () => {

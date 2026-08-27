@@ -88,6 +88,18 @@ vi.mock('bullmq', () => {
     // rather than a stale mock, and is why the fan-out went untested through
     // the route for so long.
     addBulk(jobs = []) {
+      // Enforce BullMQ's own custom-id rule (Job.validateOptions): a
+      // colon-joined jobId is legal only at exactly three parts. Without this
+      // the mock accepted ids the real library throws on, so the forced re-run
+      // and retry paths passed their integration tests and answered 500 in
+      // every deployed environment. A mock that is more permissive than the
+      // library it stands in for is not a test double, it is a blind spot.
+      for (const job of jobs) {
+        const jobId = job?.opts?.jobId;
+        if (typeof jobId === 'string' && jobId.includes(':') && jobId.split(':').length !== 3) {
+          throw new Error('Custom Id cannot contain :');
+        }
+      }
       const recorded = jobs.map((job) => ({ ...job, queueName: this.name }));
       globalThis.__BULLMQ_BULK_JOBS__.push(...recorded);
       return recorded.map((job, index) => ({
