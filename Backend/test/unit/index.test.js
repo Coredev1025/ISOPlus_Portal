@@ -267,6 +267,18 @@ describe('boot queue monitoring', () => {
 
     expect(record.bullBoardQueues).toEqual([1]);
   });
+
+  it('gates /api/queues with authenticateToken and requireOwnerOrSupport', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const { dirname, join } = await import('node:path');
+    const indexPath = join(dirname(fileURLToPath(import.meta.url)), '../../src/index.js');
+    const source = readFileSync(indexPath, 'utf8');
+
+    expect(source).toMatch(
+      /app\.use\(\s*['"]\/api\/queues['"]\s*,\s*authenticateToken\s*,\s*requireOwnerOrSupport\s*,/,
+    );
+  });
 });
 
 describe('boot Sentry wiring', () => {

@@ -2,7 +2,7 @@ import { warn } from '../utils/logger.js';
 import { PORTAL_STAFF_ROLES } from '../constants/roles.js';
 
 /**
- * Admin-only gate for the System Health screens.
+ * Admin-only gate for System Health and the Bull Board UI (`/api/queues`).
  *
  * Mounted after `authenticateToken`, which is what puts `req.user` there. The
  * roles mirror `Frontend/lib/access.ts`'s `isOwnerOrSupport`, so the button and
@@ -19,6 +19,6 @@ export function requireOwnerOrSupport(req, res, next) {
     return;
   }
 
-  warn('SystemHealth', 'Refused a non-admin request', { role, path: req.path }, req);
+  warn('PortalStaffGate', 'Refused a non-admin request', { role, path: req.path }, req);
   res.status(403).json({ message: 'Forbidden' });
 }

@@ -13,7 +13,7 @@
  * schema enum, and middleware reads it too, so anything imported here could
  * close a cycle.
  *
- * Touchpoints: middleware/requireOwnerOrSupport.js (the System Health gate),
+ * Touchpoints: middleware/requireOwnerOrSupport.js (System Health + Bull Board),
  * utils/workspaceAccessHelpers.js (PORTAL_STAFF_ROLES consumers).
  * Mirrored client-side by `Frontend/constants/roles.ts`, which the button
  * gating reads — the two must agree or a control appears that the API refuses.

@@ -44,6 +44,8 @@ import { syncQueue } from './services/sync/queue.js';
 import { requestContextMiddleware } from './middleware/requestContext.js';
 import { auditHttpMiddleware } from './middleware/auditHttp.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { authenticateToken } from './middleware/auth.js';
+import { requireOwnerOrSupport } from './middleware/requireOwnerOrSupport.js';
 import { info, warn, error as logError } from './utils/logger.js';
 
 dotenv.config();
@@ -190,8 +192,8 @@ createBullBoard({
   serverAdapter: serverAdapter,
 });
 
-// Mount Bull Board UI
-app.use('/api/queues', serverAdapter.getRouter());
+// Mount Bull Board UI — portal staff only (same gate as System Health).
+app.use('/api/queues', authenticateToken, requireOwnerOrSupport, serverAdapter.getRouter());
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => {
