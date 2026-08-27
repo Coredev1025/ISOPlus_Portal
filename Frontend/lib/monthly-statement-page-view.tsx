@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Calendar, Download } from "lucide-react";
 import { Header } from "@/components/ui/header";
 import { ResyncDataButton } from "@/components/ui/resync-data-button";
+import { BoardSyncScheduleSummary } from "@/lib/board-sync-schedule-summary";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Spinner from "@/components/ui/spin";
 import {
@@ -118,7 +119,11 @@ function MonthlyStatementToolbar({
             </Select>
           </div>
 
-          <div className="flex-shrink-0">
+          <div className="flex min-w-0 flex-shrink-0 items-center gap-2">
+            <BoardSyncScheduleSummary
+              boardId={boardId}
+              className="max-w-[14rem] text-left text-sm leading-snug text-muted-foreground sm:max-w-xs"
+            />
             <ResyncDataButton
               onSync={handleManualSync}
               onHelp={() => setShowHelpDialog(true)}

@@ -3,6 +3,7 @@ import {
   XERO_DEFAULT_EXPENSE_TAX_TYPE,
   XERO_DEFAULT_INCOME_TAX_TYPE,
   XERO_DEFAULT_SALES_ACCOUNT_CODE,
+  XERO_DEFAULT_TAX_RATE_PERCENT,
 } from "@/constants/xeroMapping";
 
 export type XeroAccountOption = {
@@ -30,6 +31,8 @@ export type XeroDocMapping = {
 
 export type XeroQuoteOverrideKind = "quoteService" | "material";
 
+export type XeroDocumentKind = "quote" | "purchaseOrder" | "invoice";
+
 export type XeroLineItemMapping = {
   quote: XeroDocMapping;
   purchaseOrder: XeroDocMapping;
@@ -52,6 +55,41 @@ export const EMPTY_LINE_ITEM_MAPPING: XeroLineItemMapping = {
     material: { ...EMPTY_DOC },
   },
 };
+
+function isDocMappingEmpty(doc: XeroDocMapping): boolean {
+  return !doc.accountCode && !doc.taxType;
+}
+
+/** True when quote / PO / invoice have no account or tax chosen (overrides ignored). */
+export function isLineItemMappingEmpty(mapping: XeroLineItemMapping): boolean {
+  return (
+    isDocMappingEmpty(mapping.quote) &&
+    isDocMappingEmpty(mapping.purchaseOrder) &&
+    isDocMappingEmpty(mapping.invoice)
+  );
+}
+
+/** AU chart defaults persisted on connect — real Select values, not placeholders. */
+export function buildDefaultLineItemMapping(): XeroLineItemMapping {
+  const sales: XeroDocMapping = {
+    accountCode: XERO_DEFAULT_SALES_ACCOUNT_CODE,
+    taxType: XERO_DEFAULT_INCOME_TAX_TYPE,
+    taxRatePercent: XERO_DEFAULT_TAX_RATE_PERCENT,
+  };
+  return {
+    quote: { ...sales },
+    invoice: { ...sales },
+    purchaseOrder: {
+      accountCode: XERO_DEFAULT_COGS_ACCOUNT_CODE,
+      taxType: XERO_DEFAULT_EXPENSE_TAX_TYPE,
+      taxRatePercent: XERO_DEFAULT_TAX_RATE_PERCENT,
+    },
+    quoteOverrides: {
+      quoteService: { ...EMPTY_DOC },
+      material: { ...EMPTY_DOC },
+    },
+  };
+}
 
 function selectedOrEmpty(value: unknown): string {
   return typeof value === "string" && value.trim() ? value.trim() : "";
@@ -90,23 +128,33 @@ export function accountClass(account: XeroAccountOption): string {
   return (account.class ?? "").toUpperCase();
 }
 
-export function taxRatesForAccount(
-  taxRates: XeroTaxRateOption[],
-  account: XeroAccountOption | undefined
+/**
+ * Prefer expense tax types for Purchase Order and revenue types for Quote/Invoice.
+ * If a saved tax type falls outside that set, keep it so the UI can show it.
+ *
+ * Touchpoints: xero-account-tax-mapping.tsx (AccountTaxPair, QuoteOverrideRow).
+ */
+export function taxRatesForDocumentKind(
+  taxRates: readonly XeroTaxRateOption[],
+  kind: XeroDocumentKind,
+  selectedTaxType = ""
 ): XeroTaxRateOption[] {
-  if (!account) return [];
-  const isExpense = accountClass(account) === "EXPENSE";
-  return taxRates.filter((rate) =>
-    isExpense ? rate.canApplyToExpenses : rate.canApplyToRevenue
+  const forExpenses = kind === "purchaseOrder";
+  const filtered = taxRates.filter((rate) =>
+    forExpenses ? rate.canApplyToExpenses : rate.canApplyToRevenue
   );
-}
+  if (!selectedTaxType) return filtered;
 
-export type XeroDocumentKind = "quote" | "purchaseOrder" | "invoice";
+  const alreadyIncluded = filtered.some((rate) => rate.taxType === selectedTaxType);
+  if (alreadyIncluded) return filtered;
+
+  const selected = taxRates.find((rate) => rate.taxType === selectedTaxType);
+  return selected ? [...filtered, selected] : filtered;
+}
 
 /**
  * Prefer REVENUE accounts for Quote/Invoice and EXPENSE for Purchase Order.
- * If a saved code falls outside that class, keep it in the list so the UI can
- * still display the current mapping.
+ * If a saved code falls outside that class, keep it so the UI can show it.
  *
  * Touchpoints: xero-account-tax-mapping.tsx (AccountTaxPair, QuoteOverrideRow).
  */
@@ -126,20 +174,4 @@ export function accountsForDocumentKind(
 
   const selected = accounts.find((account) => account.code === selectedCode);
   return selected ? [...filtered, selected] : filtered;
-}
-
-export function displayAccountPlaceholder(kind: XeroDocumentKind): string {
-  const code =
-    kind === "purchaseOrder"
-      ? XERO_DEFAULT_COGS_ACCOUNT_CODE
-      : XERO_DEFAULT_SALES_ACCOUNT_CODE;
-  return `${code} (default)`;
-}
-
-export function displayTaxPlaceholder(kind: XeroDocumentKind): string {
-  const taxType =
-    kind === "purchaseOrder"
-      ? XERO_DEFAULT_EXPENSE_TAX_TYPE
-      : XERO_DEFAULT_INCOME_TAX_TYPE;
-  return `${taxType} (default)`;
 }

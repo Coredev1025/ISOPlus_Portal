@@ -4,6 +4,7 @@ import { useAppContext } from '@/app/context';
 import {
   labelCurrentSync,
   labelInstant,
+  labelPreviousSync,
   type BoardSyncSchedule,
 } from '@/lib/board-sync-status-helpers';
 
@@ -35,7 +36,7 @@ export function BoardSyncStatusPanel({ boardId }: BoardSyncStatusPanelProps) {
       <dl className="grid gap-3 text-sm">
         <div>
           <dt className="text-muted-foreground">Previous</dt>
-          <dd>{labelInstant(schedule.previous, timezone, 'None yet')}</dd>
+          <dd>{labelPreviousSync(schedule.previous, timezone)}</dd>
         </div>
         <div>
           <dt className="text-muted-foreground">Current</dt>

@@ -1,8 +1,18 @@
+import {
+  XERO_DEFAULT_COGS_ACCOUNT_CODE,
+  XERO_DEFAULT_EXPENSE_TAX_TYPE,
+  XERO_DEFAULT_INCOME_TAX_TYPE,
+  XERO_DEFAULT_SALES_ACCOUNT_CODE,
+  XERO_DEFAULT_TAX_RATE_PERCENT,
+} from '../constants/xeroMapping.js';
+
 export const XERO_DOC_TYPES = ['quote', 'purchaseOrder', 'invoice'];
 
 export const XERO_QUOTE_OVERRIDE_KINDS = ['quoteService', 'material'];
 
 export const XERO_LINE_ITEM_TAX_DEFAULTS = {
+  // Used when Finance Settings has no mapping and the board line is taxable (10% GST).
+  // Connect-seeded mapping defaults are GST-free (EXEMPTOUTPUT / EXEMPTEXPENSES) — different.
   quote: { taxType: 'OUTPUT' },
   purchaseOrder: { taxType: 'INPUT' },
   invoice: { taxType: 'OUTPUT' },
@@ -10,9 +20,9 @@ export const XERO_LINE_ITEM_TAX_DEFAULTS = {
 
 /** Board-GST tax-free fallback when Finance Settings has no mapped taxType. */
 export const XERO_TAX_FREE_DEFAULTS = {
-  quote: 'EXEMPTOUTPUT',
-  purchaseOrder: 'EXEMPTEXPENSES',
-  invoice: 'EXEMPTOUTPUT',
+  quote: XERO_DEFAULT_INCOME_TAX_TYPE,
+  purchaseOrder: XERO_DEFAULT_EXPENSE_TAX_TYPE,
+  invoice: XERO_DEFAULT_INCOME_TAX_TYPE,
 };
 
 function cleanString(value) {
@@ -211,6 +221,39 @@ export function normalizeLineItemMapping(input) {
     out.quoteOverrides[kind] = normalizeDocMapping(overridesSrc[kind]);
   }
   return out;
+}
+
+function isDocMappingEmpty(doc) {
+  return !cleanString(doc?.accountCode) && !cleanString(doc?.taxType);
+}
+
+export function isLineItemMappingEmpty(mapping) {
+  const normalized = normalizeLineItemMapping(mapping);
+  return XERO_DOC_TYPES.every((docType) => isDocMappingEmpty(normalized[docType]));
+}
+
+export function buildDefaultLineItemMapping() {
+  const sales = {
+    accountCode: XERO_DEFAULT_SALES_ACCOUNT_CODE,
+    taxType: XERO_DEFAULT_INCOME_TAX_TYPE,
+    taxRatePercent: XERO_DEFAULT_TAX_RATE_PERCENT,
+  };
+  return normalizeLineItemMapping({
+    quote: sales,
+    invoice: sales,
+    purchaseOrder: {
+      accountCode: XERO_DEFAULT_COGS_ACCOUNT_CODE,
+      taxType: XERO_DEFAULT_EXPENSE_TAX_TYPE,
+      taxRatePercent: XERO_DEFAULT_TAX_RATE_PERCENT,
+    },
+  });
+}
+
+export function ensureDefaultLineItemMapping(existing) {
+  if (!isLineItemMappingEmpty(existing)) {
+    return normalizeLineItemMapping(existing);
+  }
+  return buildDefaultLineItemMapping();
 }
 
 export function enrichMappingWithTaxRatePercents(mapping, taxRates) {

@@ -5,6 +5,7 @@
  */
 import Business from '../models/Business.js';
 import { logXeroAudit } from './xeroAuditHelpers.js';
+import { ensureDefaultLineItemMapping, buildDefaultLineItemMapping } from './xeroLineItemMapping.js';
 
 export function buildXeroTokenPayload(tokens) {
   if (!tokens?.access_token || !tokens?.refresh_token) return null;
@@ -46,6 +47,7 @@ export async function saveConnectedXeroBusiness({
       xeroTenantId,
       xeroTokens: tokenPayload,
       xeroOrganization: organization || null,
+      xeroLineItemMapping: buildDefaultLineItemMapping(),
     });
   } else {
     business.xeroIntegrated = true;
@@ -54,6 +56,10 @@ export async function saveConnectedXeroBusiness({
     if (organization) {
       business.xeroOrganization = organization;
     }
+    // Seed only when nothing is mapped yet — never overwrite operator choices.
+    business.xeroLineItemMapping = ensureDefaultLineItemMapping(
+      business.xeroLineItemMapping
+    );
   }
   await business.save();
 

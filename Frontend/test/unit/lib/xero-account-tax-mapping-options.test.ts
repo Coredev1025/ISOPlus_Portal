@@ -3,10 +3,10 @@ import {
   EMPTY_LINE_ITEM_MAPPING,
   accountClass,
   accountsForDocumentKind,
-  displayAccountPlaceholder,
-  displayTaxPlaceholder,
+  buildDefaultLineItemMapping,
+  isLineItemMappingEmpty,
   normalizeMapping,
-  taxRatesForAccount,
+  taxRatesForDocumentKind,
   type XeroAccountOption,
   type XeroTaxRateOption,
 } from '@/lib/xero-account-tax-mapping-options';
@@ -94,14 +94,18 @@ describe('xero-account-tax-mapping-options', () => {
     expect(accountClass({ ...REVENUE_ACCOUNT, class: 'expense' })).toBe('EXPENSE');
   });
 
-  it('taxRatesForAccount filters by revenue vs expense applicability', () => {
-    expect(taxRatesForAccount(TAX_RATES, undefined)).toEqual([]);
-    expect(taxRatesForAccount(TAX_RATES, REVENUE_ACCOUNT).map((r) => r.taxType)).toEqual([
+  it('taxRatesForDocumentKind filters by document kind and keeps a saved outlier', () => {
+    expect(taxRatesForDocumentKind(TAX_RATES, 'invoice').map((r) => r.taxType)).toEqual([
       'OUTPUT',
     ]);
-    expect(taxRatesForAccount(TAX_RATES, EXPENSE_ACCOUNT).map((r) => r.taxType)).toEqual([
-      'INPUT',
-    ]);
+    expect(
+      taxRatesForDocumentKind(TAX_RATES, 'purchaseOrder').map((r) => r.taxType)
+    ).toEqual(['INPUT']);
+
+    // Saved revenue tax on a PO mapping still appears so the dropdown can show it.
+    expect(
+      taxRatesForDocumentKind(TAX_RATES, 'purchaseOrder', 'OUTPUT').map((r) => r.taxType)
+    ).toEqual(['INPUT', 'OUTPUT']);
   });
 
   // Epic 4.5 — Quote/Invoice prefer REVENUE; Purchase Order prefers EXPENSE.
@@ -135,10 +139,17 @@ describe('xero-account-tax-mapping-options', () => {
     expect(normalizeMapping(undefined)).toEqual(EMPTY_LINE_ITEM_MAPPING);
   });
 
-  it('exposes AU demo codes as placeholders only', () => {
-    expect(displayAccountPlaceholder('invoice')).toBe('200 (default)');
-    expect(displayAccountPlaceholder('purchaseOrder')).toBe('310 (default)');
-    expect(displayTaxPlaceholder('invoice')).toBe('OUTPUT (default)');
-    expect(displayTaxPlaceholder('purchaseOrder')).toBe('INPUT (default)');
+  it('buildDefaultLineItemMapping matches the AU connect seed pair', () => {
+    expect(buildDefaultLineItemMapping()).toEqual({
+      quote: { accountCode: '200', taxType: 'EXEMPTOUTPUT', taxRatePercent: 0 },
+      purchaseOrder: { accountCode: '310', taxType: 'EXEMPTEXPENSES', taxRatePercent: 0 },
+      invoice: { accountCode: '200', taxType: 'EXEMPTOUTPUT', taxRatePercent: 0 },
+      quoteOverrides: {
+        quoteService: EMPTY_DOC,
+        material: EMPTY_DOC,
+      },
+    });
+    expect(isLineItemMappingEmpty(EMPTY_LINE_ITEM_MAPPING)).toBe(true);
+    expect(isLineItemMappingEmpty(buildDefaultLineItemMapping())).toBe(false);
   });
 });

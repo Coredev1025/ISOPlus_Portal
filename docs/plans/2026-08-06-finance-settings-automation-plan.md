@@ -592,7 +592,7 @@ Each task below is a candidate for its own expanded plan when picked up. Track A
 
 **Files:** `Frontend/lib/financial-settings-{form,panel}.tsx`, `Frontend/lib/finance-settings-page.tsx`, `Backend/src/models/Business.js`, `Frontend/app/workspace/[id]/configure-business/page.tsx`
 
-**Interfaces produced:** `Business.documentNumbering.statement: { prefix: String (default 'STM-'), nextNumber: Number (default 1000) }` — same shape as the other three, per R4. Default prefix follows the Finance Settings mockup (`STM-`), not the earlier plan draft (`ST-`).
+**Interfaces produced:** `Business.documentNumbering.statement: { prefix: String (default 'STM-'), nextNumber: Number (default 1) }` — same shape as the other three, per R4. Default prefix follows the Finance Settings mockup (`STM-`), not the earlier plan draft (`ST-`).
 
 - [x] Move Bank Details and Document Number Configuration out of Configure Your Business → Additional Settings into the Financial Settings tab, **no behaviour change** (3.1, 3.2). Additional Settings tab removed; Configure Business Basic save still passthroughs numbering so it cannot wipe Financial Settings.
 - [x] Add Statement Numbers — real, required (same validation as Invoice/PO/Quote), feeds Task 13 (3.3).

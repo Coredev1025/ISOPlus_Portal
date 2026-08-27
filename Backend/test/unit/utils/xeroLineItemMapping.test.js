@@ -8,6 +8,9 @@ import {
   lookupTaxRatePercent,
   inferTaxRatePercentFromTaxType,
   enrichMappingWithTaxRatePercents,
+  buildDefaultLineItemMapping,
+  ensureDefaultLineItemMapping,
+  isLineItemMappingEmpty,
   XERO_TAX_FREE_DEFAULTS,
 } from '../../../src/utils/xeroLineItemMapping.js';
 
@@ -302,5 +305,28 @@ describe('resolveLineItemTax and the line\'s own GST', () => {
 
     expect(resolveLineItemTax(business, 'quote', 'GST Free', 'material'))
       .toEqual({ accountCode: '260', taxType: 'EXEMPTOUTPUT' });
+  });
+
+  it('buildDefaultLineItemMapping seeds AU sales/COGS account + tax pairs', () => {
+    expect(buildDefaultLineItemMapping()).toEqual({
+      quote: { accountCode: '200', taxType: 'EXEMPTOUTPUT', taxRatePercent: 0 },
+      purchaseOrder: { accountCode: '310', taxType: 'EXEMPTEXPENSES', taxRatePercent: 0 },
+      invoice: { accountCode: '200', taxType: 'EXEMPTOUTPUT', taxRatePercent: 0 },
+      quoteOverrides: {
+        quoteService: { accountCode: '', taxType: '', taxRatePercent: null },
+        material: { accountCode: '', taxType: '', taxRatePercent: null },
+      },
+    });
+  });
+
+  it('ensureDefaultLineItemMapping seeds only when every doc type is blank', () => {
+    expect(isLineItemMappingEmpty(null)).toBe(true);
+    expect(ensureDefaultLineItemMapping(null)).toEqual(buildDefaultLineItemMapping());
+
+    const saved = {
+      invoice: { accountCode: '260', taxType: 'OUTPUT', taxRatePercent: 10 },
+    };
+    expect(isLineItemMappingEmpty(saved)).toBe(false);
+    expect(ensureDefaultLineItemMapping(saved).invoice.accountCode).toBe('260');
   });
 });

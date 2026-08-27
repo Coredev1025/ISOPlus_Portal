@@ -361,10 +361,15 @@ export default function ConfigureBusinessPage() {
           showFetchSuccessToast("Business profile");
         }
       } catch (error: any) {
-        if (error.name != "CanceledError" && error.name != "AbortError") {
-          console.error("Failed to fetch business profile:", error);
-          showFetchErrorToast("business profile", error.response?.data?.message || "Failed to load business profile");
+        if (error.name == "CanceledError" || error.name == "AbortError") {
+          return;
         }
+        // New workspaces have no profile yet — empty form is expected, not an error toast.
+        if (error.response?.status === 404) {
+          return;
+        }
+        console.error("Failed to fetch business profile:", error);
+        showFetchErrorToast("business profile", error.response?.data?.message || "Failed to load business profile");
       }
     };
 
@@ -533,7 +538,7 @@ export default function ConfigureBusinessPage() {
 
                   <div className="border rounded-lg p-4">
                     <Tabs defaultValue="default" className="space-y-4">
-                      <TabsList>
+                      <TabsList className="grid w-full grid-cols-3 gap-1">
                         <TabsTrigger value="default">Default Logo</TabsTrigger>
                         <TabsTrigger value="square">Square Logo</TabsTrigger>
                         <TabsTrigger value="wide">Wide Logo</TabsTrigger>
