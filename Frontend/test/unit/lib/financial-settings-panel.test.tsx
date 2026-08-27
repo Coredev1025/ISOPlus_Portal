@@ -125,6 +125,22 @@ describe('FinancialSettingsPanel', () => {
     });
   });
 
+  it('does not toast when the business profile is missing (404)', async () => {
+    (axios.get as ReturnType<typeof vi.fn>).mockRejectedValue({
+      name: 'Error',
+      response: { status: 404, data: { message: 'BusinessProfile not found' } },
+    });
+
+    render(<FinancialSettingsPanel workspaceId="ws-1" />);
+
+    await waitFor(() => {
+      expect(axios.get).toHaveBeenCalled();
+    });
+    expect(showFetchErrorToast).not.toHaveBeenCalled();
+    expect(showFetchSuccessToast).not.toHaveBeenCalled();
+    expect(await screen.findByRole('button', { name: /save changes/i })).toBeInTheDocument();
+  });
+
   it('remaps save validation errors for missing business name', async () => {
     const user = userEvent.setup();
     (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: PROFILE });

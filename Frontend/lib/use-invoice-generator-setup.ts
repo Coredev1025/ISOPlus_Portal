@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from '@/app/utils/axiosConfig';
-import { canAccessWorkspace, type WorkspaceLike } from '@/lib/access';
+import { canAccessBoard, type WorkspaceLike } from '@/lib/access';
 import { getInvoiceGeneratorBoardFlags } from '@/lib/invoice-generator-helpers';
 
 export function useInvoiceGeneratorSetup({
@@ -25,7 +25,7 @@ export function useInvoiceGeneratorSetup({
 }) {
   const router = useRouter();
   const { isCareManagementBoard } = getInvoiceGeneratorBoardFlags(boardLabel);
-  const canAccessInvoiceGenerator = isCareManagementBoard && canAccessWorkspace(user, workspace);
+  const canAccessInvoiceGenerator = isCareManagementBoard && canAccessBoard(user, workspace);
 
   useEffect(() => {
     if (id) setCurrentWorkspaceId(id);

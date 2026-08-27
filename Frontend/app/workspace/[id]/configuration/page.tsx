@@ -10,7 +10,7 @@ import { useAppContext } from "@/app/context";
 import axios from "@/app/utils/axiosConfig";
 import { showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
 import Spinner from "@/components/ui/spin";
-import { isOwnerOrSupport } from "@/lib/access";
+import { isOwnerOrSupport, isContextUserHydrated } from "@/lib/access";
 import { WorkspaceFeatureTogglesCard } from "@/lib/workspace-feature-toggles-card";
 
 // Function to decode HTML entities
@@ -39,6 +39,16 @@ export default function WorkspaceConfiguration() {
       setCurrentWorkspaceId(null);
     };
   }, [id, setCurrentWorkspaceId]);
+
+  const isOwnerOrSupportUser = isOwnerOrSupport(user);
+  const userReady = isContextUserHydrated(user);
+
+  useEffect(() => {
+    if (!userReady) return;
+    if (!isOwnerOrSupportUser) {
+      router.replace("/workspace/access-denied");
+    }
+  }, [userReady, isOwnerOrSupportUser, router]);
 
   const handleCheckLinks = async () => {
     setIsCheckingLinks(true);
@@ -80,11 +90,7 @@ export default function WorkspaceConfiguration() {
     return <div>Loading...</div>;
   }
 
-  // Check if user has permission to access this page
-  const isOwnerOrSupportUser = isOwnerOrSupport(user);
-
-  if (!isOwnerOrSupportUser) {
-    router.replace("/workspace/access-denied");
+  if (!userReady || !isOwnerOrSupportUser) {
     return null;
   }
 

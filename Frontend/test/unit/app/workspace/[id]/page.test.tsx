@@ -296,7 +296,7 @@ describe('workspace detail page', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('redirects an ISO+ member with no workspace role to access-denied and asks for no boards', async () => {
+  it('lets an ISO+ workspace member load boards without admin action cards', async () => {
     localStorage.clear();
     seedContextStorage(ISOPLUS_USER, [
       { id: 'ws-1', name: 'Hillsgrade Care', user_role: 'member' },
@@ -307,9 +307,16 @@ describe('workspace detail page', () => {
     renderPage();
 
     await waitFor(() => {
-      expect(router.replace).toHaveBeenCalledWith('/workspace/access-denied');
+      expect(screen.getByRole('cell', { name: 'Care Board' })).toBeInTheDocument();
     });
-    expect(boardRequests).toHaveLength(0);
+    expect(boardRequests).toHaveLength(1);
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole('button', { name: 'Configure Business' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Finance Settings & Automation' }),
+    ).not.toBeInTheDocument();
   });
 
   it('sends each action card to the matching workspace sub-page', async () => {

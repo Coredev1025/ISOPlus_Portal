@@ -1,11 +1,24 @@
 import { describe, it, expect } from 'vitest';
 import {
   isOwnerOrSupport,
+  isContextUserHydrated,
   isIsoPlusWorkspaceAdminOrOwner,
+  isIsoPlusWorkspaceMember,
   canAccessWorkspace,
+  canAccessBoard,
   isCareManagementLabel,
   isLowCatCareManagementLabel,
 } from '@/lib/access';
+
+describe('isContextUserHydrated', () => {
+  it('returns true only when user.id is a non-empty string', () => {
+    expect(isContextUserHydrated({ id: 'u-1', role: 'support_admin' })).toBe(true);
+    expect(isContextUserHydrated({ id: '', role: 'isoplus_user' })).toBe(false);
+    expect(isContextUserHydrated({ role: 'owner' })).toBe(false);
+    expect(isContextUserHydrated(null)).toBe(false);
+    expect(isContextUserHydrated(undefined)).toBe(false);
+  });
+});
 
 describe('isOwnerOrSupport', () => {
   it('returns true for owner and support_admin', () => {
@@ -48,6 +61,27 @@ describe('isIsoPlusWorkspaceAdminOrOwner', () => {
   });
 });
 
+describe('isIsoPlusWorkspaceMember', () => {
+  it.each(['owner', 'admin', 'restricted_member', 'full_member', 'member'])(
+    'returns true for isoplus_user with workspace user_role %s',
+    (user_role) => {
+      expect(
+        isIsoPlusWorkspaceMember({ role: 'isoplus_user' }, { user_role })
+      ).toBe(true);
+    }
+  );
+
+  it('returns false for unknown workspace roles or non-isoplus users', () => {
+    expect(
+      isIsoPlusWorkspaceMember({ role: 'isoplus_user' }, { user_role: 'viewer' })
+    ).toBe(false);
+    expect(
+      isIsoPlusWorkspaceMember({ role: 'owner' }, { user_role: 'member' })
+    ).toBe(false);
+    expect(isIsoPlusWorkspaceMember(null, { user_role: 'member' })).toBe(false);
+  });
+});
+
 describe('canAccessWorkspace', () => {
   it('returns true for portal owner role', () => {
     expect(canAccessWorkspace({ role: 'owner' }, null)).toBe(true);
@@ -63,6 +97,35 @@ describe('canAccessWorkspace', () => {
     expect(
       canAccessWorkspace({ role: 'isoplus_user' }, { user_role: 'viewer' })
     ).toBe(false);
+    expect(
+      canAccessWorkspace({ role: 'isoplus_user' }, { user_role: 'member' })
+    ).toBe(false);
+    expect(
+      canAccessWorkspace({ role: 'isoplus_user' }, { user_role: 'full_member' })
+    ).toBe(false);
+  });
+});
+
+describe('canAccessBoard', () => {
+  it('returns true for portal staff', () => {
+    expect(canAccessBoard({ role: 'owner' }, null)).toBe(true);
+    expect(canAccessBoard({ role: 'support_admin' }, null)).toBe(true);
+  });
+
+  it.each(['owner', 'admin', 'restricted_member', 'full_member', 'member'])(
+    'returns true for isoplus_user workspace role %s',
+    (user_role) => {
+      expect(
+        canAccessBoard({ role: 'isoplus_user' }, { user_role })
+      ).toBe(true);
+    }
+  );
+
+  it('returns false when the user has no workspace membership', () => {
+    expect(
+      canAccessBoard({ role: 'isoplus_user' }, { user_role: 'viewer' })
+    ).toBe(false);
+    expect(canAccessBoard({ role: 'isoplus_user' }, null)).toBe(false);
   });
 });
 
