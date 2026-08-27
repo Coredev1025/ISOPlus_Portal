@@ -64,6 +64,45 @@ describe('xeroConnectHelpers', () => {
     expect(row.xeroOrganization.name).toBe('Keep');
   });
 
+  it('seeds default account/tax mapping when connecting a workspace with none saved', async () => {
+    const saved = await saveConnectedXeroBusiness({
+      workspaceId: 'ws-seed-mapping',
+      tokens,
+      organization: { organisationId: 'tenant-seed' },
+    });
+    expect(saved.error).toBeUndefined();
+    const row = await Business.findOne({ workspaceId: 'ws-seed-mapping' }).lean();
+    expect(row.xeroLineItemMapping.invoice).toMatchObject({
+      accountCode: '200',
+      taxType: 'EXEMPTOUTPUT',
+      taxRatePercent: 0,
+    });
+    expect(row.xeroLineItemMapping.purchaseOrder).toMatchObject({
+      accountCode: '310',
+      taxType: 'EXEMPTEXPENSES',
+    });
+    expect(row.xeroLineItemMapping.quoteOverrides.quoteService.accountCode).toBeFalsy();
+  });
+
+  it('does not overwrite an existing account/tax mapping on reconnect', async () => {
+    await Business.create({
+      workspaceId: 'ws-keep-mapping',
+      xeroLineItemMapping: {
+        invoice: { accountCode: '260', taxType: 'OUTPUT', taxRatePercent: 10 },
+        quote: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: 10 },
+        purchaseOrder: { accountCode: '400', taxType: 'INPUT', taxRatePercent: 10 },
+      },
+    });
+    await saveConnectedXeroBusiness({
+      workspaceId: 'ws-keep-mapping',
+      tokens,
+      tenantId: 'tenant-keep',
+    });
+    const row = await Business.findOne({ workspaceId: 'ws-keep-mapping' }).lean();
+    expect(row.xeroLineItemMapping.invoice.accountCode).toBe('260');
+    expect(row.xeroLineItemMapping.purchaseOrder.accountCode).toBe('400');
+  });
+
   it('returns missing_tokens when the token set is incomplete', async () => {
     const result = await saveConnectedXeroBusiness({
       workspaceId: 'ws-tokens',

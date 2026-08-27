@@ -3,4 +3,4 @@
  *
  * Touchpoints: models/Business.js, Frontend/lib/configure-business-helpers.ts
  */
-export const DEFAULT_DOCUMENT_NEXT_NUMBER = 1000;
+export const DEFAULT_DOCUMENT_NEXT_NUMBER = 1;

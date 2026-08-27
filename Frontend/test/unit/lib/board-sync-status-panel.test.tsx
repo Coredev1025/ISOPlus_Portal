@@ -35,20 +35,21 @@ describe('BoardSyncStatusPanel', () => {
       schedule: {
         cron: '0 2 * * *',
         timezone: 'Australia/Sydney',
-        previous: null,
+        previous: { at: '2026-08-18T16:00:00.000Z', status: 'completed' },
         current: { state: 'waiting', syncType: 'scheduled_sync' },
         upcoming: { at: '2026-08-20T16:00:00.000Z' },
       },
     }]);
 
     expect(screen.getByText('Queued')).toBeInTheDocument();
-    expect(screen.getByText('None yet')).toBeInTheDocument();
+    expect(screen.getByText(/\(Success\)/)).toBeInTheDocument();
   });
 
   it('falls back to empty copy when the board is not in the workspace poll', () => {
     renderPanel('missing', []);
     expect(screen.getByText('Idle')).toBeInTheDocument();
     expect(screen.getByText('Not scheduled')).toBeInTheDocument();
+    expect(screen.getByText('None yet')).toBeInTheDocument();
   });
 
   it('shows Not scheduled when upcoming is null (kill switch / invalid cron)', () => {
@@ -81,5 +82,20 @@ describe('BoardSyncStatusPanel', () => {
 
     expect(screen.getByText(/2026/)).toBeInTheDocument();
     expect(screen.queryByText('Not scheduled')).not.toBeInTheDocument();
+  });
+
+  it('shows Failed on Previous when status is failed', () => {
+    renderPanel('b-1', [{
+      boardId: 'b-1',
+      schedule: {
+        cron: '0 2 * * *',
+        timezone: 'Australia/Sydney',
+        previous: { at: '2026-08-18T16:00:00.000Z', status: 'failed' },
+        current: null,
+        upcoming: null,
+      },
+    }]);
+
+    expect(screen.getByText(/\(Failed\)/)).toBeInTheDocument();
   });
 });

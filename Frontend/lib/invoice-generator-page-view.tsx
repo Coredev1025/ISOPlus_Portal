@@ -7,6 +7,7 @@ import { FileText, CheckCircle, DollarSign, BarChart3, FileSpreadsheet, Receipt,
 import { PageHeader, StatCard } from "@/components/ui/page-shell";
 import { Header } from "@/components/ui/header";
 import { ResyncDataButton } from "@/components/ui/resync-data-button";
+import { BoardSyncScheduleSummary } from "@/lib/board-sync-schedule-summary";
 import Spinner from "@/components/ui/spin";
 import { formatDistanceToNow } from "date-fns";
 import { PaginationControls } from "@/lib/pagination-controls";
@@ -81,7 +82,8 @@ export function InvoiceGeneratorPageView(props: InvoiceGeneratorPageViewProps) {
               }
               actions={
                 <div className="flex flex-col items-end gap-3">
-                  <div className="flex flex-wrap justify-end gap-2">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <BoardSyncScheduleSummary boardId={boardId} />
                     <ResyncDataButton
                       onSync={handleManualSync}
                       onHelp={() => setShowHelpDialog(true)}

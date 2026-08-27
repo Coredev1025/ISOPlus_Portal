@@ -34,10 +34,10 @@ export const DEFAULT_SEQUENCES: Record<
   "invoice" | "purchaseOrder" | "quote" | "statement",
   NumberSequence
 > = {
-  invoice: { prefix: "INV-", nextNumber: 1000 },
-  purchaseOrder: { prefix: "PO-", nextNumber: 1000 },
-  quote: { prefix: "QT-", nextNumber: 1000 },
-  statement: { prefix: "STM-", nextNumber: 1000 },
+  invoice: { prefix: "INV-", nextNumber: 1 },
+  purchaseOrder: { prefix: "PO-", nextNumber: 1 },
+  quote: { prefix: "QT-", nextNumber: 1 },
+  statement: { prefix: "STM-", nextNumber: 1 },
 };
 
 function toSequence(
@@ -70,7 +70,7 @@ export function extractDocumentNumberingSequences(data: Record<string, any>) {
 
 export const CREDIT_NOTE_SEQUENCE_DISPLAY: NumberSequence = {
   prefix: "CN-",
-  nextNumber: 1000,
+  nextNumber: 1,
 };
 
 export function cloneDefaultSequences() {

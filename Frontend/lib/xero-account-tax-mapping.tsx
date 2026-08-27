@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import axios from "@/app/utils/axiosConfig";
 import { Button } from "@/components/ui/button";
@@ -24,10 +24,10 @@ import {
 } from "@/lib/xero-integration-errors";
 import {
   normalizeMapping,
-  taxRatesForAccount,
   accountsForDocumentKind,
-  displayAccountPlaceholder,
-  displayTaxPlaceholder,
+  taxRatesForDocumentKind,
+  buildDefaultLineItemMapping,
+  isLineItemMappingEmpty,
   type XeroAccountOption,
   type XeroDocMapping,
   type XeroDocumentKind,
@@ -99,18 +99,8 @@ function AccountTaxPair({
   disabled,
   onChange,
 }: AccountTaxPairProps) {
-  const scopedAccounts = useMemo(
-    () => accountsForDocumentKind(accounts, kind, doc.accountCode),
-    [accounts, kind, doc.accountCode]
-  );
-  const selectedAccount = useMemo(
-    () => scopedAccounts.find((account) => account.code === doc.accountCode),
-    [scopedAccounts, doc.accountCode]
-  );
-  const availableTaxRates = useMemo(
-    () => taxRatesForAccount(taxRates, selectedAccount),
-    [taxRates, selectedAccount]
-  );
+  const scopedAccounts = accountsForDocumentKind(accounts, kind, doc.accountCode);
+  const availableTaxRates = taxRatesForDocumentKind(taxRates, kind, doc.taxType);
   const accountOptions = scopedAccounts.map((account) => ({
     value: account.code,
     label: account.name ? `${account.code} – ${account.name}` : account.code,
@@ -125,30 +115,22 @@ function AccountTaxPair({
       <MappingSelect
         label="Account"
         value={doc.accountCode}
-        placeholder={
-          accountOptions.length
-            ? displayAccountPlaceholder(kind)
-            : "No accounts available"
-        }
+        placeholder={accountOptions.length ? "Select account" : "No accounts available"}
         options={accountOptions}
         disabled={disabled}
-        onChange={(v) =>
-          onChange({ accountCode: v, taxType: "", taxRatePercent: null })
-        }
+        onChange={(v) => onChange({ accountCode: v })}
       />
       <MappingSelect
         label="Tax Rate"
         value={doc.taxType}
-        placeholder={
-          selectedAccount ? displayTaxPlaceholder(kind) : "Select an account first"
-        }
+        placeholder={taxOptions.length ? "Select tax rate" : "No tax rates available"}
         options={taxOptions}
-        disabled={disabled || !selectedAccount}
+        disabled={disabled}
         onChange={(v) => {
           const rate = availableTaxRates.find((r) => r.taxType === v);
           onChange({
             taxType: v,
-            taxRatePercent: rate?.effectiveRate ?? null
+            taxRatePercent: rate?.effectiveRate ?? null,
           });
         }}
       />
@@ -188,8 +170,7 @@ function QuoteOverrideRow({
     "quote",
     doc.accountCode
   );
-  const selectedAccount = scopedAccounts.find((a) => a.code === doc.accountCode);
-  const rowTaxRates = taxRatesForAccount(taxRates, selectedAccount);
+  const rowTaxRates = taxRatesForDocumentKind(taxRates, "quote", doc.taxType);
 
   return (
     <tr className="border-b last:border-b-0">
@@ -201,8 +182,6 @@ function QuoteOverrideRow({
           onValueChange={(next) =>
             onChange(kind, {
               accountCode: next === USE_DEFAULT ? "" : next,
-              taxType: "",
-              taxRatePercent: null,
             })
           }
         >
@@ -221,7 +200,7 @@ function QuoteOverrideRow({
       </td>
       <td className="px-3 py-2">
         <Select
-          disabled={disabled || !selectedAccount}
+          disabled={disabled}
           value={doc.taxType === "" ? USE_DEFAULT : doc.taxType}
           onValueChange={(next) => {
             if (next === USE_DEFAULT) {
@@ -274,6 +253,10 @@ export function XeroAccountTaxMapping({
   const [isSaving, setIsSaving] = useState(false);
   const onOptionsLoadFailedRef = useRef(onOptionsLoadFailed);
   onOptionsLoadFailedRef.current = onOptionsLoadFailed;
+  const onMappingSavedRef = useRef(onMappingSaved);
+  onMappingSavedRef.current = onMappingSaved;
+  const mappingRef = useRef(mapping);
+  mappingRef.current = mapping;
 
   useEffect(() => {
     setMapping(initialMapping);
@@ -300,6 +283,24 @@ export function XeroAccountTaxMapping({
         if (cancelled) return;
         setAccounts(response.data?.accounts || []);
         setTaxRates(response.data?.taxRates || []);
+
+        // Backfill connect defaults for already-linked workspaces with an empty mapping.
+        if (!isLineItemMappingEmpty(mappingRef.current)) return;
+        try {
+          const payload = buildDefaultLineItemMapping();
+          const savedResponse = await axios.put(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/xero/line-item-mapping`,
+            { workspaceId, mapping: payload }
+          );
+          if (cancelled) return;
+          const saved = normalizeMapping(
+            savedResponse.data?.xeroLineItemMapping || payload
+          );
+          setMapping(saved);
+          onMappingSavedRef.current(saved);
+        } catch {
+          // Options loaded; seed is best-effort.
+        }
       } catch (error: unknown) {
         if (cancelled) return;
         if (isCanceledError(error)) return;

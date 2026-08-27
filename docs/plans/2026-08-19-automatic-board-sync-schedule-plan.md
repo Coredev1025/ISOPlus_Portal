@@ -25,6 +25,8 @@
 | `board_sync` registered under `AT_LEAST_ONCE` on the tick | `runBoardSyncSweep` exported; **not** registered in `registerSchedulerHandlers` | Tick must not claim `board_sync` |
 | Configuration page fetches `GET /api/sync/board/status/:boardId` | Panel reads `schedule` from workspace status poll in context | Avoid a second 10s poller on Configuration |
 | JobId via `automationPeriodKey` | `scheduledSyncPeriodKey` in `boardSyncSweepHelpers.js` | Board catch-up must not import invoice-automation helpers |
+| `previous` from last completed SyncExecution only | `previous: { at, status }` from `lastSyncedAt` + sticky `lastSyncError` (KAN-23) | Success/Failed on Configuration without per-poll SyncExecution lookup |
+| Schedule UI only on Configuration | Compact summary before Resync on Invoice + Statement generators when board is in the workspace poll (KAN-23) | Same payload; generators stay zero extra pollers |
 
 Full rationale is in the design spec's "Changes since approval" table.
 
@@ -63,9 +65,11 @@ Full rationale is in the design spec's "Changes since approval" table.
 | `Backend/src/models/Board.js` | Add `scheduled_sync` to `syncStatus` enum. |
 | `Backend/src/models/SyncExecution.js` | Add `scheduled_sync` to `syncType` enum. |
 | `Backend/.env.example` | `BOARD_SYNC_CRON`. |
-| `Frontend/lib/board-sync-status-helpers.ts` | Types and label/format helpers. |
+| `Frontend/lib/board-sync-status-helpers.ts` | Types and label/format helpers (`labelPreviousSync`, `formatBoardSyncScheduleSummary`). |
 | `Frontend/lib/board-sync-status-panel.tsx` | Previous / current / next panel; reads workspace poll from context. |
+| `Frontend/lib/board-sync-schedule-summary.tsx` | Compact one-liner before Resync on Invoice / Statement generators (KAN-23). |
 | `Frontend/app/workspace/[id]/board/[boardId]/configuration/page.tsx` | Render the panel when sync is on. |
+| `Frontend/lib/invoice-generator-page-view.tsx` / `monthly-statement-page-view.tsx` | Show schedule summary before Resync when auto-sync is on. |
 | `Frontend/e2e/board-sync-schedule.spec.ts` | Signed-in configuration shows schedule data from workspace poll. |
 | `docs/scheduling.md` | In-process cron, cron env, concurrency 1. |
 
@@ -754,11 +758,11 @@ EOF
 - Consumes: portal `ScheduledJob`, last completed `SyncExecution`, existing `jobStatus` / `syncExecution`
 - Produces: `schedule: { cron, timezone, previous, current, upcoming }` on `getBoardSyncStatus`
 
-`previous`: `{ at, status, syncType } | null` — last `SyncExecution` with `status: 'completed'` for the board, else `{ at: lastSyncedAt, status: 'completed', syncType: null }` if `lastSyncedAt` is set.
+`previous`: `{ at, status } | null` — from `lastSyncedAt` + sticky `lastSyncError` (`completed` / `failed`; user-cancel message is not Failed). *(Plan originally said last completed SyncExecution only — KAN-23 ships board-field status so Failed is visible.)*
 
 `current`: `{ state, syncType } | null` — active execution or job in `active`/`waiting`; if `syncStatus` is `scheduled_sync` or `manual_triggered_sync` and no job object, still `{ state: 'in-progress', syncType: board.syncStatus }`; else `null` (UI shows Idle).
 
-`upcoming`: `{ at: nextRunAt } | null` from the portal schedule row.
+`upcoming`: `{ at: nextRunAt } | null` from the portal schedule meta.
 
 - [x] **Step 1: Write the failing tests**
 
@@ -892,11 +896,15 @@ EOF
 ### Task 6: Board Configuration status panel
 
 > **Deviation:** Panel reads `schedule` from the Header workspace status poll (`workspaceBoardStatuses`), not a per-page `GET /api/sync/board/status/:boardId` fetch. Snippets below are historical.
+>
+> **KAN-23:** Previous shows Success/Failed via `labelPreviousSync`. Invoice Generator and Monthly Statement render `BoardSyncScheduleSummary` before Resync Data from the same poll (no second poller).
 
 **Files:**
 - Create: `Frontend/lib/board-sync-status-helpers.ts`
 - Create: `Frontend/lib/board-sync-status-panel.tsx`
+- Create: `Frontend/lib/board-sync-schedule-summary.tsx` (KAN-23)
 - Modify: `Frontend/app/workspace/[id]/board/[boardId]/configuration/page.tsx`
+- Modify: `Frontend/lib/invoice-generator-page-view.tsx`, `Frontend/lib/monthly-statement-page-view.tsx` (KAN-23)
 - Test: `Frontend/test/unit/lib/board-sync-status-helpers.test.ts`
 - Modify: `Frontend/test/unit/app/workspace/[id]/board/[boardId]/configuration/page.test.tsx`
 

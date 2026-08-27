@@ -20,6 +20,8 @@ before this design. Do not implement per-board `ScheduledJob` rows.
 | Waiting `scheduled_sync` blocks manual Resync | Waiting/delayed `scheduled_sync` is removed (re-checked before remove; remove failure refuses Resync). Active catch-up still blocks. Sweep jobs use `priority: 10` (BullMQ: lower number first; yields to manual's `2`) | Operator Resync must not wait for a portal-wide wave to drain. |
 | Failed nightly catch-up hidden after 60s | Indicator also surfaces sticky `Board.lastSyncError` until the next successful sync clears it | Operators opening the app in the morning still see the overnight failure. |
 | No env kill switch / inter-board pacing | `BOARD_SYNC_ENABLED` (scheduled catch-up only) + `BOARD_SYNC_GAP_MS` (BullMQ `delay = index * gap` on fan-out) | Operators need an off switch without tearing down per-board Sync; gap reduces ISO+ 429 pressure without blocking manual Resync via worker sleep. Disable does not drain already-queued delayed jobs (restart + drain). Gap is start-spacing — size ≥ typical board duration for real rest. |
+| Previous is last completed `SyncExecution` (or `lastSyncedAt` with no outcome) | `previous: { at, status }` from `lastSyncedAt` + sticky `lastSyncError` (`completed` → UI **Success**, `failed` → **Failed**; cancel message is not Failed) | Operators need Success/Failed on Configuration without an extra SyncExecution query per poll; same sticky error the indicator already uses. |
+| Schedule UI only on Board Configuration | Compact `Sync schedule: Previous …, Next… / Current (In progress)` before Resync Data on Invoice Generator and Monthly Statement when the board is in the workspace status poll (`syncData: true`) | Same poll / payload; no second poller. Auto-sync off → no line. |
 
 ## What already exists (do not rebuild)
 
@@ -129,16 +131,18 @@ automation from it. Do not add a second tick endpoint.
 
 ## Status on Board Configuration
 
-When the sync checkbox is on, show three facts from an extended
-`GET /api/sync/board/status/:boardId`:
+When the sync checkbox is on, show three facts from the workspace status poll
+(each board row’s `schedule` from `getBoardSyncStatus`):
 
 | Label | Meaning |
 |---|---|
-| Previous | Last **completed** `SyncExecution` for this board (any catch-up type), else `lastSyncedAt` if present, else none yet |
+| Previous | `lastSyncedAt` with **Success** or **Failed** (`lastSyncError` sticky, excluding user cancel), else none yet |
 | Current | Active execution or BullMQ job for this board; else **Queued** if a `scheduled_sync` job is waiting; else **Idle** |
 | Next scheduled run | `computeNextRun` of `BOARD_SYNC_CRON` in `DEFAULT_TIMEZONE` (same for every board) |
 
-No new route. Existing auth on `/api/sync/board/status/:boardId` stays.
+Invoice Generator and Monthly Statement (auto-sync on) show a one-line summary
+of the same `schedule` immediately before **Resync Data** — Previous + either
+**Current (In progress)** or **Next scheduled run**. No new route.
 
 This is user-visible → Playwright coverage on the configuration page.
 

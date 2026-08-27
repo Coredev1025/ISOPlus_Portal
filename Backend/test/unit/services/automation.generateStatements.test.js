@@ -149,13 +149,13 @@ describe('generateStatementsForBoard', () => {
       workspaceId: WS, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: PERIOD,
     });
 
-    expect(results.map((row) => row.statementNumber).sort()).toEqual(['STM-1000', 'STM-1001']);
+    expect(results.map((row) => row.statementNumber).sort()).toEqual(['STM-1', 'STM-2']);
     const business = await Business.findOne({ workspaceId: WS }).lean();
-    expect(business.documentNumbering.statement.nextNumber).toBe(1002);
+    expect(business.documentNumbering.statement.nextNumber).toBe(3);
     // Persisted on the PDFLink row so the replay below can hand the same
     // number back rather than minting a second one for the same statement.
     const links = await PDFLink.find({ workspaceId: WS, type: 'Monthly Statement' }).lean();
-    expect(links.map((link) => link.invoiceNumber).sort()).toEqual(['STM-1000', 'STM-1001']);
+    expect(links.map((link) => link.invoiceNumber).sort()).toEqual(['STM-1', 'STM-2']);
   });
 
   // A replayed slot must be inert. Re-minting would both burn a number and put
@@ -185,15 +185,15 @@ describe('generateStatementsForBoard', () => {
       statementNumber: 'STM-77',
     }]);
     const business = await Business.findOne({ workspaceId: WS }).lean();
-    expect(business.documentNumbering.statement.nextNumber).toBe(1000);
+    expect(business.documentNumbering.statement.nextNumber).toBe(1);
     expect(await PDFLink.countDocuments({ workspaceId: WS, type: 'Monthly Statement' })).toBe(1);
   });
 
   // Production runs several Elastic Beanstalk instances pulling one automation
   // queue, so two boards in the same workspace generate at the same moment
   // routinely. Read nextNumber, render a PDF, then write nextNumber + 1 back is
-  // a lost update across the awaits: both runs read 1000, both mint 'STM-1000'
-  // for different participants, and the counter ends on 1001 rather than 1002.
+  // a lost update across the awaits: both runs read 1, both mint 'STM-1'
+  // for different participants, and the counter ends on 2 rather than 3.
   it('never mints the same statement number for two concurrent boards', async () => {
     await seedWorkspace({ label: 'Care Management' });
     await seedSecondBoard('Sam Lee');
@@ -208,8 +208,8 @@ describe('generateStatementsForBoard', () => {
     ]);
 
     expect([first[0].statementNumber, second[0].statementNumber].sort())
-      .toEqual(['STM-1000', 'STM-1001']);
+      .toEqual(['STM-1', 'STM-2']);
     const business = await Business.findOne({ workspaceId: WS }).lean();
-    expect(business.documentNumbering.statement.nextNumber).toBe(1002);
+    expect(business.documentNumbering.statement.nextNumber).toBe(3);
   });
 });

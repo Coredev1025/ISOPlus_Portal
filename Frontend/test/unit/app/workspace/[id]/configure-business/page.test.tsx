@@ -13,6 +13,7 @@ import {
 } from '../../../page-test-utils';
 import ConfigureBusinessPage from '@/app/workspace/[id]/configure-business/page';
 import { dismissAllToasts } from '@/lib/toast-utils';
+import * as toastUtils from '@/lib/toast-utils';
 
 /**
  * The business profile form loads `/api/business/profile`, pulls each stored
@@ -282,6 +283,7 @@ describe('configure business page', () => {
   });
 
   it('leaves the form empty and logs when the profile cannot be loaded', async () => {
+    const toastSpy = vi.spyOn(toastUtils, 'showFetchErrorToast');
     stubBusiness({ profileStatus: 500 });
     renderPage();
 
@@ -291,10 +293,41 @@ describe('configure business page', () => {
         expect.anything(),
       );
     });
+    expect(toastSpy).toHaveBeenCalledWith(
+      'business profile',
+      'Business profile unavailable',
+    );
     expect(screen.getByLabelText('Company Name')).toHaveValue('');
     expect(screen.getByLabelText('Business Email')).toHaveValue('');
     // The untouched default the component ships with.
     expect(logoRequests).toHaveLength(0);
+  });
+
+  it('does not toast when the business profile is missing (404)', async () => {
+    const toastSpy = vi.spyOn(toastUtils, 'showFetchErrorToast');
+    stubBusiness({ profileStatus: 404 });
+    renderPage();
+
+    await waitFor(() => expect(profileRequests).toHaveLength(1));
+    await waitFor(() => {
+      expect(screen.getByLabelText('Company Name')).toHaveValue('');
+    });
+    expect(toastSpy).not.toHaveBeenCalled();
+    expect(console.error).not.toHaveBeenCalledWith(
+      'Failed to fetch business profile:',
+      expect.anything(),
+    );
+    expect(logoRequests).toHaveLength(0);
+  });
+
+  it('renders company logo tabs full width with equal columns', async () => {
+    stubBusiness();
+    renderPage();
+
+    const tablist = await screen.findByRole('tablist');
+    expect(tablist.className).toMatch(/\bw-full\b/);
+    expect(tablist.className).toMatch(/\bgrid-cols-3\b/);
+    expect(tablist.className).toMatch(/\bgap-/);
   });
 
   it('saves every field as one multipart body carrying the workspace id and the numbering', async () => {
@@ -314,7 +347,7 @@ describe('configure business page', () => {
       purchaseOrder: { prefix: 'HG-PO-', nextNumber: 300 },
       quote: { prefix: 'HG-QT-', nextNumber: 12 },
       // Loaded default when the profile had no statement series yet.
-      statement: { prefix: 'STM-', nextNumber: 1000 },
+      statement: { prefix: 'STM-', nextNumber: 1 },
     });
     // Nothing was uploaded or removed, so no logo keys ride along.
     expect(Object.keys(savedForms[0])).not.toContain('defaultLogo');

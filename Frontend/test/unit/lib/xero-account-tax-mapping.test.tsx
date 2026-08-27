@@ -20,6 +20,7 @@ import {
   EMPTY_LINE_ITEM_MAPPING,
   XeroAccountTaxMapping,
 } from '@/lib/xero-account-tax-mapping';
+import { buildDefaultLineItemMapping } from '@/lib/xero-account-tax-mapping-options';
 import { showErrorToast, showSaveErrorToast, showSaveSuccessToast } from '@/lib/toast-utils';
 
 const OPTIONS = {
@@ -31,6 +32,13 @@ const OPTIONS = {
       class: 'REVENUE',
       status: 'ACTIVE',
     },
+    {
+      code: '310',
+      name: 'Cost of Goods Sold',
+      type: 'EXPENSE',
+      class: 'EXPENSE',
+      status: 'ACTIVE',
+    },
   ],
   taxRates: [
     {
@@ -40,6 +48,30 @@ const OPTIONS = {
       canApplyToRevenue: true,
       canApplyToExpenses: false,
       effectiveRate: 10,
+    },
+    {
+      taxType: 'INPUT',
+      name: 'GST on Expenses',
+      status: 'ACTIVE',
+      canApplyToRevenue: false,
+      canApplyToExpenses: true,
+      effectiveRate: 10,
+    },
+    {
+      taxType: 'EXEMPTOUTPUT',
+      name: 'GST Free Income',
+      status: 'ACTIVE',
+      canApplyToRevenue: true,
+      canApplyToExpenses: false,
+      effectiveRate: 0,
+    },
+    {
+      taxType: 'EXEMPTEXPENSES',
+      name: 'GST Free Expenses',
+      status: 'ACTIVE',
+      canApplyToRevenue: false,
+      canApplyToExpenses: true,
+      effectiveRate: 0,
     },
   ],
 };
@@ -73,11 +105,12 @@ describe('XeroAccountTaxMapping', () => {
   it('loads options when connected and saves mapping', async () => {
     const user = userEvent.setup();
     const onMappingSaved = vi.fn();
+    const initial = buildDefaultLineItemMapping();
     (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: OPTIONS });
     (axios.put as ReturnType<typeof vi.fn>).mockResolvedValue({
       data: {
         xeroLineItemMapping: {
-          ...EMPTY_LINE_ITEM_MAPPING,
+          ...initial,
           invoice: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: 10 },
         },
       },
@@ -87,7 +120,7 @@ describe('XeroAccountTaxMapping', () => {
       <XeroAccountTaxMapping
         workspaceId="ws-1"
         isConnected
-        initialMapping={EMPTY_LINE_ITEM_MAPPING}
+        initialMapping={initial}
         onMappingSaved={onMappingSaved}
       />
     );
@@ -117,7 +150,7 @@ describe('XeroAccountTaxMapping', () => {
       <XeroAccountTaxMapping
         workspaceId="ws-1"
         isConnected
-        initialMapping={EMPTY_LINE_ITEM_MAPPING}
+        initialMapping={buildDefaultLineItemMapping()}
         onMappingSaved={vi.fn()}
         onOptionsLoadFailed={onOptionsLoadFailed}
       />
@@ -140,7 +173,7 @@ describe('XeroAccountTaxMapping', () => {
       <XeroAccountTaxMapping
         workspaceId="ws-1"
         isConnected
-        initialMapping={EMPTY_LINE_ITEM_MAPPING}
+        initialMapping={buildDefaultLineItemMapping()}
         onMappingSaved={vi.fn()}
         onOptionsLoadFailed={onOptionsLoadFailed}
       />
@@ -161,7 +194,7 @@ describe('XeroAccountTaxMapping', () => {
       <XeroAccountTaxMapping
         workspaceId="ws-1"
         isConnected
-        initialMapping={EMPTY_LINE_ITEM_MAPPING}
+        initialMapping={buildDefaultLineItemMapping()}
         onMappingSaved={vi.fn()}
       />
     );
@@ -187,7 +220,7 @@ describe('XeroAccountTaxMapping', () => {
       <XeroAccountTaxMapping
         workspaceId="ws-1"
         isConnected
-        initialMapping={EMPTY_LINE_ITEM_MAPPING}
+        initialMapping={buildDefaultLineItemMapping()}
         onMappingSaved={vi.fn()}
       />
     );
@@ -211,7 +244,7 @@ describe('XeroAccountTaxMapping', () => {
       <XeroAccountTaxMapping
         workspaceId="ws-1"
         isConnected
-        initialMapping={EMPTY_LINE_ITEM_MAPPING}
+        initialMapping={buildDefaultLineItemMapping()}
         onMappingSaved={vi.fn()}
       />
     );
@@ -227,5 +260,65 @@ describe('XeroAccountTaxMapping', () => {
     expect(screen.getByText('Material')).toBeInTheDocument();
 
     await waitFor(() => expect(axios.get).toHaveBeenCalled());
+  });
+
+  it('keeps account and tax rate independent — tax can be set before account', async () => {
+    (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: OPTIONS });
+
+    render(
+      <XeroAccountTaxMapping
+        workspaceId="ws-1"
+        isConnected
+        initialMapping={buildDefaultLineItemMapping()}
+        onMappingSaved={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(axios.get).toHaveBeenCalled());
+
+    for (const label of screen.getAllByText('Tax Rate')) {
+      const trigger = label.parentElement?.querySelector('button');
+      expect(trigger).toBeTruthy();
+      expect(trigger).not.toBeDisabled();
+    }
+
+    expect(screen.queryByText(/select an account first/i)).not.toBeInTheDocument();
+  });
+
+  it('persists default account/tax pairs when connected with an empty mapping', async () => {
+    (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: OPTIONS });
+    (axios.put as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { xeroLineItemMapping: buildDefaultLineItemMapping() },
+    });
+    const onMappingSaved = vi.fn();
+
+    render(
+      <XeroAccountTaxMapping
+        workspaceId="ws-1"
+        isConnected
+        initialMapping={EMPTY_LINE_ITEM_MAPPING}
+        onMappingSaved={onMappingSaved}
+      />
+    );
+
+    await waitFor(() => expect(axios.put).toHaveBeenCalled());
+    expect(axios.put).toHaveBeenCalledWith(
+      'http://localhost:3001/api/business/xero/line-item-mapping',
+      expect.objectContaining({
+        workspaceId: 'ws-1',
+        mapping: expect.objectContaining({
+          invoice: expect.objectContaining({
+            accountCode: '200',
+            taxType: 'EXEMPTOUTPUT',
+          }),
+          purchaseOrder: expect.objectContaining({
+            accountCode: '310',
+            taxType: 'EXEMPTEXPENSES',
+          }),
+        }),
+      })
+    );
+    await waitFor(() => expect(onMappingSaved).toHaveBeenCalled());
+    expect(showSaveSuccessToast).not.toHaveBeenCalled();
   });
 });

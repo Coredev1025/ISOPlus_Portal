@@ -9,7 +9,7 @@ const portal = {
 };
 
 describe('buildBoardSyncScheduleView', () => {
-  it('returns Idle current, lastSyncedAt as previous, and portal nextRunAt', () => {
+  it('returns Idle current, lastSyncedAt as previous Success, and portal nextRunAt', () => {
     const lastSyncedAt = new Date('2026-08-18T16:00:00Z');
     const view = buildBoardSyncScheduleView({
       board: { syncStatus: 'realtime_sync', lastSyncedAt },
@@ -18,9 +18,49 @@ describe('buildBoardSyncScheduleView', () => {
       portalSchedule: portal,
     });
     expect(view.cron).toBe('0 2 * * *');
-    expect(view.previous).toEqual({ at: lastSyncedAt });
+    expect(view.previous).toEqual({ at: lastSyncedAt, status: 'completed' });
     expect(view.current).toBeNull();
     expect(view.upcoming).toEqual({ at: upcoming });
+  });
+
+  it('marks previous Failed when sticky lastSyncError is set', () => {
+    const lastSyncedAt = new Date('2026-08-18T16:00:00Z');
+    const view = buildBoardSyncScheduleView({
+      board: {
+        syncStatus: 'failed',
+        lastSyncedAt,
+        lastSyncError: 'ISO+ returned 429 at 02:00',
+      },
+      jobStatus: null,
+      syncExecution: null,
+      portalSchedule: portal,
+    });
+    expect(view.previous).toEqual({ at: lastSyncedAt, status: 'failed' });
+  });
+
+  it('does not treat a user cancel message as Failed on previous', () => {
+    const lastSyncedAt = new Date('2026-08-18T16:00:00Z');
+    const view = buildBoardSyncScheduleView({
+      board: {
+        syncStatus: 'sync_cancelled',
+        lastSyncedAt,
+        lastSyncError: 'Sync cancelled by user',
+      },
+      jobStatus: null,
+      syncExecution: null,
+      portalSchedule: portal,
+    });
+    expect(view.previous).toEqual({ at: lastSyncedAt, status: 'completed' });
+  });
+
+  it('returns null previous when lastSyncedAt is missing', () => {
+    const view = buildBoardSyncScheduleView({
+      board: { syncStatus: 'realtime_sync', lastSyncedAt: null, lastSyncError: 'boom' },
+      jobStatus: null,
+      syncExecution: null,
+      portalSchedule: portal,
+    });
+    expect(view.previous).toBeNull();
   });
 
   it('surfaces an in-flight catch-up as current', () => {
