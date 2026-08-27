@@ -319,10 +319,37 @@ describe('Board detail page', () => {
     expect(router.replace).not.toHaveBeenCalled();
   });
 
-  it('sends a workspace member with no admin rights to the access-denied page', async () => {
+  it.each(['full_member', 'member'] as const)(
+    'lets a workspace %s open board tools but not configuration',
+    async (user_role) => {
+      localStorage.clear();
+      seedContextStorage(ISOPLUS_USER, [
+        { id: 'ws-1', name: 'Hillsgrade Care', user_role },
+      ]);
+      stubChromeRequests(ISOPLUS_USER);
+      stubBoard();
+      renderPage();
+
+      expect(
+        await screen.findByRole('button', { name: 'Generate QR Code' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Generate Invoice' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'View Statement' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Configure Board' }),
+      ).not.toBeInTheDocument();
+      expect(router.replace).not.toHaveBeenCalled();
+    },
+  );
+
+  it('sends an ISO+ user with no workspace membership to access-denied', async () => {
     localStorage.clear();
     seedContextStorage(ISOPLUS_USER, [
-      { id: 'ws-1', name: 'Hillsgrade Care', user_role: 'full_member' },
+      { id: 'ws-1', name: 'Hillsgrade Care', user_role: 'viewer' },
     ]);
     stubChromeRequests(ISOPLUS_USER);
     stubBoard();
@@ -331,7 +358,5 @@ describe('Board detail page', () => {
     await waitFor(() => {
       expect(router.replace).toHaveBeenCalledWith('/workspace/access-denied');
     });
-    // The page keeps rendering its cards behind the redirect: it never guards
-    // the body on canAccessThisWorkspace, it only calls router.replace.
   });
 });

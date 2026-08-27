@@ -102,7 +102,13 @@ export function FinancialSettingsPanel({
         ) {
           return;
         }
-        const err = error as { response?: { data?: { message?: string } } };
+        const err = error as {
+          response?: { status?: number; data?: { message?: string } };
+        };
+        // New workspaces have no profile yet — empty form is expected, not an error toast.
+        if (err.response?.status === 404) {
+          return;
+        }
         showFetchErrorToast(
           "financial settings",
           err.response?.data?.message || "Failed to load financial settings"

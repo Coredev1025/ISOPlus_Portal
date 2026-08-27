@@ -222,6 +222,14 @@ describe('Board configuration page', () => {
     expect(boardUrls).toHaveLength(0);
   });
 
+  it('does not send support_admin to access-denied while context user hydrates from localStorage', async () => {
+    stubConfigurationData();
+    renderPage();
+
+    await screen.findByRole('heading', { name: 'Board Configuration' });
+    expect(router.replace).not.toHaveBeenCalledWith('/workspace/access-denied');
+  });
+
   it('renders nothing until the board arrives', async () => {
     let release: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {

@@ -371,11 +371,13 @@ describe('useInvoiceGeneratorSetup — access control', () => {
     expect(routerMock.replace).not.toHaveBeenCalled();
   });
 
-  it('redirects an ISO+ user who is only a member of the workspace', async () => {
+  it('keeps an ISO+ user who is only a member of the workspace', async () => {
     const props = makeProps({ user: { role: 'isoplus_user' }, workspace: { user_role: 'member' } });
     renderHook(() => useInvoiceGeneratorSetup(props));
 
-    expect(routerMock.replace.mock.calls).toEqual([['/workspace/access-denied']]);
+    await waitFor(() => expect(profileRequests).toHaveLength(1));
+
+    expect(routerMock.replace).not.toHaveBeenCalled();
   });
 
   it('keeps an ISO+ user who administers the workspace', async () => {
