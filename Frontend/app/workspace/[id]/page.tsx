@@ -239,7 +239,7 @@ export default function WorkspaceDetail() {
 
           {/* Workspace Actions — admin/owner (Finance, Configure Business, Audit) */}
           {
-            canAccessWorkspace && (
+            (isOwnerOrSupportUser || canAccessWorkspace) && (
               <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-2 lg:grid-cols-4">
                 <Card className="card-hover flex h-full flex-col p-6">
                   <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">

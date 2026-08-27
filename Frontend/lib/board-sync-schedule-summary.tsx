@@ -1,7 +1,7 @@
 'use client';
 
 import { useAppContext } from '@/app/context';
-import { formatBoardSyncScheduleSummary } from '@/lib/board-sync-status-helpers';
+import { boardSyncScheduleSummaryParts } from '@/lib/board-sync-status-helpers';
 
 type BoardSyncScheduleSummaryProps = Readonly<{
   boardId: string;
@@ -19,18 +19,25 @@ export function BoardSyncScheduleSummary({
 }: BoardSyncScheduleSummaryProps) {
   const { workspaceBoardStatuses } = useAppContext();
   const board = workspaceBoardStatuses.find((row) => row.boardId === boardId);
-  const summary = formatBoardSyncScheduleSummary(board?.schedule ?? null);
-  if (!summary) return null;
+  const parts = boardSyncScheduleSummaryParts(board?.schedule ?? null);
+  if (!parts) return null;
 
   return (
     <p
       className={
         className
-        ?? 'max-w-md text-left text-sm leading-snug text-muted-foreground'
+        ?? 'min-w-0 max-w-xl text-left text-sm leading-snug text-foreground'
       }
       aria-label="Sync schedule"
     >
-      {summary}
+      {parts.map((part, index) => (
+        <span
+          key={index}
+          className={part.bold ? 'font-semibold' : undefined}
+        >
+          {part.text}
+        </span>
+      ))}
     </p>
   );
 }
