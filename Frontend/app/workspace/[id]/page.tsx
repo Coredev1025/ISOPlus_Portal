@@ -20,7 +20,7 @@ import axios from "@/app/utils/axiosConfig";
 import Spinner from "@/components/ui/spin";
 import { showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
 import { Badge } from "@/components/ui/badge";
-import { isOwnerOrSupport, canAccessBoard, canAccessWorkspace } from "@/lib/access";
+import { isOwnerOrSupport, canAccessBoard, isIsoPlusWorkspaceMember } from "@/lib/access";
 import { Input } from "@/components/ui/input";
 import {
   Tooltip,
@@ -64,7 +64,7 @@ export default function WorkspaceDetail() {
   const isWorkspaceAdmin = user.role === "isoplus_user" && workspace?.user_role === "admin";
   const canSeeBoardMeta = isOwnerOrSupportUser || isWorkspaceOwner || isWorkspaceAdmin;
   const canAccessThisWorkspace = canAccessBoard(user, workspace);
-  const canAccessWorkspaceAdminTools = canAccessWorkspace(user, workspace);
+  const canAccessWorkspace = isIsoPlusWorkspaceMember(user, workspace);
   const adminBoardIds = useMemo(() => {
     if (!isWorkspaceAdmin) return null;
     const boardList = (workspace as any)?.board;
@@ -239,7 +239,7 @@ export default function WorkspaceDetail() {
 
           {/* Workspace Actions — admin/owner (Finance, Configure Business, Audit) */}
           {
-            canAccessWorkspaceAdminTools && (
+            canAccessWorkspace && (
               <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-2 lg:grid-cols-4">
                 <Card className="card-hover flex h-full flex-col p-6">
                   <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
