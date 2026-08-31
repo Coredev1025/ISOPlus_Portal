@@ -35,13 +35,15 @@ export default function BoardDetail() {
   const id = pathname.split('/')[2];
   const boardId = pathname.split('/').pop();
   const [board, setBoard] = useState<Board>();
-  const { workspaces, user, setCurrentWorkspaceId } = useAppContext();
+  const { workspaces, user, setWorkspaces, setCurrentWorkspaceId } = useAppContext();
   const workspace = workspaces.find(w => w.id.toString() === id);
   const [loadingBoards, setLoadingBoards] = useState(false);
   const isOwnerOrSupportUser = isOwnerOrSupport(user);
   const isWorkspaceOwner = user.role === "isoplus_user" && workspace?.user_role === "owner";
   const isWorkspaceAdmin = user.role === "isoplus_user" && workspace?.user_role === "admin";
-  const canAccessThisWorkspace = isOwnerOrSupportUser || isWorkspaceOwner || isWorkspaceAdmin;
+  const isWorkspaceRestricted = user.role === "isoplus_user" && workspace?.user_role === "restricted_member";
+  const isWorkspaceFullMember = user.role === "isoplus_user" && workspace?.user_role === "full_member";
+  const canAccessThisWorkspace = isOwnerOrSupportUser || isWorkspaceOwner || isWorkspaceAdmin || isWorkspaceRestricted || isWorkspaceFullMember;
 
   useEffect(() => {
     if (workspace === undefined) return;
@@ -49,6 +51,30 @@ export default function BoardDetail() {
       router.replace("/workspace/access-denied");
     }
   }, [workspace, canAccessThisWorkspace, router]);
+
+  // See workspace/[id]/page.tsx: the cached role from the dashboard list
+  // defaults isoplus_user members to "restricted_member" unless a search
+  // enriched it, so refresh the real role for this workspace directly.
+  useEffect(() => {
+    if (!id || user.role !== "isoplus_user") return;
+    let cancelled = false;
+    axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces`, {
+      params: { includeDetails: true, q: id, limit: 10 },
+    }).then((response) => {
+      if (cancelled) return;
+      const list = Array.isArray(response?.data?.workspace) ? response.data.workspace : [];
+      const match = list.find((w: any) => w?.id?.toString() === id);
+      if (!match?.user_role) return;
+      setWorkspaces((prev) => {
+        const current = prev.find((w) => w.id.toString() === id);
+        if (!current || current.user_role === match.user_role) return prev;
+        return prev.map((w) => (w.id.toString() === id ? { ...w, user_role: match.user_role } : w));
+      });
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [id, user.role, setWorkspaces]);
 
   useEffect(() => {
     if (id) {
