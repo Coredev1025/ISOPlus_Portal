@@ -108,6 +108,11 @@ app.use(express.urlencoded({ extended: true, limit: requestBodyLimitBytes }));
 app.use(mongoSanitize({ replaceWith: '_', allowDots: true }));
 
 const isProduction = process.env.NODE_ENV === 'production';
+// Local tunnel dev (e.g. Cloudflare quick tunnel) puts the frontend and
+// backend on genuinely different sites, so the session cookie needs the same
+// SameSite=None/Secure treatment as production or the browser silently drops
+// it on cross-site XHR (e.g. /api/auth/verify right after login succeeds).
+const crossSiteCookies = isProduction || process.env.SESSION_COOKIE_CROSS_SITE === 'true';
 app.use(session({
   secret: process.env.SESSION_SECRET || 'default_secret',
   resave: false,
@@ -118,9 +123,9 @@ app.use(session({
     autoRemove: 'native'
   }),
   cookie: {
-    secure: isProduction,
+    secure: crossSiteCookies,
     httpOnly: true,
-    sameSite: isProduction ? 'none' : 'lax',
+    sameSite: crossSiteCookies ? 'none' : 'lax',
     maxAge: 1000 * 60 * 60 * 24
   }
 }));
