@@ -1,13 +1,23 @@
 import { readFileSync } from 'node:fs';
+import { isAbsolute, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   GOOGLE_DIRECTORY_GROUP_READONLY_SCOPE,
   GOOGLE_OAUTH_SCOPES,
 } from '../constants/googleAuth.js';
 
+/** Backend package root (`Backend/`), so relative key paths work from any cwd. */
+const BACKEND_ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
+
 function readEnv(name, env = process.env) {
   const value = env[name];
   if (typeof value !== 'string') return '';
   return value.trim();
+}
+
+function resolveServiceAccountKeyPath(keyFile) {
+  if (!keyFile) return '';
+  return isAbsolute(keyFile) ? keyFile : resolve(BACKEND_ROOT, keyFile);
 }
 
 export function parseServiceAccountCredentials(env = process.env) {
@@ -24,7 +34,7 @@ export function parseServiceAccountCredentials(env = process.env) {
   if (!keyFile) return null;
 
   try {
-    return JSON.parse(readFileSync(keyFile, 'utf8'));
+    return JSON.parse(readFileSync(resolveServiceAccountKeyPath(keyFile), 'utf8'));
   } catch {
     return null;
   }

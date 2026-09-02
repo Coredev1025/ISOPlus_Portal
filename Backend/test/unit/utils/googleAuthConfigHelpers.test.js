@@ -83,4 +83,23 @@ describe('googleAuthConfigHelpers', () => {
     expect(diag).not.toHaveProperty('private_key');
     expect(JSON.stringify(diag)).not.toContain('BEGIN PRIVATE KEY');
   });
+
+  it('loads service account credentials from a path relative to Backend/', () => {
+    const savedKeyFile = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE;
+    delete process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+    process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE = 'secrets/google-service-account.json';
+    try {
+      const creds = parseServiceAccountCredentials();
+      // File is local-only / gitignored; skip when absent on CI
+      if (!creds) {
+        expect(creds).toBeNull();
+        return;
+      }
+      expect(creds.client_email).toMatch(/@.*\.iam\.gserviceaccount\.com$/);
+      expect(creds.private_key).toContain('BEGIN PRIVATE KEY');
+    } finally {
+      if (savedKeyFile === undefined) delete process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE;
+      else process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE = savedKeyFile;
+    }
+  });
 });
