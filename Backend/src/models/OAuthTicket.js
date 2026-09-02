@@ -3,9 +3,14 @@ import { makeTicketSchema } from './ticketSchema.js';
 
 const oauthTicketSchema = makeTicketSchema(
   {
+    flow: {
+      type: String,
+      default: 'isoplus',
+      enum: ['isoplus', 'google-support'],
+    },
     accessToken: {
       type: String,
-      required: true,
+      default: '',
     },
     oauthData: {
       id: String,

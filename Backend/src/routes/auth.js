@@ -11,6 +11,18 @@ import { getMember, listWorkspacesForAuthorization } from '../services/isoplus.j
 import { getFrontendBaseUrl, signOAuthState, verifyOAuthState } from '../utils/helpers.js';
 import OAuthTicket from '../models/OAuthTicket.js';
 import { getSafeString, toRequiredQueryString } from '../utils/securityHelpers.js';
+import { GOOGLE_SUPPORT_TICKET_FLOW } from '../constants/googleAuth.js';
+import { isGoogleSupportAuthConfigured, describeGoogleSupportAuthConfig } from '../utils/googleAuthConfigHelpers.js';
+import { checkUserGroupMembership } from '../utils/googleGroupMembershipHelpers.js';
+import {
+  buildGoogleOAuthRedirectUrl,
+  exchangeGoogleAuthCode,
+  isVerifiedGoogleProfile,
+  signGoogleSupportOAuthState,
+  verifyGoogleSupportOAuthState,
+} from '../utils/googleOAuthHelpers.js';
+import { findOrCreateGoogleSupportUser } from '../utils/googleSupportUserHelpers.js';
+import { applyPrivilegedSessionAuth } from '../middleware/authHelpers.js';
 
 const router = express.Router();
 
@@ -211,117 +223,397 @@ router.post('/register',
   }
 );
 
-router.post('/login',
-  [
-    body('email').isEmail(),
-    body('password').exists()
-  ],
-  async (req, res) => {
-    const authMethod = 'support-admin';
-    authStep(req, { authMethod, stage: 'login_started', message: 'Support admin login started' });
+router.post('/login', (_req, res) => {
+  res.status(404).json({
+    message: 'Support admin password login is no longer available. Use Google sign-in.',
+  });
+});
 
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
+router.get('/google/redirect', (req, res) => {
+  const authMethod = 'google-support-oauth';
+  const configDiag = describeGoogleSupportAuthConfig();
+  authStep(req, {
+    authMethod,
+    stage: 'redirect_started',
+    message: 'Building Google OAuth redirect URI',
+    data: configDiag,
+  });
+  info('Google-Auth', 'Support agent Google redirect requested', configDiag, req);
+
+  if (!isGoogleSupportAuthConfigured()) {
+    authFailure(req, {
+      authMethod,
+      stage: 'not_configured',
+      message: 'Google support sign-in is not configured',
+      httpStatus: 503,
+      data: configDiag,
+    });
+    warn('Google-Auth', 'Google support redirect refused: not configured', configDiag, req);
+    return res.status(503).json({ message: 'Google support sign-in is not configured' });
+  }
+
+  const state = signGoogleSupportOAuthState();
+  const built = buildGoogleOAuthRedirectUrl(state);
+  if (!built.ok) {
+    authFailure(req, {
+      authMethod,
+      stage: 'not_configured',
+      message: 'Google OAuth client is not configured',
+      httpStatus: 503,
+      data: configDiag,
+    });
+    warn('Google-Auth', 'Google OAuth redirect URL build failed', configDiag, req);
+    return res.status(503).json({ message: 'Google OAuth client is not configured' });
+  }
+
+  authStep(req, {
+    authMethod,
+    stage: 'redirect_ready',
+    message: 'Google OAuth redirect URI ready',
+    data: { callbackUrl: configDiag.callbackUrl },
+  });
+  info('Google-Auth', 'Redirecting browser to Google authorize', {
+    callbackUrl: configDiag.callbackUrl,
+  }, req);
+  return res.json({ redirect_uri: built.redirectUri });
+});
+
+router.get('/google/callback', async (req, res) => {
+  const authMethod = 'google-support-oauth';
+  const { code, state } = req.query;
+  const frontendBase = getFrontendBaseUrl();
+  const loginErrorRedirect = (reason) =>
+    `${frontendBase}/?login=error${reason ? `&reason=${encodeURIComponent(reason)}` : ''}`;
+  const configDiag = describeGoogleSupportAuthConfig();
+
+  authStep(req, {
+    authMethod,
+    stage: 'callback_received',
+    message: 'Google OAuth callback received',
+    data: {
+      hasCode: !!code,
+      hasState: !!state,
+      oauthError: req.query?.error,
+      oauthErrorDescription: req.query?.error_description,
+      ...configDiag,
+    },
+  });
+  info('Google-Auth', 'Google OAuth callback received', {
+    hasCode: !!code,
+    hasState: !!state,
+    oauthError: req.query?.error || null,
+    oauthErrorDescription: req.query?.error_description || null,
+    frontendBase,
+    targetGroup: configDiag.targetGroup,
+  }, req);
+
+  if (!isGoogleSupportAuthConfigured()) {
+    authFailure(req, {
+      authMethod,
+      stage: 'not_configured',
+      message: 'Google support sign-in is not configured',
+      data: configDiag,
+    });
+    warn('Google-Auth', 'Google callback refused: not configured', configDiag, req);
+    return res.redirect(loginErrorRedirect('not_configured'));
+  }
+
+  if (!code) {
+    authFailure(req, {
+      authMethod,
+      stage: 'callback_missing_code',
+      message: 'Google OAuth callback failed: authorization code missing',
+      reason: 'No authorization code in callback query',
+      data: { oauthError: req.query?.error, oauthErrorDescription: req.query?.error_description },
+    });
+    warn('Google-Auth', 'Google callback missing authorization code', {
+      oauthError: req.query?.error || null,
+      oauthErrorDescription: req.query?.error_description || null,
+    }, req);
+    return res.redirect(loginErrorRedirect('missing_code'));
+  }
+
+  authStep(req, { authMethod, stage: 'verify_state', message: 'Verifying Google OAuth state parameter' });
+  const stateResult = verifyGoogleSupportOAuthState(
+    verifyOAuthState(typeof state === 'string' ? state : null),
+  );
+  if (!stateResult.ok) {
+    const clientReason =
+      stateResult.reason === 'expired'
+        ? 'state_expired'
+        : stateResult.reason === 'absent'
+          ? 'state_missing'
+          : stateResult.reason === 'invalid_flow'
+            ? 'state_invalid'
+            : 'state_invalid';
+    authFailure(req, {
+      authMethod,
+      stage: 'callback_invalid_state',
+      message: 'Google OAuth callback failed: invalid or missing state',
+      reason: stateResult.reason,
+      data: { stateReason: stateResult.reason },
+    });
+    warn('Google-Auth', 'Google callback state verification failed', {
+      stateReason: stateResult.reason,
+      clientReason,
+    }, req);
+    return res.redirect(loginErrorRedirect(clientReason));
+  }
+
+  try {
+    authStep(req, { authMethod, stage: 'token_exchange_start', message: 'Exchanging Google authorization code' });
+    const exchange = await exchangeGoogleAuthCode(String(code));
+    if (!exchange.ok) {
       authFailure(req, {
         authMethod,
-        stage: 'validation',
-        message: 'Support admin login failed: validation error',
-        reason: 'Request validation failed',
-        httpStatus: 400,
-        data: { errorCount: errors.array().length },
+        stage: 'token_exchange',
+        message: 'Google OAuth callback failed: token exchange error',
+        reason: exchange.reason,
+        data: { exchangeReason: exchange.reason },
       });
-      return res.status(400).json({ errors: errors.array() });
+      warn('Google-Auth', 'Google token exchange failed', { reason: exchange.reason }, req);
+      return res.redirect(loginErrorRedirect('token_exchange'));
     }
 
-    try {
-      const email = getSafeString(req.body.email);
-      const password = getSafeString(req.body.password);
-      if (!email || !password) {
-        authFailure(req, {
-          authMethod,
-          stage: 'invalid_input',
-          message: 'Support admin login failed: invalid input',
-          httpStatus: 400,
-          email,
-        });
-        return res.status(400).json({ message: 'Invalid login input' });
-      }
+    const profile = exchange.profile;
+    authStep(req, {
+      authMethod,
+      stage: 'profile_ok',
+      message: 'Google profile received',
+      email: profile.email,
+      userId: profile.id,
+      data: { emailVerified: profile.email_verified, hasName: Boolean(profile.name) },
+    });
 
-      authStep(req, { authMethod, stage: 'lookup_user', message: 'Looking up support admin user', email });
-      const user = await User.findOne({ email });
-
-      if (!user || !(await user.comparePassword(password))) {
-        authFailure(req, {
-          authMethod,
-          stage: 'invalid_credentials',
-          message: 'Support admin login failed: invalid credentials',
-          reason: user ? 'Password mismatch' : 'No account for email',
-          httpStatus: 401,
-          email,
-          data: { userExists: !!user },
-        });
-        return res.status(401).json({ message: 'Invalid credentials' });
-      }
-
-      authStep(req, {
-        authMethod,
-        stage: 'credentials_ok',
-        message: 'Support admin credentials validated',
-        email,
-        userId: user._id?.toString(),
-      });
-
-      if (user.disabled) {
-        authFailure(req, {
-          authMethod,
-          stage: 'account_disabled',
-          message: 'Support admin login failed: account disabled',
-          httpStatus: 403,
-          email,
-          userId: user._id?.toString(),
-        });
-        return res.status(403).json({ message: 'Account is disabled' });
-      }
-
-      authStep(req, {
-        authMethod,
-        stage: 'issue_session',
-        message: 'Issuing support admin session JWT',
-        email,
-        userId: user._id?.toString(),
-      });
-
-      const token = jwt.sign(
-        { userId: user._id, email: user.email, name: user.name, role: 'support_admin', avatar: '' },
-        process.env.JWT_SECRET,
-        { expiresIn: '24h' }
-      );
-
-      req.session.token = token;
-      await req.session.save();
-
-      authSuccess(req, {
-        authMethod,
-        message: 'Support admin login successful',
-        email,
-        userId: user._id?.toString(),
-      });
-      res.json({ user: { id: user._id, email, name: user.name, role: 'support_admin', avatar: '' } });
-    } catch (err) {
+    if (!isVerifiedGoogleProfile(profile)) {
       authFailure(req, {
         authMethod,
-        stage: 'server_error',
-        message: 'Support admin login failed: server error',
-        reason: err?.message,
-        httpStatus: 500,
-        level: 'error',
-        email: req.body?.email,
+        stage: 'invalid_profile',
+        message: 'Google OAuth callback failed: unverified email',
+        email: profile?.email,
+        data: {
+          hasEmail: Boolean(profile?.email),
+          hasId: Boolean(profile?.id),
+          emailVerified: profile?.email_verified === true,
+        },
+      });
+      warn('Google-Auth', 'Google profile rejected: email not verified', {
+        email: profile?.email || null,
+        emailVerified: profile?.email_verified === true,
+        hasId: Boolean(profile?.id),
+      }, req);
+      return res.redirect(loginErrorRedirect('unverified_email'));
+    }
+
+    authStep(req, {
+      authMethod,
+      stage: 'group_check_start',
+      message: 'Checking Google Workspace group membership',
+      email: profile.email,
+      data: {
+        targetGroup: configDiag.targetGroup,
+        adminEmail: configDiag.adminEmail,
+        serviceAccountEmail: configDiag.serviceAccountEmail,
+      },
+    });
+
+    const membership = await checkUserGroupMembership(profile.email);
+    if (!membership.isMember) {
+      authFailure(req, {
+        authMethod,
+        stage: 'group_denied',
+        message: 'Google OAuth callback failed: user not in support admin group',
+        reason: membership.error || 'not_a_group_member',
+        email: profile.email,
+        data: {
+          targetGroup: configDiag.targetGroup,
+          membershipError: membership.error || null,
+        },
+      });
+      warn('Google-Auth', 'Google support sign-in denied: not a group member', {
+        email: profile.email,
+        targetGroup: configDiag.targetGroup,
+        membershipError: membership.error || 'not_a_group_member',
+      }, req);
+      return res.redirect(loginErrorRedirect('group_denied'));
+    }
+
+    authStep(req, {
+      authMethod,
+      stage: 'group_ok',
+      message: 'Workspace group membership confirmed',
+      email: profile.email,
+      data: { targetGroup: configDiag.targetGroup },
+    });
+
+    authStep(req, {
+      authMethod,
+      stage: 'ticket_create',
+      message: 'Creating one-time Google support OAuth ticket',
+      email: profile.email,
+    });
+
+    const { ticket } = await OAuthTicket.create({
+      flow: GOOGLE_SUPPORT_TICKET_FLOW,
+      accessToken: '',
+      oauthData: {
+        id: profile.id,
+        email: profile.email,
+        name: profile.name,
+        photo_url: profile.photo_url,
+      },
+    });
+
+    authStep(req, {
+      authMethod,
+      stage: 'ticket_created',
+      message: 'Google OAuth ticket created; redirecting to frontend',
+      email: profile.email,
+      data: { hasTicket: !!ticket, frontendBase },
+    });
+    info('Google-Auth', 'Google support ticket created; redirecting to frontend', {
+      email: profile.email,
+      oauthId: profile.id,
+      frontendBase,
+      hasTicket: !!ticket,
+    }, req);
+
+    return res.redirect(`${frontendBase}/?ticket=${ticket}`);
+  } catch (err) {
+    authFailure(req, {
+      authMethod,
+      stage: 'server_error',
+      message: 'Google OAuth callback failed: server error',
+      reason: err?.message,
+      level: 'error',
+      error: err,
+    });
+    error('Google-Auth', 'Google OAuth callback server error', { err }, req);
+    return res.redirect(loginErrorRedirect('server_error'));
+  }
+});
+
+async function establishGoogleSupportSession(req, oauthData) {
+  const authMethod = 'google-support-oauth';
+  const email = normalizeOAuthEmail(oauthData?.email?.toString());
+  const oauthId = getSafeString(oauthData?.id?.toString());
+  const name = oauthData?.name?.toString();
+  const photo_url = oauthData?.photo_url?.toString();
+
+  authStep(req, {
+    authMethod,
+    stage: 'establish_session_start',
+    message: 'Establishing Google support session',
+    email,
+    userId: oauthId,
+    data: { hasEmail: !!email, hasOauthId: !!oauthId, hasName: !!name },
+  });
+  info('Google-Auth', 'Establishing Google support session', {
+    email,
+    oauthId,
+    hasName: Boolean(name),
+  }, req);
+
+  if (!email || !oauthId) {
+    authFailure(req, {
+      authMethod,
+      stage: 'invalid_profile',
+      message: 'Google support sign-in failed: incomplete profile data',
+      httpStatus: 400,
+      email,
+      data: { hasEmail: !!email, hasOauthId: !!oauthId },
+    });
+    return { status: 400, body: { message: 'Invalid OAuth profile data' } };
+  }
+
+  let user;
+  try {
+    user = await findOrCreateGoogleSupportUser({
+      email,
+      id: oauthId,
+      name,
+      photo_url,
+    });
+  } catch (err) {
+    if (err?.code === 11000) {
+      authFailure(req, {
+        authMethod,
+        stage: 'user_conflict',
+        message: 'Google support sign-in failed: user record conflict',
+        reason: err.message,
+        httpStatus: 409,
+        email,
+        userId: oauthId,
         error: err,
       });
-      res.status(500).json({ message: 'Server error' });
+      return { status: 409, body: { message: 'Account conflict during Google sign-in. Please try again.' } };
     }
+    throw err;
   }
-);
+
+  if (user.disabled) {
+    authFailure(req, {
+      authMethod,
+      stage: 'account_disabled',
+      message: 'Google support sign-in failed: account disabled',
+      httpStatus: 403,
+      email,
+      userId: user._id?.toString(),
+    });
+    warn('Google-Auth', 'Google support sign-in blocked: account disabled', {
+      email,
+      userId: user._id?.toString(),
+    }, req);
+    return { status: 403, body: { message: 'Account is disabled' } };
+  }
+
+  const tokenPayload = {
+    userId: user._id,
+    email: user.email,
+    name: user.name,
+    role: 'support_admin',
+    avatar: user.avatar,
+  };
+
+  authStep(req, {
+    authMethod,
+    stage: 'issue_session',
+    message: 'Issuing Google support_admin session JWT',
+    email: user.email,
+    userId: user._id?.toString(),
+  });
+
+  const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '24h' });
+  req.session.token = token;
+  applyPrivilegedSessionAuth(req, tokenPayload);
+  await req.session.save();
+
+  authSuccess(req, {
+    authMethod,
+    message: 'Google support sign-in successful',
+    email: user.email,
+    userId: user._id?.toString(),
+    data: { role: 'support_admin' },
+  });
+  info('Google-Auth', 'Google support sign-in successful', {
+    email: user.email,
+    userId: user._id?.toString(),
+    role: 'support_admin',
+  }, req);
+
+  return {
+    status: 200,
+    body: {
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        avatar: user.avatar,
+        role: 'support_admin',
+      },
+    },
+  };
+}
 
 router.post('/logout', (req, res) => {
   req.session.destroy((err) => {
@@ -872,13 +1164,17 @@ router.post('/oauth-exchange', async (req, res) => {
       message: 'OAuth ticket claimed',
       email: record.oauthData?.email,
       userId: record.oauthData?.id,
+      data: { flow: record.flow || 'isoplus' },
     });
 
-    const result = await establishOAuthSession(req, {
-      authorization: `Bearer ${record.accessToken}`,
-      oauthData: record.oauthData,
-      method: 'oauth-exchange',
-    });
+    const result =
+      record.flow === GOOGLE_SUPPORT_TICKET_FLOW
+        ? await establishGoogleSupportSession(req, record.oauthData)
+        : await establishOAuthSession(req, {
+            authorization: `Bearer ${record.accessToken}`,
+            oauthData: record.oauthData,
+            method: 'oauth-exchange',
+          });
 
     if (result.status === 200) {
       await OAuthTicket.deleteOne({ _id: record._id });

@@ -3,6 +3,7 @@ import cors from 'cors';
 import session from 'express-session';
 import MongoStore from 'connect-mongo';
 import mongoSanitize from 'express-mongo-sanitize';
+import jwt from 'jsonwebtoken';
 
 import authRoutes from './routes/auth.js';
 import automationRoutes from './routes/automation.js';
@@ -106,6 +107,26 @@ export function createApp({ mongoUri } = {}) {
   );
 
   app.use(auditHttpMiddleware);
+
+  if (isTest) {
+    app.post('/api/__test/session', async (req, res) => {
+      const { userId, email, name, role, avatar = '' } = req.body || {};
+      if (!userId || !email || !role) {
+        return res.status(400).json({ message: 'userId, email and role are required' });
+      }
+      const token = jwt.sign(
+        { userId, email, name: name || email, role, avatar },
+        process.env.JWT_SECRET || sessionSecret,
+        { expiresIn: '24h' },
+      );
+      req.session.token = token;
+      if (role === 'support_admin' || role === 'owner') {
+        req.session.Authorization = `Bearer ${process.env.PERSONAL_ACCESS_TOKEN || ''}`;
+      }
+      await req.session.save();
+      return res.json({ ok: true });
+    });
+  }
 
   app.use('/api/healthcheck', HealthCheckRouters);
   app.use('/api/auth', authRoutes);

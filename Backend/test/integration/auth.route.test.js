@@ -64,44 +64,27 @@ describe('Auth routes', () => {
   });
 
   describe('POST /api/auth/login', () => {
-    it('returns 400 for invalid email format', async () => {
-      const res = await request(app).post('/api/auth/login').send({ email: 'garbage', password: 'x' });
-      expect(res.status).toBe(400);
-    });
-
-    it('returns 401 for unknown user', async () => {
-      const res = await request(app).post('/api/auth/login').send({
-        email: 'nobody@isoplus.com',
-        password: 'irrelevant',
-      });
-      expect(res.status).toBe(401);
-    });
-
-    it('returns 401 for invalid password', async () => {
-      await User.create({ email: 'log@isoplus.com', password: 'GoodPass!1', name: 'Log' });
-      const res = await request(app).post('/api/auth/login').send({
-        email: 'log@isoplus.com',
-        password: 'wrong',
-      });
-      expect(res.status).toBe(401);
-    });
-
-    it('returns 200 with user payload on valid login', async () => {
+    it('returns 404 because password login was removed', async () => {
       await User.create({ email: 'good@isoplus.com', password: 'GoodPass!1', name: 'Good' });
       const res = await request(app).post('/api/auth/login').send({
         email: 'good@isoplus.com',
         password: 'GoodPass!1',
       });
-      expect(res.status).toBe(200);
-      expect(res.body.user.email).toBe('good@isoplus.com');
+      expect(res.status).toBe(404);
+      expect(res.body.message).toMatch(/Google sign-in/i);
     });
   });
 
   describe('POST /api/auth/logout', () => {
-    it('returns success after login', async () => {
-      await User.create({ email: 'out@isoplus.com', password: 'GoodPass!1', name: 'Out' });
+    it('returns success after establishing a session', async () => {
+      const user = await User.create({ email: 'out@isoplus.com', password: 'GoodPass!1', name: 'Out' });
       const agent = request.agent(app);
-      await agent.post('/api/auth/login').send({ email: 'out@isoplus.com', password: 'GoodPass!1' });
+      await agent.post('/api/__test/session').send({
+        userId: user._id.toString(),
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      });
       const res = await agent.post('/api/auth/logout');
       expect([200, 204]).toContain(res.status);
     });

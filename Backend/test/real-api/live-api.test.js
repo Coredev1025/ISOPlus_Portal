@@ -12,11 +12,11 @@ describe.skipIf(!run)('Live API smoke', () => {
     expect(res.status).toBeLessThan(500);
   });
 
-  it('can authenticate when credentials provided', async () => {
+  it('password login was removed in favour of Google support sign-in', async () => {
     if (!email || !password) return;
     const agent = request.agent(baseUrl);
     const res = await agent.post('/api/auth/login').send({ email, password });
-    expect(res.status).toBeLessThan(500);
+    expect(res.status).toBe(404);
   });
 
   it('accepts session cookie when provided', async () => {

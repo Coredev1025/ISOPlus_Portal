@@ -10,13 +10,9 @@
 //
 // Why this exists: the login page's primary button starts the ISO+ OAuth flow
 // against app.isoplus.online, which cannot complete locally because the ISO+
-// credentials are blank. The application also ships a support-admin
-// email/password login (POST /api/auth/login, reachable from the "administrator
-// credentials" link on the login screen) — that path works offline. The only
-// thing missing locally is a password anyone knows.
-//
-// This adds NO authentication code to the application. It writes one row in a
-// local database, using a login path that already ships.
+// credentials are blank. Support agents sign in with Google (Workspace group
+// membership enforced on the backend). This script only ensures a Mongo user
+// row exists for local tooling — it does not grant a session.
 
 import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
