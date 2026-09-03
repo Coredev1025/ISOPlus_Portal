@@ -88,5 +88,29 @@ describe('Auth routes', () => {
       const res = await agent.post('/api/auth/logout');
       expect([200, 204]).toContain(res.status);
     });
+
+    it('destroys the session so a later verify is unauthenticated', async () => {
+      const user = await User.create({
+        email: 'logout-verify@isoplus.com',
+        password: 'GoodPass!1',
+        name: 'Out',
+        role: 'support_admin',
+      });
+      const agent = request.agent(app);
+      await agent.post('/api/__test/session').send({
+        userId: user._id.toString(),
+        email: user.email,
+        name: user.name,
+        role: 'support_admin',
+      });
+      expect((await agent.get('/api/auth/verify')).body.authenticated).toBe(true);
+
+      const logout = await agent.post('/api/auth/logout');
+      expect(logout.status).toBe(200);
+
+      const verify = await agent.get('/api/auth/verify');
+      expect(verify.status).toBe(200);
+      expect(verify.body.authenticated).toBe(false);
+    });
   });
 });

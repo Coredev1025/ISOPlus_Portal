@@ -656,7 +656,30 @@ async function establishGoogleSupportSession(req, oauthData) {
     expiresIn: GOOGLE_SUPPORT_SESSION_EXPIRES_IN,
   });
   req.session.token = token;
-  applyPrivilegedSessionAuth(req, tokenPayload);
+  const authorized = applyPrivilegedSessionAuth(req, tokenPayload);
+  if (!authorized || !req.session.Authorization) {
+    authFailure(req, {
+      authMethod,
+      stage: 'missing_pat',
+      message: 'Google support sign-in failed: PERSONAL_ACCESS_TOKEN is not configured',
+      httpStatus: 503,
+      email: user.email,
+      userId: user._id?.toString(),
+    });
+    warn('Google-Auth', 'Google support sign-in blocked: PERSONAL_ACCESS_TOKEN missing', {
+      email: user.email,
+    }, req);
+    delete req.session.token;
+    delete req.session.Authorization;
+    await saveSessionBestEffort(req);
+    return {
+      status: 503,
+      body: {
+        message:
+          'Support admin ISO+ access is not configured (PERSONAL_ACCESS_TOKEN). Contact an administrator.',
+      },
+    };
+  }
   await saveSessionBestEffort(req);
 
   authSuccess(req, {

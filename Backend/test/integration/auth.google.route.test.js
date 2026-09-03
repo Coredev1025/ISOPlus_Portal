@@ -19,6 +19,8 @@ const GOOGLE_ENV = {
     client_email: 'workspace-group-checker@iso-plus-portal-dev.iam.gserviceaccount.com',
     private_key: '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n',
   }),
+  PERSONAL_ACCESS_TOKEN: 'google-support-test-pat',
+  ISOPLUS_OFFLINE: '1',
 };
 
 vi.mock('../../src/utils/googleGroupMembershipHelpers.js', async (importOriginal) => {
@@ -148,6 +150,27 @@ describe('Google support-admin auth routes', () => {
     const user = await User.findOne({ email: 'member@isoconsultingservices.com.au' });
     expect(user?.role).toBe('support_admin');
     expect(user?.oauthId).toBe('google-sub-1');
+  });
+
+  it('Google oauth-exchange sets session Authorization so workspaces are not missing credentials', async () => {
+    const agent = request.agent(app);
+    const state = await startGoogleLogin(agent);
+    const callback = await agent
+      .get('/api/auth/google/callback')
+      .query({ code: 'good-code', state });
+    const ticket = new URL(callback.headers.location, 'http://localhost').searchParams.get('ticket');
+    const exchange = await agent.post('/api/auth/oauth-exchange').send({ ticket });
+    expect(exchange.status).toBe(200);
+
+    // /verify must keep/re-attach the shared PAT for support_admin.
+    const verify = await agent.get('/api/auth/verify');
+    expect(verify.status).toBe(200);
+    expect(verify.body.authenticated).toBe(true);
+
+    // Missing session.Authorization returns 401 + error_type oauth with that message.
+    const workspaces = await agent.get('/api/workspaces?limit=50');
+    expect(workspaces.status).toBe(200);
+    expect(workspaces.body.error_type).toBeUndefined();
   });
 
   it('GET /google/callback redirects with group_denied for non-member', async () => {

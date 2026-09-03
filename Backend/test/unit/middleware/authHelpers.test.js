@@ -60,14 +60,21 @@ describe('applyPrivilegedSessionAuth', () => {
   it('sets Bearer token for owner and support_admin', () => {
     for (const role of ['owner', 'support_admin']) {
       const req = { session: {} };
-      applyPrivilegedSessionAuth(req, { role });
+      expect(applyPrivilegedSessionAuth(req, { role })).toBe(true);
       expect(req.session.Authorization).toBe('Bearer pat');
     }
   });
 
   it('does not set Authorization for isoplus_user', () => {
     const req = { session: {} };
-    applyPrivilegedSessionAuth(req, { role: 'isoplus_user' });
+    expect(applyPrivilegedSessionAuth(req, { role: 'isoplus_user' })).toBe(false);
+    expect(req.session.Authorization).toBeUndefined();
+  });
+
+  it('does not set Authorization when PERSONAL_ACCESS_TOKEN is blank', () => {
+    process.env.PERSONAL_ACCESS_TOKEN = '   ';
+    const req = { session: {} };
+    expect(applyPrivilegedSessionAuth(req, { role: 'support_admin' })).toBe(false);
     expect(req.session.Authorization).toBeUndefined();
   });
 });

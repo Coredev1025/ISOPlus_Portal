@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { resolveSessionCookieOptions } from '../../../src/utils/sessionCookieHelpers.js';
+import {
+  resolveSessionCookieOptions,
+  resolveSessionClearCookieOptions,
+} from '../../../src/utils/sessionCookieHelpers.js';
 
 describe('resolveSessionCookieOptions', () => {
   it('keeps SameSite=lax in test so local/supertest cookies work', () => {
@@ -36,5 +39,19 @@ describe('resolveSessionCookieOptions', () => {
         BACKEND_URL: 'http://localhost:4001',
       }),
     ).toMatchObject({ sameSite: 'lax', secure: false });
+  });
+
+  it('clearCookie options match the session cookie flags (required for Secure/None)', () => {
+    expect(
+      resolveSessionClearCookieOptions({
+        NODE_ENV: 'development',
+        BACKEND_URL: 'https://locust-one-mutt.ngrok-free.app',
+      }),
+    ).toEqual({
+      path: '/',
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+    });
   });
 });
