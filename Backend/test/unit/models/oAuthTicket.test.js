@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import mongoose from 'mongoose';
 import OAuthTicket from '../../../src/models/OAuthTicket.js';
 
 const oauthData = {
@@ -10,9 +9,25 @@ const oauthData = {
 };
 
 describe('OAuthTicket model', () => {
-  it('requires an accessToken', async () => {
-    const ticket = new OAuthTicket({ oauthData });
-    await expect(ticket.validate()).rejects.toThrow(mongoose.Error.ValidationError);
+  it('allows a missing accessToken (Google support tickets have none)', async () => {
+    const ticket = new OAuthTicket({ flow: 'google-support', oauthData });
+    await expect(ticket.validate()).resolves.toBeUndefined();
+    expect(ticket.accessToken).toBe('');
+  });
+
+  it('defaults flow to isoplus', async () => {
+    const saved = await OAuthTicket.create({ accessToken: 'token-abc', oauthData });
+    expect(saved.flow).toBe('isoplus');
+  });
+
+  it('accepts the google-support flow with an empty accessToken', async () => {
+    const saved = await OAuthTicket.create({
+      flow: 'google-support',
+      accessToken: '',
+      oauthData,
+    });
+    expect(saved.flow).toBe('google-support');
+    expect(saved.accessToken).toBe('');
   });
 
   it('generates a 64-character hex ticket when none is supplied', async () => {

@@ -16,10 +16,16 @@ export async function authenticatedAgent(
   const user = await User.create({ email, password, name, role });
   const agent = request.agent(app);
 
-  const loginRes = await agent.post('/api/auth/login').send({ email, password });
+  const sessionRes = await agent.post('/api/__test/session').send({
+    userId: user._id.toString(),
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    avatar: user.avatar || '',
+  });
 
-  if (loginRes.status !== 200) {
-    throw new Error(`Failed to login test user: ${loginRes.status}`);
+  if (sessionRes.status !== 200) {
+    throw new Error(`Failed to establish test session: ${sessionRes.status}`);
   }
 
   return { agent, user, email };

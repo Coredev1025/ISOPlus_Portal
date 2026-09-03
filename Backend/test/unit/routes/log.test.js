@@ -46,27 +46,16 @@ beforeEach(async () => {
 });
 
 describe('GET /api/log role gate', () => {
-  it('lets a stored isoplus_user read logs after a credentials login', async () => {
-    // The route's 403 branch keys off the *token* role, and
-    // POST /api/auth/login signs every credentials session with
-    // role: 'support_admin' regardless of the stored user's role
-    // (src/routes/auth.js). So the gate below cannot be reached through this
-    // login path. Documents current behaviour; see the note on the next test.
+  it('rejects a session whose token carries the isoplus_user role', async () => {
     const { agent } = await authenticatedAgent(app, { role: 'isoplus_user' });
-
     const res = await listLogs(agent);
-
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
   });
 
-  it('rejects a session whose token carries the isoplus_user role', async () => {
+  it('allows support_admin through the log gate', async () => {
     const { agent } = await authenticatedAgent(app, { role: 'support_admin' });
     const res = await listLogs(agent);
     expect(res.status).toBe(200);
-
-    // The gate itself is exercised by the middleware unit tests, which build the
-    // token directly; here we only pin that a support_admin session is allowed
-    // through, so a regression that rejected every role would fail.
     expect(res.body.items).toEqual([]);
   });
 

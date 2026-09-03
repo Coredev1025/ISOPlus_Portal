@@ -57,13 +57,11 @@ test.describe('signed-out visitor', () => {
   });
 });
 
-test('the offline sign-in path is reachable without ISO+ credentials', async ({ page }) => {
-  // The ISO+ OAuth button cannot work locally without CLIENT_ID, so the
-  // administrator-credentials route is the one that has to stay present — it is
-  // how anyone signs in on a laptop. See docs/local-development.md.
+test('the support agent path is on the main login screen', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByText('ISO+™ Portal')).toBeVisible();
-  await expect(page.getByText(/support agent sign-in/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: /support agent sign-in/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /sign in with google/i })).toHaveCount(0);
 });
 
 test('an unknown route does not hang or blank-screen', async ({ page }) => {

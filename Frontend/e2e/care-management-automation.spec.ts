@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 
 import { resetAutomationRun } from "./support/automation-run";
+import { signInSupportAdmin } from "./helpers/support-auth";
 
 /**
  * KAN-10 — Care Management automation, end to end against the seeded fixture.
@@ -62,12 +63,7 @@ function outboxUrl(kind: string, boardId: string, participant: string) {
 // The two NDIS boards, which mint invoice numbers but produce no PDF or email.
 const NDIS_BOARDS = [BOARDS[1], BOARDS[2]];
 
-// Credentials come from the environment, never from source. `npm run dev:user`
-// prints a local support_admin login; export these before running.
-const EMAIL = process.env.E2E_EMAIL;
-const PASSWORD = process.env.E2E_PASSWORD;
-
-// Workspace 55390 is what the fixture seeds; overridable for reruns elsewhere.
+// Local support_admin sessions use a one-time Google-support OAuth ticket.
 const WORKSPACE = process.env.E2E_CM_WORKSPACE_ID ?? "55390";
 
 // The automation tab is a query param on the finance-settings page, not a route
@@ -90,14 +86,7 @@ const SCHEDULER_KEY = process.env.E2E_SCHEDULER_API_KEY;
  * the page will send.
  */
 async function signIn(page: Page) {
-  const response = await page.request.post(`${BACKEND}/api/auth/login`, {
-    data: { email: EMAIL, password: PASSWORD },
-  });
-
-  expect(
-    response.ok(),
-    `login failed (${response.status()}) — check E2E_EMAIL/E2E_PASSWORD and that the stack at ${BACKEND} is seeded`,
-  ).toBeTruthy();
+  await signInSupportAdmin(page);
 }
 
 // Serial, deliberately: the tick test mutates the same workspace the earlier
@@ -105,11 +94,6 @@ async function signIn(page: Page) {
 test.describe.configure({ mode: "serial" });
 
 test.describe("Care Management automation (KAN-10 fixture)", () => {
-  test.skip(
-    !EMAIL || !PASSWORD,
-    "set E2E_EMAIL and E2E_PASSWORD (see npm run dev:user)",
-  );
-
   test.beforeEach(async ({ page }) => {
     await signIn(page);
   });

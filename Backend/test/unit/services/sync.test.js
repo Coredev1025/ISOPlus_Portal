@@ -285,7 +285,9 @@ describe('getBoardSyncStatus', () => {
 
   it('attaches the portal next run on schedule.upcoming from the cron', async () => {
     const savedCron = process.env.BOARD_SYNC_CRON;
+    const savedEnabled = process.env.BOARD_SYNC_ENABLED;
     delete process.env.BOARD_SYNC_CRON;
+    delete process.env.BOARD_SYNC_ENABLED;
     try {
       const boardId = await seedBoard({
         syncData: true,
@@ -303,6 +305,8 @@ describe('getBoardSyncStatus', () => {
     } finally {
       if (savedCron === undefined) delete process.env.BOARD_SYNC_CRON;
       else process.env.BOARD_SYNC_CRON = savedCron;
+      if (savedEnabled === undefined) delete process.env.BOARD_SYNC_ENABLED;
+      else process.env.BOARD_SYNC_ENABLED = savedEnabled;
     }
   });
 });

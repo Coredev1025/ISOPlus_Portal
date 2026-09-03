@@ -199,6 +199,7 @@ describe('Header', () => {
   });
 
   it('clears the cached session, calls the API and returns to login on sign out', async () => {
+    axiosPost.mockResolvedValue({ status: 200, data: { message: 'Logout successful' } });
     const user = userEvent.setup();
     renderHeader();
     await screen.findByText('AL');
@@ -208,14 +209,18 @@ describe('Header', () => {
 
     await user.click(screen.getByRole('button', { name: 'Sign out' }));
 
+    await waitFor(() => {
+      expect(axiosPost).toHaveBeenCalledWith(
+        expect.stringContaining('/api/auth/logout'),
+        {},
+      );
+    });
+    await waitFor(() => {
+      expect(push).toHaveBeenCalledWith('/');
+    });
     expect(window.localStorage.getItem('user')).toBeNull();
     expect(window.localStorage.getItem('workspace')).toBeNull();
     expect(window.localStorage.getItem('board')).toBeNull();
-    expect(push).toHaveBeenCalledWith('/');
-    expect(axiosPost).toHaveBeenCalledWith(
-      expect.stringContaining('/api/auth/logout'),
-      {},
-    );
     expect(await screen.findByText('?')).toBeInTheDocument();
   });
 
@@ -227,7 +232,9 @@ describe('Header', () => {
 
     await user.click(screen.getByRole('button', { name: 'Sign out' }));
 
-    expect(push).toHaveBeenCalledWith('/');
+    await waitFor(() => {
+      expect(push).toHaveBeenCalledWith('/');
+    });
   });
 
   it('offers the theme toggle in the header actions', async () => {

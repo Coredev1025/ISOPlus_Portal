@@ -8,14 +8,6 @@ import { installBrowserStubs, makeRouter, SUPPORT_ADMIN } from './page-test-util
 import LoginPage from '@/app/page';
 import { dismissAllToasts } from '@/lib/toast-utils';
 
-/**
- * The login page owns two ways in: the ISO+ OAuth redirect and the support
- * agent's email/password form. It also verifies any existing session on mount
- * and bounces an already-signed-in user to the dashboard. These tests pin both
- * entry points, what is actually sent to the login endpoint, what happens on a
- * rejected credential, and the in-flight lockout.
- */
-
 installBrowserStubs();
 
 const router = makeRouter();
@@ -26,9 +18,6 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-/** Credentials posted to /api/auth/login, in order. */
-let loginBodies: Array<Record<string, unknown>> = [];
-/** Where the page tried to send the browser (jsdom refuses real navigation). */
 let assignedHref: string | undefined;
 
 function stubSession(user: Record<string, unknown> | null) {
@@ -41,24 +30,6 @@ function stubSession(user: Record<string, unknown> | null) {
   );
 }
 
-function stubLogin(
-  options: { status?: number; message?: string; gate?: Promise<void> } = {},
-) {
-  server.use(
-    http.post('*/api/auth/login', async ({ request }) => {
-      loginBodies.push((await request.json()) as Record<string, unknown>);
-      if (options.gate) await options.gate;
-      if (options.status && options.status !== 200) {
-        return HttpResponse.json(
-          { message: options.message ?? 'Invalid credentials' },
-          { status: options.status },
-        );
-      }
-      return HttpResponse.json({ user: SUPPORT_ADMIN });
-    }),
-  );
-}
-
 function renderPage() {
   return render(
     <ContextProvider>
@@ -67,28 +38,14 @@ function renderPage() {
   );
 }
 
-/** The support form only appears after the mount-time session check settles. */
-async function openSupportForm(user: ReturnType<typeof userEvent.setup>) {
-  const toggle = await screen.findByRole('button', {
-    name: 'Support agent sign-in',
-  });
-  await waitFor(() => expect(toggle).toBeEnabled());
-  await user.click(toggle);
-  return {
-    email: screen.getByLabelText('Email'),
-    password: screen.getByLabelText('Password'),
-    submit: screen.getByRole('button', { name: /Login as Support Agent/ }),
-  };
-}
-
 beforeEach(() => {
   localStorage.clear();
-  loginBodies = [];
   assignedHref = undefined;
   router.push.mockClear();
   router.replace.mockClear();
   vi.spyOn(console, 'error').mockImplementation(() => {});
   stubSession(null);
+  process.env.NEXT_PUBLIC_BACKEND_URL = 'http://localhost:4001';
 
   Object.defineProperty(window, 'location', {
     configurable: true,
@@ -110,12 +67,6 @@ afterEach(() => {
   document.querySelectorAll('.toastify').forEach((node) => node.remove());
 });
 
-
-// Removing the toastify nodes does not cancel the dismiss timer toastify-js
-// schedules for each one. When that timer fires after jsdom has been torn down
-// it throws `ReferenceError: document is not defined` as an unhandled error,
-// failing the run even though every assertion passed. Dismissing through the
-// app's own API clears the timers too.
 afterEach(() => {
   dismissAllToasts();
 });
@@ -133,126 +84,48 @@ describe('Login page', () => {
     expect(
       screen.getByRole('button', { name: 'Support agent sign-in' }),
     ).toBeInTheDocument();
-    expect(screen.queryByLabelText('Email')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sign in with Google' })).not.toBeInTheDocument();
   });
 
-  it('swaps to the credentials form, and back again', async () => {
+  it('starts Google OAuth when Support agent sign-in is clicked', async () => {
     const user = userEvent.setup();
     renderPage();
 
-    const { email, password } = await openSupportForm(user);
-    expect(email).toBeInTheDocument();
-    expect(password).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', { name: 'Support agent sign-in' }),
-    ).toBeInTheDocument();
-
-    await user.click(
-      screen.getByRole('button', { name: 'Back to ISO+™ sign-in' }),
-    );
-
-    expect(
-      screen.getByRole('button', { name: 'Sign in with ISO+™' }),
-    ).toBeInTheDocument();
-    expect(screen.queryByLabelText('Email')).not.toBeInTheDocument();
-  });
-
-  it('posts exactly the typed email and password, then goes to the dashboard', async () => {
-    stubLogin();
-    const user = userEvent.setup();
-    renderPage();
-
-    const form = await openSupportForm(user);
-    await user.type(form.email, 'ada@example.com');
-    await user.type(form.password, 'local-dev-only');
-    await user.click(form.submit);
+    const supportSignIn = await screen.findByRole('button', {
+      name: 'Support agent sign-in',
+    });
+    await waitFor(() => expect(supportSignIn).toBeEnabled());
+    await user.click(supportSignIn);
 
     await waitFor(() => {
-      expect(loginBodies).toEqual([
-        { email: 'ada@example.com', password: 'local-dev-only' },
-      ]);
+      expect(assignedHref).toBe(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/google/redirect`,
+      );
     });
-    await waitFor(() => {
-      expect(router.push).toHaveBeenCalledWith('/dashboard');
-    });
-  });
-
-  it('stays on the login page when the credentials are rejected', async () => {
-    stubLogin({ status: 401, message: 'Email or password is incorrect' });
-    const user = userEvent.setup();
-    renderPage();
-
-    const form = await openSupportForm(user);
-    await user.type(form.email, 'ada@example.com');
-    await user.type(form.password, 'wrong-password');
-    await user.click(form.submit);
-
-    // The failure is reported as a toast; the page itself never navigates.
-    expect(
-      await screen.findByText('Email or password is incorrect'),
-    ).toBeInTheDocument();
     expect(router.push).not.toHaveBeenCalled();
-    expect(screen.getByLabelText('Email')).toBeInTheDocument();
-    // ...and the form unlocks so the user can try again.
-    await waitFor(() => {
+    expect(screen.queryByRole('heading', { name: 'Support agent sign-in' })).not.toBeInTheDocument();
+  });
+
+  it('shows an error when NEXT_PUBLIC_BACKEND_URL is missing for Google support sign-in', async () => {
+    const saved = process.env.NEXT_PUBLIC_BACKEND_URL;
+    delete process.env.NEXT_PUBLIC_BACKEND_URL;
+    try {
+      const user = userEvent.setup();
+      renderPage();
+
+      const supportSignIn = await screen.findByRole('button', {
+        name: 'Support agent sign-in',
+      });
+      await waitFor(() => expect(supportSignIn).toBeEnabled());
+      await user.click(supportSignIn);
+
       expect(
-        screen.getByRole('button', { name: /Login as Support Agent/ }),
-      ).toBeEnabled();
-    });
-  });
-
-  it('refuses to submit an empty form', async () => {
-    stubLogin();
-    const user = userEvent.setup();
-    renderPage();
-
-    const form = await openSupportForm(user);
-    await user.click(form.submit);
-
-    expect(loginBodies).toHaveLength(0);
-    expect(router.push).not.toHaveBeenCalled();
-  });
-
-  it('refuses to submit a password with no email', async () => {
-    stubLogin();
-    const user = userEvent.setup();
-    renderPage();
-
-    const form = await openSupportForm(user);
-    await user.type(form.password, 'local-dev-only');
-    await user.click(form.submit);
-
-    expect(loginBodies).toHaveLength(0);
-    expect(router.push).not.toHaveBeenCalled();
-  });
-
-  it('locks the form while the login request is in flight', async () => {
-    let release: (() => void) | undefined;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    stubLogin({ gate });
-    const user = userEvent.setup();
-    renderPage();
-
-    const form = await openSupportForm(user);
-    await user.type(form.email, 'ada@example.com');
-    await user.type(form.password, 'local-dev-only');
-    await user.click(form.submit);
-
-    await waitFor(() => {
-      expect(
-        screen.getByRole('button', { name: /Login as Support Agent/ }),
-      ).toBeDisabled();
-    });
-    expect(screen.getByLabelText('Email')).toBeDisabled();
-    expect(screen.getByLabelText('Password')).toBeDisabled();
-
-    release!();
-
-    await waitFor(() => {
-      expect(router.push).toHaveBeenCalledWith('/dashboard');
-    });
+        await screen.findByText('NEXT_PUBLIC_BACKEND_URL is not configured.'),
+      ).toBeInTheDocument();
+      expect(assignedHref).toBeUndefined();
+    } finally {
+      process.env.NEXT_PUBLIC_BACKEND_URL = saved;
+    }
   });
 
   it('sends the browser to the redirect URI ISO+ hands back', async () => {

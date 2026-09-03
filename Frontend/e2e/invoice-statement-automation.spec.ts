@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { test, expect, type Page } from "@playwright/test";
+import { signInSupportAdmin } from "./helpers/support-auth";
 import {
   clearDeliveryFailures,
   invoiceNumber,
@@ -15,11 +16,8 @@ import {
  */
 test.use({ video: "on" });
 
-// Credentials come from the environment, never from source. `npm run dev:user`
-// prints a local support_admin login; export these before running:
-//   E2E_EMAIL=... E2E_PASSWORD=... npx playwright test
-const EMAIL = process.env.E2E_EMAIL;
-const PASSWORD = process.env.E2E_PASSWORD;
+// Local support_admin sessions use a one-time Google-support OAuth ticket
+// (see Frontend/e2e/helpers/support-auth.ts). Requires local Mongo.
 
 // The workspace must have invoiceStatementAutomation enabled, or the tab is
 // hidden by design and every assertion here is meaningless.
@@ -59,22 +57,10 @@ const BACKEND =
 const AUTOMATION_URL = `/workspace/${WORKSPACE}/finance-settings?tab=automation`;
 
 /**
- * Authenticate through the API rather than the login form.
- *
- * page.request shares the browser context's cookie jar, so the session cookie
- * it sets is the one the page will send. Driving the sign-in form instead
- * would put a password in the recording and make every test in this file
- * depend on the login UI, which Epic 5 does not touch.
+ * Authenticate as support_admin through the Google-support ticket exchange.
  */
 async function signIn(page: Page) {
-  const response = await page.request.post(`${BACKEND}/api/auth/login`, {
-    data: { email: EMAIL, password: PASSWORD },
-  });
-
-  expect(
-    response.ok(),
-    `login failed (${response.status()}) — check E2E_EMAIL/E2E_PASSWORD and that the stack at ${BACKEND} is seeded`,
-  ).toBeTruthy();
+  await signInSupportAdmin(page);
 }
 
 /** The invoice block. Both blocks render identical fields, so scope every query. */
@@ -162,11 +148,6 @@ test.describe.configure({ mode: "serial" });
 const SUITE = "client-panel" as const;
 
 test.describe("Invoice & Statement Automation", () => {
-  test.skip(
-    !EMAIL || !PASSWORD,
-    "set E2E_EMAIL and E2E_PASSWORD (see npm run dev:user)",
-  );
-
   test.beforeEach(async ({ page }) => {
     await signIn(page);
     await resetAutomationSettings(page);

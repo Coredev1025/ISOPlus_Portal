@@ -63,7 +63,14 @@ export function Header() {
     };
   }, [router, setUser, setWorkspaces]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Destroy the API session before navigating — otherwise the login page's
+    // /verify can race and treat the still-valid cookie as signed-in.
+    try {
+      await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/logout`, {});
+    } catch {
+      // Still clear local state if the network call fails.
+    }
     localStorage.removeItem("user");
     localStorage.removeItem("workspace");
     localStorage.removeItem("board");
@@ -76,7 +83,6 @@ export function Header() {
     });
     setWorkspaces([]);
     router.push("/");
-    axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/logout`, {}).catch(() => {});
   };
 
   return (

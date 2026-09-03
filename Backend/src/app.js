@@ -3,6 +3,7 @@ import cors from 'cors';
 import session from 'express-session';
 import MongoStore from 'connect-mongo';
 import mongoSanitize from 'express-mongo-sanitize';
+import jwt from 'jsonwebtoken';
 
 import authRoutes from './routes/auth.js';
 import automationRoutes from './routes/automation.js';
@@ -29,11 +30,11 @@ import systemHealthRoutes from './routes/systemHealth.js';
 import { requestContextMiddleware } from './middleware/requestContext.js';
 import { auditHttpMiddleware } from './middleware/auditHttp.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { resolveSessionCookieOptions } from './utils/sessionCookieHelpers.js';
 
 export function createApp({ mongoUri } = {}) {
   const app = express();
   const isTest = process.env.NODE_ENV === 'test';
-  const isProduction = process.env.NODE_ENV === 'production';
 
   app.disable('x-powered-by');
   app.set('etag', false);
@@ -96,16 +97,31 @@ export function createApp({ mongoUri } = {}) {
           autoRemove: 'native',
         }),
       }),
-      cookie: {
-        secure: isProduction,
-        httpOnly: true,
-        sameSite: isProduction ? 'none' : 'lax',
-        maxAge: 1000 * 60 * 60 * 24,
-      },
+      cookie: resolveSessionCookieOptions(),
     })
   );
 
   app.use(auditHttpMiddleware);
+
+  if (isTest) {
+    app.post('/api/__test/session', async (req, res) => {
+      const { userId, email, name, role, avatar = '' } = req.body || {};
+      if (!userId || !email || !role) {
+        return res.status(400).json({ message: 'userId, email and role are required' });
+      }
+      const token = jwt.sign(
+        { userId, email, name: name || email, role, avatar },
+        process.env.JWT_SECRET || sessionSecret,
+        { expiresIn: '24h' },
+      );
+      req.session.token = token;
+      if (role === 'support_admin' || role === 'owner') {
+        req.session.Authorization = `Bearer ${process.env.PERSONAL_ACCESS_TOKEN || ''}`;
+      }
+      await req.session.save();
+      return res.json({ ok: true });
+    });
+  }
 
   app.use('/api/healthcheck', HealthCheckRouters);
   app.use('/api/auth', authRoutes);
