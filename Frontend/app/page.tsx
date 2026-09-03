@@ -116,6 +116,8 @@ export default function LoginPage() {
         unverified_email: "Your Google account email is not verified. Please verify it and try again.",
         group_denied:
           "Your account is not assigned to the required Workspace access group.",
+        verify_failed:
+          "We could not verify your Workspace access right now. Please try again in a few minutes.",
         not_configured: "Support admin Google sign-in is not configured on this environment.",
         server_error: "Something went wrong during sign-in. Please try again.",
         profile_fetch: "Could not load your ISO+ profile. Please try again.",
@@ -178,50 +180,25 @@ export default function LoginPage() {
     };
   }, [router, setUser, setWorkspaces]);
 
-  const handleGoogleSupportLogin = useCallback(async () => {
+  const handleGoogleSupportLogin = useCallback(() => {
     setIsLoading(true);
     setError("");
+    const backendBase = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+    if (!backendBase) {
+      setIsLoading(false);
+      showErrorToast("Google sign-in unavailable", {
+        description: "NEXT_PUBLIC_BACKEND_URL is not configured.",
+      });
+      return;
+    }
     captureAuthStep(
       "google_support_oauth_redirect",
-      "redirect_start",
-      "Client requesting Google support OAuth redirect URI"
+      "redirect_navigate",
+      "Client navigating to Google support OAuth start (top-level, sets PKCE session cookie)"
     );
-    try {
-      const redirectUrl = await axios.get(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/google/redirect`
-      );
-
-      if (redirectUrl.status === 200 && redirectUrl.data?.redirect_uri) {
-        captureAuthStep(
-          "google_support_oauth_redirect",
-          "redirect_navigate",
-          "Client navigating to Google authorization endpoint"
-        );
-        window.location.href = redirectUrl.data.redirect_uri;
-        return;
-      }
-      captureAuthMessage(
-        "google_support_oauth_redirect",
-        "Google OAuth redirect failed: missing redirect_uri in response",
-        { stage: "redirect_missing_uri", httpStatus: redirectUrl.status }
-      );
-      setIsLoading(false);
-    } catch (err: any) {
-      if (err.name !== "CanceledError" && err.name !== "AbortError") {
-        console.error("Failed to initiate Google support login:", err);
-        captureAuthFailure("google_support_oauth_redirect", err, {
-          stage: "redirect_uri_fetch",
-          httpStatus: err.response?.status,
-          message: err.response?.data?.message,
-        });
-        showErrorToast("Google sign-in unavailable", {
-          description:
-            err.response?.data?.message ||
-            "Support admin Google sign-in is not configured.",
-        });
-      }
-      setIsLoading(false);
-    }
+    // Top-level navigation to the API host — not XHR — so connect.sid is set on
+    // the same host Google will call back to (required for PKCE session binding).
+    window.location.href = `${backendBase}/api/auth/google/redirect`;
   }, []);
 
   const handleISOPlusLogin = useCallback(async () => {

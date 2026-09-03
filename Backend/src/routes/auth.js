@@ -11,7 +11,11 @@ import { getMember, listWorkspacesForAuthorization } from '../services/isoplus.j
 import { getFrontendBaseUrl, signOAuthState, verifyOAuthState } from '../utils/helpers.js';
 import OAuthTicket from '../models/OAuthTicket.js';
 import { getSafeString, toRequiredQueryString } from '../utils/securityHelpers.js';
-import { GOOGLE_SUPPORT_TICKET_FLOW } from '../constants/googleAuth.js';
+import {
+  GOOGLE_SUPPORT_PREAUTH_SESSION_KEY,
+  GOOGLE_SUPPORT_SESSION_EXPIRES_IN,
+  GOOGLE_SUPPORT_TICKET_FLOW,
+} from '../constants/googleAuth.js';
 import { isGoogleSupportAuthConfigured, describeGoogleSupportAuthConfig } from '../utils/googleAuthConfigHelpers.js';
 import { checkUserGroupMembership } from '../utils/googleGroupMembershipHelpers.js';
 import {
@@ -21,12 +25,22 @@ import {
   signGoogleSupportOAuthState,
   verifyGoogleSupportOAuthState,
 } from '../utils/googleOAuthHelpers.js';
+import { createPkcePair, verifyPkceSessionBinding } from '../utils/googlePkceHelpers.js';
 import { findOrCreateGoogleSupportUser } from '../utils/googleSupportUserHelpers.js';
 import { applyPrivilegedSessionAuth } from '../middleware/authHelpers.js';
+import { ROLE_SUPPORT_ADMIN } from '../constants/roles.js';
 
 const router = express.Router();
 
 const OAUTH_TICKET_CLAIM_MS = 45_000;
+
+/** express-session's save() is callback-based and returns the session, not a Promise. */
+function saveSessionBestEffort(req) {
+  if (typeof req?.session?.save !== 'function') return Promise.resolve();
+  return new Promise((resolve) => {
+    req.session.save(() => resolve());
+  });
+}
 
 function csvEscape(value) {
   if (value === null || value === undefined) return '';
@@ -229,7 +243,7 @@ router.post('/login', (_req, res) => {
   });
 });
 
-router.get('/google/redirect', (req, res) => {
+router.get('/google/redirect', async (req, res) => {
   const authMethod = 'google-support-oauth';
   const configDiag = describeGoogleSupportAuthConfig();
   authStep(req, {
@@ -249,11 +263,24 @@ router.get('/google/redirect', (req, res) => {
       data: configDiag,
     });
     warn('Google-Auth', 'Google support redirect refused: not configured', configDiag, req);
-    return res.status(503).json({ message: 'Google support sign-in is not configured' });
+    // Top-level browser navigation (not XHR) — send the user back to the login page.
+    return res.redirect(
+      `${getFrontendBaseUrl()}/?login=error&reason=${encodeURIComponent('not_configured')}`,
+    );
   }
 
   const state = signGoogleSupportOAuthState();
-  const built = buildGoogleOAuthRedirectUrl(state);
+  const pkce = createPkcePair();
+  req.session[GOOGLE_SUPPORT_PREAUTH_SESSION_KEY] = {
+    state,
+    codeVerifier: pkce.verifier,
+  };
+  await saveSessionBestEffort(req);
+
+  const built = buildGoogleOAuthRedirectUrl(state, {
+    codeChallenge: pkce.challenge,
+    codeChallengeMethod: pkce.method,
+  });
   if (!built.ok) {
     authFailure(req, {
       authMethod,
@@ -263,19 +290,24 @@ router.get('/google/redirect', (req, res) => {
       data: configDiag,
     });
     warn('Google-Auth', 'Google OAuth redirect URL build failed', configDiag, req);
-    return res.status(503).json({ message: 'Google OAuth client is not configured' });
+    return res.redirect(
+      `${getFrontendBaseUrl()}/?login=error&reason=${encodeURIComponent('not_configured')}`,
+    );
   }
 
   authStep(req, {
     authMethod,
     stage: 'redirect_ready',
     message: 'Google OAuth redirect URI ready',
-    data: { callbackUrl: configDiag.callbackUrl },
+    data: { callbackUrl: configDiag.callbackUrl, pkce: true },
   });
   info('Google-Auth', 'Redirecting browser to Google authorize', {
     callbackUrl: configDiag.callbackUrl,
+    pkce: true,
   }, req);
-  return res.json({ redirect_uri: built.redirectUri });
+  // 302 (not JSON): sets the PKCE session cookie on this API host so the Google
+  // callback on the same host can read it. XHR-from-localhost + ngrok callback breaks that.
+  return res.redirect(built.redirectUri);
 });
 
 router.get('/google/callback', async (req, res) => {
@@ -343,9 +375,7 @@ router.get('/google/callback', async (req, res) => {
         ? 'state_expired'
         : stateResult.reason === 'absent'
           ? 'state_missing'
-          : stateResult.reason === 'invalid_flow'
-            ? 'state_invalid'
-            : 'state_invalid';
+          : 'state_invalid';
     authFailure(req, {
       authMethod,
       stage: 'callback_invalid_state',
@@ -360,10 +390,36 @@ router.get('/google/callback', async (req, res) => {
     return res.redirect(loginErrorRedirect(clientReason));
   }
 
+  const preauth = req.session?.[GOOGLE_SUPPORT_PREAUTH_SESSION_KEY];
+  const pkceBind = verifyPkceSessionBinding({
+    returnedState: typeof state === 'string' ? state : null,
+    sessionState: preauth?.state,
+    sessionVerifier: preauth?.codeVerifier,
+  });
+  delete req.session[GOOGLE_SUPPORT_PREAUTH_SESSION_KEY];
+  await saveSessionBestEffort(req);
+
+  if (!pkceBind.ok) {
+    authFailure(req, {
+      authMethod,
+      stage: 'callback_pkce_binding',
+      message: 'Google OAuth callback failed: PKCE/session binding mismatch',
+      reason: pkceBind.reason,
+    });
+    warn('Google-Auth', 'Google callback PKCE session binding failed', {
+      reason: pkceBind.reason,
+    }, req);
+    return res.redirect(loginErrorRedirect('state_invalid'));
+  }
+
   try {
     authStep(req, { authMethod, stage: 'token_exchange_start', message: 'Exchanging Google authorization code' });
-    const exchange = await exchangeGoogleAuthCode(String(code));
+    const exchange = await exchangeGoogleAuthCode(String(code), {
+      codeVerifier: pkceBind.verifier,
+    });
     if (!exchange.ok) {
+      const clientReason =
+        exchange.reason === 'unverified_email' ? 'unverified_email' : 'token_exchange';
       authFailure(req, {
         authMethod,
         stage: 'token_exchange',
@@ -372,14 +428,14 @@ router.get('/google/callback', async (req, res) => {
         data: { exchangeReason: exchange.reason },
       });
       warn('Google-Auth', 'Google token exchange failed', { reason: exchange.reason }, req);
-      return res.redirect(loginErrorRedirect('token_exchange'));
+      return res.redirect(loginErrorRedirect(clientReason));
     }
 
     const profile = exchange.profile;
     authStep(req, {
       authMethod,
       stage: 'profile_ok',
-      message: 'Google profile received',
+      message: 'Google ID token verified',
       email: profile.email,
       userId: profile.id,
       data: { emailVerified: profile.email_verified, hasName: Boolean(profile.name) },
@@ -417,25 +473,38 @@ router.get('/google/callback', async (req, res) => {
       },
     });
 
-    const membership = await checkUserGroupMembership(profile.email);
+    const membership = await checkUserGroupMembership(profile.email, { useCache: false });
     if (!membership.isMember) {
+      const clientReason =
+        membership.status === 'verify_error' ? 'verify_failed' : 'group_denied';
       authFailure(req, {
         authMethod,
-        stage: 'group_denied',
-        message: 'Google OAuth callback failed: user not in support admin group',
-        reason: membership.error || 'not_a_group_member',
+        stage: clientReason === 'verify_failed' ? 'group_verify_failed' : 'group_denied',
+        message:
+          clientReason === 'verify_failed'
+            ? 'Google OAuth callback failed: could not verify Workspace group membership'
+            : 'Google OAuth callback failed: user not in support admin group',
+        reason: membership.error || membership.status,
         email: profile.email,
         data: {
           targetGroup: configDiag.targetGroup,
+          membershipStatus: membership.status,
           membershipError: membership.error || null,
         },
       });
-      warn('Google-Auth', 'Google support sign-in denied: not a group member', {
+      warn('Google-Auth', `Google support sign-in denied: ${clientReason}`, {
         email: profile.email,
         targetGroup: configDiag.targetGroup,
-        membershipError: membership.error || 'not_a_group_member',
+        membershipStatus: membership.status,
+        membershipError: membership.error || null,
       }, req);
-      return res.redirect(loginErrorRedirect('group_denied'));
+      return res.redirect(loginErrorRedirect(clientReason));
+    }
+
+    if (membership.breakGlass) {
+      warn('Google-Auth', 'Google support sign-in allowed via break-glass', {
+        email: profile.email,
+      }, req);
     }
 
     authStep(req, {
@@ -443,7 +512,7 @@ router.get('/google/callback', async (req, res) => {
       stage: 'group_ok',
       message: 'Workspace group membership confirmed',
       email: profile.email,
-      data: { targetGroup: configDiag.targetGroup },
+      data: { targetGroup: configDiag.targetGroup, breakGlass: Boolean(membership.breakGlass) },
     });
 
     authStep(req, {
@@ -583,10 +652,12 @@ async function establishGoogleSupportSession(req, oauthData) {
     userId: user._id?.toString(),
   });
 
-  const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '24h' });
+  const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, {
+    expiresIn: GOOGLE_SUPPORT_SESSION_EXPIRES_IN,
+  });
   req.session.token = token;
   applyPrivilegedSessionAuth(req, tokenPayload);
-  await req.session.save();
+  await saveSessionBestEffort(req);
 
   authSuccess(req, {
     authMethod,
@@ -645,7 +716,7 @@ router.get('/verify', async (req, res) => {
       decoded = jwt.verify(sessionToken, process.env.JWT_SECRET);
     } catch {
       delete req.session.token;
-      await req.session.save().catch(() => {});
+      await saveSessionBestEffort(req);
       return res.status(200).json({ authenticated: false });
     }
 
@@ -653,7 +724,7 @@ router.get('/verify', async (req, res) => {
     if (!user) {
       warn('User-Service', 'User not found during verification', {}, req ?? null);
       delete req.session.token;
-      await req.session.save().catch(() => {});
+      await saveSessionBestEffort(req);
       return res.status(404).json({ message: 'User not found' });
     }
 
@@ -661,6 +732,47 @@ router.get('/verify', async (req, res) => {
       warn('User-Service', 'Token verification for disabled user', { userId: decoded.userId }, req ?? null);
       return res.status(403).json({ message: 'Account is disabled' });
     }
+
+    const userPayload = {
+      id: user._id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      avatar: user.avatar,
+    };
+
+    if (user.role === ROLE_SUPPORT_ADMIN) {
+      const membership = await checkUserGroupMembership(user.email);
+      if (membership.status === 'not_member') {
+        warn('Google-Auth', 'Support admin session revoked: no longer in access group', {
+          email: user.email,
+          userId: user._id?.toString(),
+        }, req);
+        delete req.session.token;
+        delete req.session.Authorization;
+        await saveSessionBestEffort(req);
+        return res.status(403).json({
+          message: 'Your account is not assigned to the required Workspace access group.',
+          reason: 'group_denied',
+        });
+      }
+      if (membership.status === 'verify_error') {
+        // Keep the existing JWT until natural expiry — do not mint a fresh 4h
+        // token while Directory cannot confirm the user is still in the group.
+        warn('Google-Auth', 'Support admin verify: Directory check failed; keeping session without refresh', {
+          email: user.email,
+          membershipError: membership.error || null,
+        }, req);
+        return res.json({
+          authenticated: true,
+          user: userPayload,
+          membershipStatus: 'verify_uncertain',
+        });
+      }
+    }
+
+    const expiresIn =
+      user.role === ROLE_SUPPORT_ADMIN ? GOOGLE_SUPPORT_SESSION_EXPIRES_IN : '24h';
 
     const token = jwt.sign(
       {
@@ -671,21 +783,15 @@ router.get('/verify', async (req, res) => {
         avatar: user.avatar,
       },
       process.env.JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn }
     );
 
     req.session.token = token;
-    await req.session.save();
+    await saveSessionBestEffort(req);
 
     res.json({
       authenticated: true,
-      user: {
-        id: user._id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        avatar: user.avatar
-      }
+      user: userPayload,
     });
   } catch (err) {
     error('User-Service', 'Server error during verification', { err }, req);

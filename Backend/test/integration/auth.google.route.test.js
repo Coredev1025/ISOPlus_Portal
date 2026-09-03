@@ -1,10 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
-import jwt from 'jsonwebtoken';
 import { createApp } from '../../src/app.js';
 import OAuthTicket from '../../src/models/OAuthTicket.js';
 import User from '../../src/models/User.js';
-import { GOOGLE_SUPPORT_OAUTH_FLOW } from '../../src/constants/googleAuth.js';
+import { clearMembershipCache } from '../../src/utils/googleMembershipCacheHelpers.js';
 
 const app = createApp();
 
@@ -26,9 +25,15 @@ vi.mock('../../src/utils/googleGroupMembershipHelpers.js', async (importOriginal
   const actual = await importOriginal();
   return {
     ...actual,
-    checkUserGroupMembership: vi.fn(async (email) => ({
-      isMember: email === 'member@isoconsultingservices.com.au',
-    })),
+    checkUserGroupMembership: vi.fn(async (email) => {
+      if (email === 'member@isoconsultingservices.com.au') {
+        return { status: 'member', isMember: true };
+      }
+      if (email === 'outage@isoconsultingservices.com.au') {
+        return { status: 'verify_error', isMember: false, error: 'API disabled' };
+      }
+      return { status: 'not_member', isMember: false, error: 'not_a_group_member' };
+    }),
   };
 });
 
@@ -36,7 +41,10 @@ vi.mock('../../src/utils/googleOAuthHelpers.js', async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,
-    exchangeGoogleAuthCode: vi.fn(async (code) => {
+    exchangeGoogleAuthCode: vi.fn(async (code, deps) => {
+      if (!deps?.codeVerifier) {
+        return { ok: false, reason: 'missing_pkce_verifier' };
+      }
       if (code === 'good-code') {
         return {
           ok: true,
@@ -61,6 +69,18 @@ vi.mock('../../src/utils/googleOAuthHelpers.js', async (importOriginal) => {
           },
         };
       }
+      if (code === 'outage-code') {
+        return {
+          ok: true,
+          profile: {
+            id: 'google-sub-3',
+            email: 'outage@isoconsultingservices.com.au',
+            name: 'Outage',
+            photo_url: '',
+            email_verified: true,
+          },
+        };
+      }
       return { ok: false, reason: 'token_exchange' };
     }),
   };
@@ -70,6 +90,7 @@ describe('Google support-admin auth routes', () => {
   const saved = {};
 
   beforeEach(() => {
+    clearMembershipCache();
     for (const [key, value] of Object.entries(GOOGLE_ENV)) {
       saved[key] = process.env[key];
       process.env[key] = value;
@@ -85,24 +106,33 @@ describe('Google support-admin auth routes', () => {
     }
   });
 
-  function googleState() {
-    return jwt.sign({ flow: GOOGLE_SUPPORT_OAUTH_FLOW, nonce: 'n' }, process.env.JWT_SECRET, {
-      expiresIn: '30m',
-    });
+  async function startGoogleLogin(agent) {
+    const redirect = await agent.get('/api/auth/google/redirect').redirects(0);
+    expect(redirect.status).toBe(302);
+    const location = redirect.headers.location;
+    expect(location).toContain('accounts.google.com/o/oauth2/v2/auth');
+    const uri = new URL(location);
+    expect(uri.searchParams.get('code_challenge')).toBeTruthy();
+    return uri.searchParams.get('state');
   }
 
-  it('GET /google/redirect returns authorize URL when configured', async () => {
-    const res = await request(app).get('/api/auth/google/redirect');
-    expect(res.status).toBe(200);
-    expect(res.body.redirect_uri).toContain('accounts.google.com/o/oauth2/v2/auth');
-    expect(res.body.redirect_uri).toContain('client_id=google-client-id');
+  it('GET /google/redirect 302s to Google authorize with PKCE (sets session cookie on API host)', async () => {
+    const agent = request.agent(app);
+    const res = await agent.get('/api/auth/google/redirect').redirects(0);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain('accounts.google.com/o/oauth2/v2/auth');
+    expect(res.headers.location).toContain('client_id=google-client-id');
+    expect(res.headers.location).toContain('code_challenge=');
+    expect(res.headers.location).toContain('code_challenge_method=S256');
+    expect(res.headers['set-cookie']?.join(';') || '').toMatch(/connect\.sid/i);
   });
 
   it('GET /google/callback redirects with ticket for authorized group member', async () => {
     const agent = request.agent(app);
+    const state = await startGoogleLogin(agent);
     const res = await agent
       .get('/api/auth/google/callback')
-      .query({ code: 'good-code', state: googleState() });
+      .query({ code: 'good-code', state });
 
     expect(res.status).toBe(302);
     expect(res.headers.location).toMatch(/\?ticket=/);
@@ -117,16 +147,43 @@ describe('Google support-admin auth routes', () => {
 
     const user = await User.findOne({ email: 'member@isoconsultingservices.com.au' });
     expect(user?.role).toBe('support_admin');
+    expect(user?.oauthId).toBe('google-sub-1');
   });
 
   it('GET /google/callback redirects with group_denied for non-member', async () => {
-    const res = await request(app)
+    const agent = request.agent(app);
+    const state = await startGoogleLogin(agent);
+    const res = await agent
       .get('/api/auth/google/callback')
-      .query({ code: 'outsider-code', state: googleState() });
+      .query({ code: 'outsider-code', state });
 
     expect(res.status).toBe(302);
     expect(res.headers.location).toContain('login=error');
     expect(res.headers.location).toContain('reason=group_denied');
+  });
+
+  it('GET /google/callback redirects with verify_failed when Directory cannot decide', async () => {
+    const agent = request.agent(app);
+    const state = await startGoogleLogin(agent);
+    const res = await agent
+      .get('/api/auth/google/callback')
+      .query({ code: 'outage-code', state });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain('reason=verify_failed');
+  });
+
+  it('rejects callback without matching pre-auth session (login CSRF)', async () => {
+    const agent = request.agent(app);
+    const state = await startGoogleLogin(agent);
+    // Different agent = different session cookie → binding fails
+    const other = request.agent(app);
+    const res = await other
+      .get('/api/auth/google/callback')
+      .query({ code: 'good-code', state });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain('reason=state_invalid');
   });
 
   it('POST /api/auth/login is removed', async () => {
@@ -134,5 +191,52 @@ describe('Google support-admin auth routes', () => {
       .post('/api/auth/login')
       .send({ email: 'any@example.com', password: 'secret' });
     expect(res.status).toBe(404);
+  });
+
+  it('GET /verify revokes support_admin when Directory reports not_member', async () => {
+    const agent = request.agent(app);
+    const state = await startGoogleLogin(agent);
+    const callback = await agent
+      .get('/api/auth/google/callback')
+      .query({ code: 'good-code', state });
+    const ticket = new URL(callback.headers.location, 'http://localhost').searchParams.get('ticket');
+    await agent.post('/api/auth/oauth-exchange').send({ ticket });
+
+    const { checkUserGroupMembership } = await import('../../src/utils/googleGroupMembershipHelpers.js');
+    checkUserGroupMembership.mockResolvedValueOnce({
+      status: 'not_member',
+      isMember: false,
+      error: 'not_a_group_member',
+    });
+
+    const verify = await agent.get('/api/auth/verify');
+    expect(verify.status).toBe(403);
+    expect(verify.body.reason).toBe('group_denied');
+  });
+
+  it('GET /verify keeps support session without refresh when Directory verify_error', async () => {
+    const agent = request.agent(app);
+    const state = await startGoogleLogin(agent);
+    const callback = await agent
+      .get('/api/auth/google/callback')
+      .query({ code: 'good-code', state });
+    const ticket = new URL(callback.headers.location, 'http://localhost').searchParams.get('ticket');
+    await agent.post('/api/auth/oauth-exchange').send({ ticket });
+
+    const before = await agent.get('/api/auth/verify');
+    expect(before.status).toBe(200);
+    expect(before.body.authenticated).toBe(true);
+
+    const { checkUserGroupMembership } = await import('../../src/utils/googleGroupMembershipHelpers.js');
+    checkUserGroupMembership.mockResolvedValueOnce({
+      status: 'verify_error',
+      isMember: false,
+      error: 'API disabled',
+    });
+
+    const duringOutage = await agent.get('/api/auth/verify');
+    expect(duringOutage.status).toBe(200);
+    expect(duringOutage.body.authenticated).toBe(true);
+    expect(duringOutage.body.membershipStatus).toBe('verify_uncertain');
   });
 });

@@ -31,6 +31,7 @@ import schedulerRoutes from './routes/scheduler.js';
 import localFilesRoutes from './routes/localFiles.js';
 import systemHealthRoutes from './routes/systemHealth.js';
 import session from 'express-session';
+import { resolveSessionCookieOptions } from './utils/sessionCookieHelpers.js';
 import MongoStore from 'connect-mongo';
 import syncWorker, { checkAndRetryFailedJobs } from './workers/syncWorker.js'; // Initialize sync worker
 import { startAutomationWorker } from './workers/automationWorker.js';
@@ -135,7 +136,6 @@ app.use(express.json({ limit: requestBodyLimitBytes }));
 app.use(express.urlencoded({ extended: true, limit: requestBodyLimitBytes }));
 app.use(mongoSanitize({ replaceWith: '_', allowDots: true }));
 
-const isProduction = process.env.NODE_ENV === 'production';
 app.use(session({
   secret: process.env.SESSION_SECRET || 'default_secret',
   resave: false,
@@ -145,12 +145,7 @@ app.use(session({
     collectionName: 'sessions',
     autoRemove: 'native'
   }),
-  cookie: {
-    secure: isProduction,
-    httpOnly: true,
-    sameSite: isProduction ? 'none' : 'lax',
-    maxAge: 1000 * 60 * 60 * 24
-  }
+  cookie: resolveSessionCookieOptions(),
 }));
 
 app.use(auditHttpMiddleware);

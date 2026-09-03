@@ -30,11 +30,11 @@ import systemHealthRoutes from './routes/systemHealth.js';
 import { requestContextMiddleware } from './middleware/requestContext.js';
 import { auditHttpMiddleware } from './middleware/auditHttp.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { resolveSessionCookieOptions } from './utils/sessionCookieHelpers.js';
 
 export function createApp({ mongoUri } = {}) {
   const app = express();
   const isTest = process.env.NODE_ENV === 'test';
-  const isProduction = process.env.NODE_ENV === 'production';
 
   app.disable('x-powered-by');
   app.set('etag', false);
@@ -97,12 +97,7 @@ export function createApp({ mongoUri } = {}) {
           autoRemove: 'native',
         }),
       }),
-      cookie: {
-        secure: isProduction,
-        httpOnly: true,
-        sameSite: isProduction ? 'none' : 'lax',
-        maxAge: 1000 * 60 * 60 * 24,
-      },
+      cookie: resolveSessionCookieOptions(),
     })
   );
 

@@ -45,6 +45,7 @@ beforeEach(() => {
   router.replace.mockClear();
   vi.spyOn(console, 'error').mockImplementation(() => {});
   stubSession(null);
+  process.env.NEXT_PUBLIC_BACKEND_URL = 'http://localhost:4001';
 
   Object.defineProperty(window, 'location', {
     configurable: true,
@@ -87,14 +88,6 @@ describe('Login page', () => {
   });
 
   it('starts Google OAuth when Support agent sign-in is clicked', async () => {
-    server.use(
-      http.get('*/api/auth/google/redirect', () =>
-        HttpResponse.json({
-          redirect_uri:
-            'https://accounts.google.com/o/oauth2/v2/auth?client_id=portal&state=abc',
-        }),
-      ),
-    );
     const user = userEvent.setup();
     renderPage();
 
@@ -106,38 +99,33 @@ describe('Login page', () => {
 
     await waitFor(() => {
       expect(assignedHref).toBe(
-        'https://accounts.google.com/o/oauth2/v2/auth?client_id=portal&state=abc',
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/google/redirect`,
       );
     });
     expect(router.push).not.toHaveBeenCalled();
     expect(screen.queryByRole('heading', { name: 'Support agent sign-in' })).not.toBeInTheDocument();
   });
 
-  it('shows an error when Google support sign-in is not configured', async () => {
-    server.use(
-      http.get('*/api/auth/google/redirect', () =>
-        HttpResponse.json(
-          { message: 'Google support sign-in is not configured' },
-          { status: 503 },
-        ),
-      ),
-    );
-    const user = userEvent.setup();
-    renderPage();
+  it('shows an error when NEXT_PUBLIC_BACKEND_URL is missing for Google support sign-in', async () => {
+    const saved = process.env.NEXT_PUBLIC_BACKEND_URL;
+    delete process.env.NEXT_PUBLIC_BACKEND_URL;
+    try {
+      const user = userEvent.setup();
+      renderPage();
 
-    const supportSignIn = await screen.findByRole('button', {
-      name: 'Support agent sign-in',
-    });
-    await waitFor(() => expect(supportSignIn).toBeEnabled());
-    await user.click(supportSignIn);
+      const supportSignIn = await screen.findByRole('button', {
+        name: 'Support agent sign-in',
+      });
+      await waitFor(() => expect(supportSignIn).toBeEnabled());
+      await user.click(supportSignIn);
 
-    expect(
-      await screen.findByText('Google support sign-in is not configured'),
-    ).toBeInTheDocument();
-    expect(assignedHref).toBeUndefined();
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Support agent sign-in' })).toBeEnabled();
-    });
+      expect(
+        await screen.findByText('NEXT_PUBLIC_BACKEND_URL is not configured.'),
+      ).toBeInTheDocument();
+      expect(assignedHref).toBeUndefined();
+    } finally {
+      process.env.NEXT_PUBLIC_BACKEND_URL = saved;
+    }
   });
 
   it('sends the browser to the redirect URI ISO+ hands back', async () => {

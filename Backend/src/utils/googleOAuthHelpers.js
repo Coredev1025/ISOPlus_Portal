@@ -3,16 +3,16 @@ import axios from 'axios';
 import {
   GOOGLE_OAUTH_AUTHORIZE_URL,
   GOOGLE_OAUTH_TOKEN_URL,
-  GOOGLE_OAUTH_USERINFO_URL,
   GOOGLE_SUPPORT_OAUTH_FLOW,
 } from '../constants/googleAuth.js';
 import { resolveGoogleOAuthConfig } from './googleAuthConfigHelpers.js';
 import { signOAuthState } from './helpers.js';
+import { verifyGoogleIdTokenClaims } from './googleIdTokenHelpers.js';
 import { info, warn, error as logError } from './logger.js';
 
 const LOG_SCOPE = 'Google-OAuth';
 
-export function buildGoogleOAuthRedirectUrl(state) {
+export function buildGoogleOAuthRedirectUrl(state, { codeChallenge, codeChallengeMethod = 'S256' } = {}) {
   const config = resolveGoogleOAuthConfig();
   if (!config.configured) {
     warn(LOG_SCOPE, 'Cannot build Google OAuth redirect: client not configured', {
@@ -21,6 +21,11 @@ export function buildGoogleOAuthRedirectUrl(state) {
       hasCallbackUrl: Boolean(config.callbackUrl),
     });
     return { ok: false, reason: 'not_configured' };
+  }
+
+  if (!codeChallenge) {
+    warn(LOG_SCOPE, 'Cannot build Google OAuth redirect: PKCE code_challenge required');
+    return { ok: false, reason: 'missing_pkce' };
   }
 
   const query = querystring.stringify({
@@ -32,12 +37,15 @@ export function buildGoogleOAuthRedirectUrl(state) {
     include_granted_scopes: 'true',
     prompt: 'select_account',
     state,
+    code_challenge: codeChallenge,
+    code_challenge_method: codeChallengeMethod,
   });
 
   info(LOG_SCOPE, 'Built Google OAuth authorize URL', {
     callbackUrl: config.callbackUrl,
     scopes: config.scopes,
     hasState: Boolean(state),
+    hasPkce: true,
   });
 
   return {
@@ -63,8 +71,10 @@ export function verifyGoogleSupportOAuthState(stateResult) {
 }
 
 /**
+ * Exchange code (+ PKCE verifier) for tokens, then verify the ID token claims.
+ *
  * @param {string} code
- * @param {{ postToken?: Function, getUserInfo?: Function }} [deps]
+ * @param {{ codeVerifier: string, postToken?: Function, verifyIdTokenClaims?: Function }} deps
  */
 export async function exchangeGoogleAuthCode(code, deps = {}) {
   const config = resolveGoogleOAuthConfig();
@@ -73,9 +83,15 @@ export async function exchangeGoogleAuthCode(code, deps = {}) {
     return { ok: false, reason: 'not_configured' };
   }
 
+  if (!deps.codeVerifier) {
+    warn(LOG_SCOPE, 'Google token exchange skipped: missing PKCE verifier');
+    return { ok: false, reason: 'missing_pkce_verifier' };
+  }
+
   info(LOG_SCOPE, 'Exchanging Google authorization code for tokens', {
     callbackUrl: config.callbackUrl,
     hasCode: Boolean(code),
+    hasPkceVerifier: true,
   });
 
   try {
@@ -93,59 +109,34 @@ export async function exchangeGoogleAuthCode(code, deps = {}) {
         client_secret: config.clientSecret,
         redirect_uri: config.callbackUrl,
         code,
+        code_verifier: deps.codeVerifier,
       }),
     );
 
-    const accessToken = tokenResponse?.data?.access_token;
-    if (!accessToken) {
-      warn(LOG_SCOPE, 'Google token endpoint returned no access_token', {
+    const idToken = tokenResponse?.data?.id_token;
+    if (!idToken) {
+      warn(LOG_SCOPE, 'Google token endpoint returned no id_token', {
         upstreamStatus: tokenResponse?.status ?? null,
         upstreamKeys: tokenResponse?.data ? Object.keys(tokenResponse.data) : [],
       });
-      return { ok: false, reason: 'missing_access_token', upstream: tokenResponse?.data };
+      return { ok: false, reason: 'missing_id_token' };
     }
 
-    info(LOG_SCOPE, 'Google access token received; fetching userinfo', {
+    info(LOG_SCOPE, 'Google tokens received; verifying ID token', {
       upstreamStatus: tokenResponse?.status ?? null,
       tokenType: tokenResponse?.data?.token_type || null,
-      hasIdToken: Boolean(tokenResponse?.data?.id_token),
+      hasAccessToken: Boolean(tokenResponse?.data?.access_token),
     });
 
-    const getUserInfo =
-      deps.getUserInfo ||
-      ((token) =>
-        axios.get(GOOGLE_OAUTH_USERINFO_URL, {
-          headers: { Authorization: `Bearer ${token}` },
-        }));
-
-    const profileResponse = await getUserInfo(accessToken);
-    const profile = profileResponse?.data;
-    if (!profile?.email) {
-      warn(LOG_SCOPE, 'Google userinfo missing email', {
-        upstreamStatus: profileResponse?.status ?? null,
-        profileKeys: profile ? Object.keys(profile) : [],
-      });
-      return { ok: false, reason: 'missing_profile_email', upstream: profile };
+    const verify = deps.verifyIdTokenClaims || verifyGoogleIdTokenClaims;
+    const verified = await verify(idToken, { clientId: config.clientId });
+    if (!verified.ok) {
+      return { ok: false, reason: verified.reason || 'invalid_id_token' };
     }
 
-    const normalized = {
-      id: String(profile.sub || profile.id || ''),
-      email: String(profile.email).toLowerCase().trim(),
-      name: profile.name ? String(profile.name) : String(profile.email),
-      photo_url: profile.picture ? String(profile.picture) : '',
-      email_verified: profile.email_verified === true,
-    };
-
-    info(LOG_SCOPE, 'Google userinfo fetched', {
-      email: normalized.email,
-      oauthId: normalized.id,
-      emailVerified: normalized.email_verified,
-      hasName: Boolean(normalized.name),
-    });
-
-    return { ok: true, profile: normalized };
+    return { ok: true, profile: verified.profile };
   } catch (err) {
-    logError(LOG_SCOPE, 'Google OAuth token exchange or userinfo failed', {
+    logError(LOG_SCOPE, 'Google OAuth token exchange or ID token verify failed', {
       err,
       upstreamStatus: err?.response?.status ?? null,
       upstreamError: err?.response?.data?.error || null,

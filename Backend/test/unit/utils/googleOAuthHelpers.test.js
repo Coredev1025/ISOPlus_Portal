@@ -33,13 +33,24 @@ describe('googleOAuthHelpers', () => {
     }
   });
 
-  it('builds a Google authorize URL with signed state', () => {
+  it('builds a Google authorize URL with signed state and PKCE', () => {
     const state = signGoogleSupportOAuthState();
-    const built = buildGoogleOAuthRedirectUrl(state);
+    const built = buildGoogleOAuthRedirectUrl(state, {
+      codeChallenge: 'challenge',
+      codeChallengeMethod: 'S256',
+    });
     expect(built.ok).toBe(true);
     expect(built.redirectUri).toContain('accounts.google.com/o/oauth2/v2/auth');
     expect(built.redirectUri).toContain('client_id=client-id');
     expect(built.redirectUri).toContain(encodeURIComponent(state));
+    expect(built.redirectUri).toContain('code_challenge=challenge');
+    expect(built.redirectUri).toContain('code_challenge_method=S256');
+  });
+
+  it('refuses to build an authorize URL without PKCE', () => {
+    const built = buildGoogleOAuthRedirectUrl(signGoogleSupportOAuthState());
+    expect(built.ok).toBe(false);
+    expect(built.reason).toBe('missing_pkce');
   });
 
   it('accepts only google-support OAuth state payloads', () => {

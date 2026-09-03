@@ -29,8 +29,9 @@ describe('googleGroupMembershipHelpers', () => {
 
   it('returns isMember true when Admin SDK reports membership', async () => {
     const hasMember = vi.fn(async () => ({ data: { isMember: true } }));
-    const result = await checkUserGroupMembership('user@example.com', { hasMember });
+    const result = await checkUserGroupMembership('user@example.com', { hasMember, useCache: false });
     expect(result.isMember).toBe(true);
+    expect(result.status).toBe('member');
     expect(hasMember).toHaveBeenCalledWith({
       groupKey: 'support-group@example.com',
       memberKey: 'user@example.com',
@@ -39,22 +40,24 @@ describe('googleGroupMembershipHelpers', () => {
 
   it('returns isMember false when Admin SDK reports non-membership', async () => {
     const hasMember = vi.fn(async () => ({ data: { isMember: false } }));
-    const result = await checkUserGroupMembership('outsider@example.com', { hasMember });
+    const result = await checkUserGroupMembership('outsider@example.com', { hasMember, useCache: false });
     expect(result.isMember).toBe(false);
+    expect(result.status).toBe('not_member');
   });
 
   it('fails closed when Admin SDK throws', async () => {
     const hasMember = vi.fn(async () => {
       throw new Error('quota exceeded');
     });
-    const result = await checkUserGroupMembership('user@example.com', { hasMember });
+    const result = await checkUserGroupMembership('user@example.com', { hasMember, useCache: false });
     expect(result.isMember).toBe(false);
+    expect(result.status).toBe('verify_error');
     expect(result.error).toMatch(/quota exceeded/);
   });
 
   it('rejects blank email without calling Admin SDK', async () => {
     const hasMember = vi.fn();
-    const result = await checkUserGroupMembership('   ', { hasMember });
+    const result = await checkUserGroupMembership('   ', { hasMember, useCache: false });
     expect(result.isMember).toBe(false);
     expect(hasMember).not.toHaveBeenCalled();
   });
