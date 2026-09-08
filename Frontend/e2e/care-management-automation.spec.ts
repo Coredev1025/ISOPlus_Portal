@@ -296,4 +296,29 @@ test.describe("Care Management automation (KAN-10 fixture)", () => {
     // signatures precisely so that cannot be done.
     await expect(status.getByText(/generated/i).first()).toBeVisible();
   });
+
+  test("the recent-document list starts at five and expands to the rest", async ({
+    page,
+  }) => {
+    // The list is a health signal first, and a run over this fixture produces
+    // more documents than fit above the fold. Five rows answer "did last
+    // night's run work"; the history behind them is one click away rather
+    // than capped at what the panel happened to render.
+    await page.goto("/dashboard");
+    await page.goto(AUTOMATION_URL);
+
+    const status = page.getByRole("region", { name: /automation status/i });
+    const rows = status.getByRole("listitem");
+    await expect(rows.first()).toBeVisible();
+    await expect(rows).toHaveCount(5);
+
+    const expander = status.getByRole("button", { name: /show \d+ more/i });
+    await expect(expander).toBeVisible();
+    await expander.click();
+
+    // More than five now, and the button offers the way back.
+    expect(await rows.count()).toBeGreaterThan(5);
+    await status.getByRole("button", { name: /show fewer/i }).click();
+    await expect(rows).toHaveCount(5);
+  });
 });

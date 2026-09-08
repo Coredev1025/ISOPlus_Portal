@@ -429,18 +429,21 @@ describe('GET/PUT /api/workspaces/:workspaceId/automation-settings', () => {
     expect(res.body.recentDocuments[0]).not.toHaveProperty('deliveryMessageId');
   });
 
-  it('caps recent automation documents at ten', async () => {
-    for (let i = 0; i < 12; i++) {
-      await automationPdfLink({
-        pdfLink: `https://example.test/doc-${i}.pdf`,
-        periodKey: '20250201-0900',
-        createdAt: new Date(Date.UTC(2026, 0, i + 1)),
-      });
-    }
+  // Fifty, not ten: the panel collapses to five rows and expands, so ten was
+  // the whole history a client could ever reach — one run on a board with a
+  // handful of participants. See RECENT_DOCUMENTS_LIMIT.
+  it('caps recent automation documents at fifty', async () => {
+    // One insert, not fifty-two round trips: awaiting each in turn held the
+    // request open long enough to hang the socket on a slow machine.
+    await Promise.all(Array.from({ length: 52 }, (_, i) => automationPdfLink({
+      pdfLink: `https://example.test/doc-${i}.pdf`,
+      periodKey: '20250201-0900',
+      createdAt: new Date(Date.UTC(2026, 0, i + 1)),
+    })));
 
     const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
-    expect(res.body.recentDocuments).toHaveLength(10);
-    const newest = await PDFLink.findOne({ pdfLink: 'https://example.test/doc-11.pdf' }).lean();
+    expect(res.body.recentDocuments).toHaveLength(50);
+    const newest = await PDFLink.findOne({ pdfLink: 'https://example.test/doc-51.pdf' }).lean();
     expect(res.body.recentDocuments[0].pdfUrl).toBe(`/api/pdf-links/download/${newest._id}`);
   });
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { AutomationStatusPanel } from '@/lib/automation-status-panel';
 import {
@@ -251,5 +252,44 @@ describe("automation health on the client panel", () => {
 
     // Not every workspace uses Xero; "disconnected" is not a fault to nag about.
     expect(status.queryByText(/reconnect/i)).not.toBeInTheDocument();
+  });
+});
+
+/** `count` documents, newest first, each with its own link so rows are distinct. */
+function docs(count: number): AutomationRecentDocument[] {
+  return Array.from({ length: count }, (_, i) =>
+    doc({
+      invoiceNumber: `INV-${2000 + i}`,
+      pdfUrl: `https://files.test/inv-${2000 + i}.pdf`,
+    })
+  );
+}
+
+describe('AutomationStatusPanel recent-document history', () => {
+  it('shows only the five most recent to begin with', () => {
+    const status = renderPanel(docs(12));
+    expect(status.getAllByRole('listitem')).toHaveLength(5);
+    expect(status.getByRole('link', { name: /INV-2000/ })).toBeTruthy();
+    expect(status.queryByRole('link', { name: /INV-2005/ })).toBeNull();
+  });
+
+  it('reveals the rest when the history is expanded', async () => {
+    const status = renderPanel(docs(12));
+    await userEvent.click(status.getByRole('button', { name: /show \d+ more/i }));
+    expect(status.getAllByRole('listitem')).toHaveLength(12);
+  });
+
+  it('collapses back to five', async () => {
+    const status = renderPanel(docs(12));
+    await userEvent.click(status.getByRole('button', { name: /show \d+ more/i }));
+    await userEvent.click(status.getByRole('button', { name: /show fewer/i }));
+    expect(status.getAllByRole('listitem')).toHaveLength(5);
+  });
+
+  // Five or fewer is the whole history, so there is nothing to expand and a
+  // button that reveals nothing is worse than no button.
+  it('offers no expander when everything already fits', () => {
+    const status = renderPanel(docs(4));
+    expect(status.queryByRole('button', { name: /show \d+ more/i })).toBeNull();
   });
 });

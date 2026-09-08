@@ -435,8 +435,15 @@ async function loadAutomationJobs(workspaceId) {
  * set it), and a multi-item invoice records one row per item, so rows dedupe
  * by pdfLink before the cap. The oversampled limit leaves room for that
  * dedupe without reading the whole collection.
+ *
+ * Fifty rather than ten because the panel now collapses to five and expands:
+ * ten was the whole history the client could ever reach, which is one run on a
+ * board with a handful of participants. Fifty is a few runs' worth and still
+ * one aggregation. When it stops being enough the answer is a `before` cursor
+ * on this route, not a larger number.
+ * ponytail: fixed cap, no pagination — add a `before` cursor when 50 runs out.
  */
-const RECENT_DOCUMENTS_LIMIT = 10;
+const RECENT_DOCUMENTS_LIMIT = 50;
 
 /**
  * The two operational signals a client needs about their own automation, from

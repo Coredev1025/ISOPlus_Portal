@@ -140,3 +140,16 @@ export const DEFAULT_DELIVERY_STATE = "generated";
  * Touchpoints: lib/invoice-statement-automation-panel.tsx.
  */
 export const AUTOMATION_PANEL_POLL_MS = 60_000;
+
+/**
+ * How many recent documents the status panel shows before it is expanded.
+ *
+ * The list is a health signal first — "did last night's run produce anything,
+ * and did it send" — and five rows answer that without pushing the rest of the
+ * settings page below the fold. The remainder is one click away rather than
+ * hidden: a client chasing a bounce from three runs ago still needs to reach
+ * it.
+ *
+ * Touchpoints: lib/automation-status-panel.tsx (`RecentDocumentList`).
+ */
+export const COLLAPSED_RECENT_DOCUMENTS = 5;

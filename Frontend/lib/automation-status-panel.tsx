@@ -1,7 +1,10 @@
 "use client";
 
-import { Activity } from "lucide-react";
+import { useState } from "react";
+import { Activity, ChevronDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { COLLAPSED_RECENT_DOCUMENTS } from "@/constants/automation";
 import { cn } from "@/lib/utils";
 import {
   blockNeedsAttention,
@@ -146,6 +149,68 @@ function RecentDocumentRow({
 }
 
 /**
+ * The recent-document list, collapsed to its most recent rows until asked.
+ *
+ * The count lives in `COLLAPSED_RECENT_DOCUMENTS` rather than here, and the
+ * expander is absent — not disabled — when the whole history already fits: a
+ * button that reveals nothing teaches people the button does nothing.
+ *
+ * Expansion is local state and deliberately not persisted. The panel polls,
+ * and a remembered "expanded" that comes back on a later visit showing a
+ * different run's documents is a worse default than starting from the top.
+ */
+function RecentDocumentList({
+  documents,
+  timeZone,
+}: Readonly<{
+  documents: readonly AutomationRecentDocument[];
+  timeZone?: string;
+}>) {
+  const [expanded, setExpanded] = useState(false);
+  const canExpand = documents.length > COLLAPSED_RECENT_DOCUMENTS;
+  const shown = expanded ? documents : documents.slice(0, COLLAPSED_RECENT_DOCUMENTS);
+
+  return (
+    <div className="mt-4 border-t pt-3">
+      <h4 className="mb-1.5 text-xs font-semibold text-muted-foreground">
+        Recent documents
+      </h4>
+      <ul className="space-y-1">
+        {shown.map((doc) => (
+          <RecentDocumentRow key={doc.pdfUrl} doc={doc} timeZone={timeZone} />
+        ))}
+      </ul>
+      {canExpand ? (
+        <div className="mt-2.5 flex justify-center">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-expanded={expanded}
+            onClick={() => setExpanded(!expanded)}
+            className="h-7 gap-1.5 px-2.5 text-[12px] font-medium text-muted-foreground hover:text-foreground"
+          >
+            {/* One control, rotated rather than swapped: the chevron turning
+                is what says the same list grew, where a second icon would
+                read as a different action. */}
+            <ChevronDown
+              aria-hidden
+              className={cn(
+                "h-3.5 w-3.5 transition-transform duration-200",
+                expanded && "rotate-180"
+              )}
+            />
+            {expanded
+              ? "Show fewer"
+              : `Show ${documents.length - COLLAPSED_RECENT_DOCUMENTS} more`}
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * The two operational signals from `GET /automation-settings`'s `health` block.
  *
  * `queueBacklogged` is a boolean rather than a depth on purpose: the queue is
@@ -234,20 +299,10 @@ export function AutomationStatusPanel({
         ) : null}
 
         {recentDocuments.length > 0 ? (
-          <div className="mt-4 border-t pt-3">
-            <h4 className="mb-1.5 text-xs font-semibold text-muted-foreground">
-              Recent documents
-            </h4>
-            <ul className="space-y-1">
-              {recentDocuments.map((doc) => (
-                <RecentDocumentRow
-                  key={doc.pdfUrl}
-                  doc={doc}
-                  timeZone={invoice.timezone ?? statement.timezone}
-                />
-              ))}
-            </ul>
-          </div>
+          <RecentDocumentList
+            documents={recentDocuments}
+            timeZone={invoice.timezone ?? statement.timezone}
+          />
         ) : null}
       </Card>
     </section>
