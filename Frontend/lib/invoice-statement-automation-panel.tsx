@@ -178,6 +178,16 @@ export function InvoiceStatementAutomationPanel({
   useEffect(() => {
     let cancelled = false;
 
+    // This effect is the one place the component learns workspaceId changed
+    // — a ref does not reset itself, and olderDocuments/documentsCursor are
+    // otherwise only ever written by the Load More flow. Without this,
+    // switching workspaces after paging back keeps the previous workspace's
+    // older pages on screen and pins Load More to its cursor, fetching the
+    // old workspace's pages under the new one.
+    pagedBackRef.current = false;
+    setOlderDocuments([]);
+    setDocumentsCursor(null);
+
     /**
      * `first` separates the mount fetch from the polls.
      *

@@ -702,3 +702,72 @@ describe('Load more survives a poll', () => {
     }
   });
 });
+
+/**
+ * The `[workspaceId]` effect re-runs whenever a caller passes a different
+ * workspace — the component's own contract treats workspaceId as changeable
+ * without a remount. But `pagedBackRef`, `olderDocuments` and
+ * `documentsCursor` are only ever written by the Load More flow, never reset
+ * on that switch: workspace B inherits workspace A's paging position.
+ */
+describe('Load more resets when the workspace changes', () => {
+  const docFor = (workspace: string, id: string) => ({
+    type: 'NDIS Invoice',
+    invoiceNumber: `${workspace}-${id}`,
+    periodKey: '20260801-2300',
+    pdfUrl: `https://s3.example/${workspace}-${id}.pdf`,
+    createdAt: '2026-08-05T00:00:00.000Z',
+  });
+
+  it("does not carry workspace A's paging position into workspace B", async () => {
+    fetchMock.mockImplementation(async (workspaceId: string) => {
+      if (workspaceId === 'ws-B') {
+        return {
+          ...settings(),
+          recentDocuments: [docFor('B', '1')],
+          recentDocumentsCursor: 'cursor-B-page-2',
+        };
+      }
+      return {
+        ...settings(),
+        recentDocuments: Array.from({ length: 6 }, (_, i) => docFor('A', `${i + 1}`)),
+        recentDocumentsCursor: 'cursor-A-page-2',
+      };
+    });
+    documentsMock.mockResolvedValue({
+      documents: [docFor('A', '7')],
+      nextCursor: 'cursor-A-page-3',
+    });
+
+    const { rerender } = render(
+      <InvoiceStatementAutomationPanel workspaceId="ws-A" />
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    (
+      await screen.findByRole('button', { name: /show 1 more/i })
+    ).click();
+    const loadMore = await screen.findByRole('button', { name: /load more/i });
+    loadMore.click();
+    await waitFor(() => expect(documentsMock).toHaveBeenCalledTimes(1));
+    // The older page landed before the switch.
+    await screen.findByRole('link', { name: 'A-7' });
+
+    rerender(<InvoiceStatementAutomationPanel workspaceId="ws-B" />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    // (1) B's newest page only — none of A's older-page rows remain.
+    await screen.findByRole('link', { name: 'B-1' });
+    expect(screen.queryByRole('link', { name: /^A-/ })).not.toBeInTheDocument();
+
+    // (2) Load more on B requests B's own page-one cursor, not the cursor
+    // A's paging had advanced to.
+    documentsMock.mockResolvedValue({
+      documents: [docFor('B', '2')],
+      nextCursor: null,
+    });
+    screen.getByRole('button', { name: /load more/i }).click();
+    await waitFor(() => expect(documentsMock).toHaveBeenCalledTimes(2));
+    expect(documentsMock.mock.calls[1][1]).toBe('cursor-B-page-2');
+  });
+});
