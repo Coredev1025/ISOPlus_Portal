@@ -262,4 +262,22 @@ describe('Google support-admin auth routes', () => {
     expect(duringOutage.body.authenticated).toBe(true);
     expect(duringOutage.body.membershipStatus).toBe('verify_uncertain');
   });
+
+  it('GET /verify re-checks Workspace group membership for a Google support session', async () => {
+    const agent = request.agent(app);
+    const state = await startGoogleLogin(agent);
+    const callback = await agent
+      .get('/api/auth/google/callback')
+      .query({ code: 'good-code', state });
+    const ticket = new URL(callback.headers.location, 'http://localhost').searchParams.get('ticket');
+    await agent.post('/api/auth/oauth-exchange').send({ ticket });
+
+    const { checkUserGroupMembership } = await import('../../src/utils/googleGroupMembershipHelpers.js');
+    checkUserGroupMembership.mockClear();
+
+    const verify = await agent.get('/api/auth/verify');
+    expect(verify.status).toBe(200);
+    expect(verify.body.authenticated).toBe(true);
+    expect(checkUserGroupMembership).toHaveBeenCalledWith('member@isoconsultingservices.com.au');
+  });
 });

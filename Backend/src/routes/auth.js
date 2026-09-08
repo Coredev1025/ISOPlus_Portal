@@ -15,6 +15,8 @@ import {
   GOOGLE_SUPPORT_PREAUTH_SESSION_KEY,
   GOOGLE_SUPPORT_SESSION_EXPIRES_IN,
   GOOGLE_SUPPORT_TICKET_FLOW,
+  SESSION_AUTH_PROVIDER_GOOGLE_SUPPORT,
+  SESSION_AUTH_PROVIDER_ISOPLUS,
 } from '../constants/googleAuth.js';
 import { isGoogleSupportAuthConfigured, describeGoogleSupportAuthConfig } from '../utils/googleAuthConfigHelpers.js';
 import { checkUserGroupMembership } from '../utils/googleGroupMembershipHelpers.js';
@@ -28,7 +30,7 @@ import {
 import { createPkcePair, verifyPkceSessionBinding } from '../utils/googlePkceHelpers.js';
 import { findOrCreateGoogleSupportUser } from '../utils/googleSupportUserHelpers.js';
 import { applyPrivilegedSessionAuth } from '../middleware/authHelpers.js';
-import { ROLE_SUPPORT_ADMIN } from '../constants/roles.js';
+import { ROLE_ISOPLUS_USER, ROLE_SUPPORT_ADMIN } from '../constants/roles.js';
 
 const router = express.Router();
 
@@ -40,6 +42,11 @@ function saveSessionBestEffort(req) {
   return new Promise((resolve) => {
     req.session.save(() => resolve());
   });
+}
+
+/** Group membership is re-checked only for sessions established via Google Workspace SSO. */
+function sessionRequiresGoogleGroupCheck(req) {
+  return req.session?.authProvider === SESSION_AUTH_PROVIDER_GOOGLE_SUPPORT;
 }
 
 function csvEscape(value) {
@@ -656,6 +663,7 @@ async function establishGoogleSupportSession(req, oauthData) {
     expiresIn: GOOGLE_SUPPORT_SESSION_EXPIRES_IN,
   });
   req.session.token = token;
+  req.session.authProvider = SESSION_AUTH_PROVIDER_GOOGLE_SUPPORT;
   const authorized = applyPrivilegedSessionAuth(req, tokenPayload);
   if (!authorized || !req.session.Authorization) {
     authFailure(req, {
@@ -671,6 +679,7 @@ async function establishGoogleSupportSession(req, oauthData) {
     }, req);
     delete req.session.token;
     delete req.session.Authorization;
+    delete req.session.authProvider;
     await saveSessionBestEffort(req);
     return {
       status: 503,
@@ -764,7 +773,7 @@ router.get('/verify', async (req, res) => {
       avatar: user.avatar,
     };
 
-    if (user.role === ROLE_SUPPORT_ADMIN) {
+    if (sessionRequiresGoogleGroupCheck(req)) {
       const membership = await checkUserGroupMembership(user.email);
       if (membership.status === 'not_member') {
         warn('Google-Auth', 'Support admin session revoked: no longer in access group', {
@@ -773,6 +782,7 @@ router.get('/verify', async (req, res) => {
         }, req);
         delete req.session.token;
         delete req.session.Authorization;
+        delete req.session.authProvider;
         await saveSessionBestEffort(req);
         return res.status(403).json({
           message: 'Your account is not assigned to the required Workspace access group.',
@@ -1082,7 +1092,7 @@ async function findOrCreateOAuthUser(req, { authMethod, email, oauthId, name, ph
       password: '',
       oauthId,
       avatar: photo_url,
-      role: 'isoplus_user',
+      role: ROLE_ISOPLUS_USER,
     });
     await user.save();
     return user;
@@ -1099,6 +1109,18 @@ async function findOrCreateOAuthUser(req, { authMethod, email, oauthId, name, ph
   user.name = name;
   if (!user.oauthId) user.oauthId = oauthId;
   if (user.email !== email) user.email = email;
+  // ISO+ login always lands as a client operator — never keep a prior staff role.
+  if (user.role !== ROLE_ISOPLUS_USER) {
+    authStep(req, {
+      authMethod,
+      stage: 'normalize_isoplus_role',
+      message: 'Forcing isoplus_user role for ISO+ OAuth login',
+      email,
+      userId: user._id?.toString(),
+      data: { previousRole: user.role },
+    });
+    user.role = ROLE_ISOPLUS_USER;
+  }
   await user.save();
   return user;
 }
@@ -1186,6 +1208,7 @@ async function establishOAuthSession(req, { authorization, oauthData, method = '
   }
 
   req.session.Authorization = authorization;
+  req.session.authProvider = SESSION_AUTH_PROVIDER_ISOPLUS;
 
   authStep(req, {
     authMethod,
