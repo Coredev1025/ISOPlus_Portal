@@ -9,6 +9,7 @@
  * - utils/googleGroupMembershipHelpers.js — Admin SDK group check
  * - utils/googleMembershipCacheHelpers.js — verify re-check cache / break-glass
  * - routes/auth.js — /google/redirect, /google/callback, oauth-exchange, /verify
+ *   (`session.authProvider` distinguishes ISO+ vs Google sessions for group re-checks)
  */
 
 /** OAuth state JWT payload flow value for support-admin Google sign-in. */
@@ -16,6 +17,13 @@ export const GOOGLE_SUPPORT_OAUTH_FLOW = 'google-support-login';
 
 /** Stored on OAuthTicket.flow for the support-admin handoff ticket. */
 export const GOOGLE_SUPPORT_TICKET_FLOW = 'google-support';
+
+/**
+ * express-session `authProvider` values — how this browser session was established.
+ * `/verify` uses this (not Mongo role alone) to decide whether to re-check Workspace group membership.
+ */
+export const SESSION_AUTH_PROVIDER_ISOPLUS = 'isoplus';
+export const SESSION_AUTH_PROVIDER_GOOGLE_SUPPORT = GOOGLE_SUPPORT_TICKET_FLOW;
 
 /** Session key for pre-auth PKCE + state binding (express-session). */
 export const GOOGLE_SUPPORT_PREAUTH_SESSION_KEY = 'googleSupportOAuth';

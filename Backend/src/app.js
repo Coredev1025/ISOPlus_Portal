@@ -118,6 +118,9 @@ export function createApp({ mongoUri } = {}) {
       if (role === 'support_admin' || role === 'owner') {
         req.session.Authorization = `Bearer ${process.env.PERSONAL_ACCESS_TOKEN || ''}`;
       }
+      if (req.body?.authProvider) {
+        req.session.authProvider = req.body.authProvider;
+      }
       await req.session.save();
       return res.json({ ok: true });
     });
