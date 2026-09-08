@@ -96,7 +96,17 @@ export function resolveParticipantTaxReceiverDetails(dbItems, refItemsMap, helpe
   return { participantName, receiverName, receiverAddress };
 }
 
-function resolveParticipantTaxRowDate(dbItem, helpers) {
+/**
+ * The service date this row PRINTS, per section 2.3 of the invoice selection
+ * spec: the actual shift end for a delivered SaH row, the scheduled shift start
+ * for anything else.
+ *
+ * Exported so selection can agree with it rather than re-deriving the rule.
+ * `utils/invoiceItemSelection.js` (resolvedItemDate) holds the same decision as
+ * data in constants/invoiceSelection.js; the unit tests pin the two together so
+ * an item cannot be selected into one period and printed into another.
+ */
+export function resolveParticipantTaxRowDate(dbItem, helpers) {
   const { getValueFromFlatData, attributeNames, dateFmt } = helpers;
   const getValue = (attributeName) => getValueFromFlatData(dbItem, attributeName);
   const transactionStatus = helpers.formatLabelValue(getValue(attributeNames.TRANSACTION_STATUS));

@@ -540,14 +540,25 @@ describe('getInvoiceGeneratorData', () => {
     expect(result.total).toBe(2);
   });
 
-  it('filters on the actual shift end date independently of the scheduled range', async () => {
+  // This test used to seed itm_delivered_out with a scheduled start of
+  // 2025-03-02 — inside the window — and assert it was excluded. That
+  // expectation encoded the single-field filter that was the defect: spec 2.1
+  // qualifies an item when EITHER date falls in the period, so a row scheduled
+  // in March belongs on a March invoice however late it was delivered. The
+  // fixture now puts both of itm_delivered_out's dates outside the window, so
+  // the assertion still holds and holds for the right reason.
+  it('filters on either date independently of the scheduled range', async () => {
     await seedShifts([
       shiftDoc('itm_delivered_in', {
         [ATTRIBUTE_NAMES.SCHEDULED_START]: '2025-02-27T09:00:00Z',
         [ATTRIBUTE_NAMES.ACTUAL_END]: '2025-03-02T09:00:00Z',
       }),
-      shiftDoc('itm_delivered_out', {
+      shiftDoc('itm_scheduled_in', {
         [ATTRIBUTE_NAMES.SCHEDULED_START]: '2025-03-02T09:00:00Z',
+        [ATTRIBUTE_NAMES.ACTUAL_END]: '2025-04-02T09:00:00Z',
+      }),
+      shiftDoc('itm_delivered_out', {
+        [ATTRIBUTE_NAMES.SCHEDULED_START]: '2025-02-02T09:00:00Z',
         [ATTRIBUTE_NAMES.ACTUAL_END]: '2025-04-02T09:00:00Z',
       }),
     ]);
@@ -560,7 +571,72 @@ describe('getInvoiceGeneratorData', () => {
       makeDeps(),
     );
 
-    expect(result.items.map((row) => row.id)).toEqual(['itm_delivered_in']);
+    expect(result.items.map((row) => row.id)).toEqual(['itm_delivered_in', 'itm_scheduled_in']);
+  });
+
+  // Spec 2.1 is an OR across the type's two date fields. A SaH row that was
+  // cancelled or is an adjustment never gets an Actual Shift End, so a
+  // service-delivery window reading only that field never lists it, selection
+  // never sees it and it is never billed. Breaks if the OR loses its scheduled
+  // leg again.
+  it('lists a cancelled row whose scheduled start falls in the service-delivery window', async () => {
+    await seedShifts([
+      shiftDoc('itm_cancelled_no_end', {
+        [ATTRIBUTE_NAMES.SCHEDULED_START]: '2025-03-10T09:00:00Z',
+        [ATTRIBUTE_NAMES.TRANSACTION_STATUS]: 'Cancelled - To be claimed and invoiced if applicable',
+      }),
+    ]);
+
+    const result = await getInvoiceGeneratorData(
+      {
+        ...baseQueryArgs,
+        query: { serviceDeliveryStart: '2025-03-01T00:00:00Z', serviceDeliveryEnd: '2025-03-31T23:59:59Z' },
+      },
+      makeDeps(),
+    );
+
+    expect(result.items.map((row) => row.id)).toEqual(['itm_cancelled_no_end']);
+  });
+
+  // The other direction: widening the window must not start listing a row that
+  // neither date puts inside it.
+  it('still excludes a row with neither date inside the service-delivery window', async () => {
+    await seedShifts([
+      shiftDoc('itm_outside_both', {
+        [ATTRIBUTE_NAMES.SCHEDULED_START]: '2025-01-10T09:00:00Z',
+        [ATTRIBUTE_NAMES.ACTUAL_END]: '2025-01-11T09:00:00Z',
+      }),
+    ]);
+
+    const result = await getInvoiceGeneratorData(
+      {
+        ...baseQueryArgs,
+        query: { serviceDeliveryStart: '2025-03-01T00:00:00Z', serviceDeliveryEnd: '2025-03-31T23:59:59Z' },
+      },
+      makeDeps(),
+    );
+
+    expect(result.items).toEqual([]);
+  });
+
+  // Spec 2.4: both spellings of the same field reach us, and which one a row
+  // carries depends on when it was synced.
+  it('reads the scheduled start under both spellings for the service-delivery window', async () => {
+    await seedShifts([
+      shiftDoc('itm_and_spelling', {
+        'Scheduled Shift Start Date and Time': '2025-03-10T09:00:00Z',
+      }),
+    ]);
+
+    const result = await getInvoiceGeneratorData(
+      {
+        ...baseQueryArgs,
+        query: { serviceDeliveryStart: '2025-03-01T00:00:00Z', serviceDeliveryEnd: '2025-03-31T23:59:59Z' },
+      },
+      makeDeps(),
+    );
+
+    expect(result.items.map((row) => row.id)).toEqual(['itm_and_spelling']);
   });
 
   it('matches the participant filter case-insensitively against the resolved profile name', async () => {

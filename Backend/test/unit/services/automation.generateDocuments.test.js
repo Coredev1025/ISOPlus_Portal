@@ -2,7 +2,14 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import mongoose from 'mongoose';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// Section 3.5 asks for the "nothing to bill" decision to be logged, so the log
+// line is the behaviour under test here, not incidental noise.
+vi.mock('../../../src/utils/logger.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, info: vi.fn() };
+});
 
 import Board from '../../../src/models/Board.js';
 import Business from '../../../src/models/Business.js';
@@ -18,6 +25,7 @@ import { GENERATOR_LIST_LIMIT } from '../../../src/constants/automation.js';
 import { parseListPagination } from '../../../src/utils/itemsRouteHelpers.js';
 import { getNdisInvoiceGeneratorData } from '../../../src/utils/ndisInvoiceGeneratorRouteHelpers.js';
 import { ndisInvoiceGeneratorListDeps } from '../../../src/utils/automationInvoiceGeneratorDeps.js';
+import { info } from '../../../src/utils/logger.js';
 
 const WS = 'ws-gen';
 const BOARD = 'board-gen';
@@ -158,6 +166,62 @@ describe('generateInvoicesForBoard — Invoice Generator pipeline', () => {
 
     expect(results).toHaveLength(0);
     expect(await InvoiceNumber.countDocuments({ workspaceId: WS })).toBe(0);
+  });
+
+  // Spec 3.5: a run that bills nothing must say so. Both empty-selection exits
+  // returned in silence while the sibling early exits above them logged, so a
+  // period that correctly had nothing to bill was indistinguishable from one
+  // that selected nothing because a status alias or a date field was missing —
+  // the run closes Succeeded either way. This is a recorded field trap.
+  it('logs an NDIS period that selected nothing rather than closing silently', async () => {
+    await seedNdisGeneratorShift(JANUARY_SHIFT);
+    info.mockClear();
+
+    const results = await generateInvoicesForBoard({
+      workspaceId: WS, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: '20260814-1509',
+      schedule: MONTHLY,
+    });
+
+    expect(results).toHaveLength(0);
+    expect(info).toHaveBeenCalledWith(
+      'Automation',
+      'No billable items for the period; no invoice and no email',
+      expect.objectContaining({
+        workspaceId: WS,
+        boardId: BOARD,
+        periodKey: '20260814-1509',
+        // 'Care Management - NDIS' names neither Certification nor
+        // Verification, so invoiceTypeFromBoardLabel returns null for it. The
+        // log records what it actually ran under rather than inventing a type.
+        invoiceType: null,
+        listed: 0,
+      }),
+    );
+  });
+
+  it('logs an Age Care period that selected nothing rather than closing silently', async () => {
+    await Board.create({
+      workspaceId: WS, boardId: 'board-sah', name: 'SaH Board', label: 'Care Management - SaH',
+    });
+    info.mockClear();
+
+    const results = await generateInvoicesForBoard({
+      workspaceId: WS, boardId: 'board-sah', slot: SLOT, timezone: TZ, periodKey: '20260814-1509',
+      schedule: MONTHLY,
+    });
+
+    expect(results).toHaveLength(0);
+    expect(info).toHaveBeenCalledWith(
+      'Automation',
+      'No billable items for the period; no invoice and no email',
+      expect.objectContaining({
+        workspaceId: WS,
+        boardId: 'board-sah',
+        periodKey: '20260814-1509',
+        invoiceType: 'sah',
+        listed: 0,
+      }),
+    );
   });
 
   it('invoices pending Invoice Generator rows and writes InvoiceNumber + PDFLink', async () => {

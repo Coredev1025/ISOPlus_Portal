@@ -84,13 +84,20 @@ export const SPELLING_VARIANTS = [
  * only as the "removed listed items" warn in utils/automationItemSelection.js
  * (observed on portal-dev 2026-08-26: listed 5, selected 0).
  *
- * SPELLING_VARIANTS does not cover this: it swaps ' & ' for ' and ', which is
- * a different axis from what the column is called.
+ * SaH's status field is named 'Transaction Status' (section 2.3), and carried
+ * no alias entry at all until now — so a SaH board spelling its column
+ * differently would resolve an empty status, fail the status check for every
+ * item, and bill nothing for the whole board with no error. Same failure mode
+ * as Job Status, just on the field SaH selection actually reads.
+ *
+ * SPELLING_VARIANTS does not cover either entry: it swaps ' & ' for ' and ',
+ * which is a different axis from what the column is called.
  *
  * Read by: utils/invoiceSelectionFields.js (readStatusField).
  */
 export const STATUS_FIELD_ALIASES = Object.freeze({
   'Job Status': ['Job Status', 'Job status', 'JobStatus', 'Shift Status', 'ShiftStatus'],
+  'Transaction Status': ['Transaction Status', 'Transaction status', 'TransactionStatus'],
 });
 
 const NDIS_STATUSES = ['Completed', 'Cancelled'];
@@ -108,6 +115,37 @@ const SAH_STATUSES = [
   'Adjustment (Charge) - To be claimed and invoiced.',
 ];
 
+/**
+ * Which of the two date fields an item of this type actually HAS, per section
+ * 2.3 — the one the renderer prints, as opposed to the OR in 2.1 that decides
+ * membership. `whenStatusIn` names the statuses that take `use`; everything
+ * else takes `otherwise`. Both are 'primary'/'secondary' indexes into
+ * `dateFields` above, so a type cannot name a field it does not select on.
+ *
+ * The two rows below are exactly the two renderers, expressed as data:
+ *   NDIS  computeNdisServiceDate         — Cancelled takes the scheduled start,
+ *                                          otherwise the actual start.
+ *   SaH   resolveParticipantTaxRowDate   — 'Delivered - To be claimed and
+ *                                          invoiced.' takes the actual end,
+ *                                          otherwise the scheduled start.
+ *
+ * Statuses are compared through normalizeStatus, so the trailing period the
+ * SaH value sometimes carries does not matter here.
+ *
+ * Read by: utils/invoiceItemSelection.js (resolvedItemDate).
+ */
+const NDIS_DATE_RESOLUTION = {
+  whenStatusIn: ['Cancelled'],
+  use: 'primary',
+  otherwise: 'secondary',
+};
+
+const SAH_DATE_RESOLUTION = {
+  whenStatusIn: ['Delivered - To be claimed and invoiced'],
+  use: 'secondary',
+  otherwise: 'primary',
+};
+
 const NDIS_SELECTION = {
   statusField: 'Job Status',
   statuses: NDIS_STATUSES,
@@ -115,6 +153,7 @@ const NDIS_SELECTION = {
     'Scheduled Shift Start Date & Time',
     'Actual Shift Start Date and Time',
   ],
+  dateResolution: NDIS_DATE_RESOLUTION,
 };
 
 const SAH_SELECTION = {
@@ -124,6 +163,7 @@ const SAH_SELECTION = {
     'Scheduled Shift Start Date & Time',
     'Actual Shift End Date and Time',
   ],
+  dateResolution: SAH_DATE_RESOLUTION,
 };
 
 /**
