@@ -8,6 +8,17 @@ The client reports the statement he receives is still wrong. A section-by-sectio
 audit of the spec against the code found nine departures. Two of them bill money
 incorrectly today. This plan closes them in risk order.
 
+**Read this first, because it reframes the report.** The Statement of Account —
+the whole of section 4 — is not deployed anywhere. `generateStatementOfAccount.js`
+is absent from both `origin/develop` and `origin/main`; it exists only on
+`feature/KAN-10_statement_of_account`, whose pull request is still open. The
+statement the client is looking at is therefore the older NDIS monthly statement,
+which reports plan budget against services delivered and contains no invoice,
+payment, balance or ageing at all. Nothing in this plan changes that: section 4
+was built and tested, and it has not shipped. Merging is what fixes the document
+he is holding. The tasks below are what stop the shipped version being wrong in
+turn.
+
 ## Global constraints
 
 - **Every fix starts with a failing test** that reproduces the defect, run and
