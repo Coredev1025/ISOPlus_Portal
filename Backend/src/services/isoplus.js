@@ -981,7 +981,19 @@ function pageAttributesFromResponse(data) {
     return [];
 }
 
-/** ISO+ attributes are capped at 100 per page; walk `after` until has_more is false. */
+/**
+ * ISO+ attributes are capped at 100 per page; walk `after` until has_more is false.
+ *
+ * Uses the shared `createPaginator` (see iterateWorkspaces/iterateBoards above) instead of a
+ * hand-rolled while loop so this gets the same two safety guards for free:
+ *   - a max-page cap, so a runaway loop can't hang the request forever;
+ *   - a same/missing-cursor check, so if ISO+ ever reports has_more:true without giving a
+ *     usable `after` (or the same one twice), we throw instead of silently returning a
+ *     truncated-but-reported-as-successful attribute list — which would quietly reintroduce
+ *     the "attributes are missing" bug this function exists to fix, just via a different
+ *     trigger. A previous version of this function reimplemented pagination by hand and had
+ *     neither guard.
+ */
 async function fetchAllBoardAttributes(workspaceId, boardId, authorization) {
     const url = buildIsoPlusV2BoardAttributesUrl(workspaceId, boardId);
     const headers = {
@@ -990,33 +1002,23 @@ async function fetchAllBoardAttributes(workspaceId, boardId, authorization) {
         'Content-Type': 'application/json',
         'X-API-Version': '2025-02-26.morava',
     };
-    const params = {
+    const baseParams = {
         limit: '100',
         sort_by: 'created_at',
         sort_direction: 'desc',
     };
 
-    const attributes = [];
-    let after;
-    let hasMore = true;
-
-    while (hasMore) {
-        const response = await axios.get(url, {
-            headers,
-            params: after ? { ...params, after } : params,
-        });
-        if (response.status !== 200) {
-            return { attributes: null, status: response.status };
-        }
-        attributes.push(...pageAttributesFromResponse(response.data));
-        hasMore = Boolean(response.data?.has_more);
-        after = response.data?.after;
-        if (hasMore && !after) {
-            break;
-        }
+    try {
+        const attributes = await collectPaginated(
+            createPaginator(
+                (after) => isoPlusClient.get(url, { headers, params: withAfterParam(baseParams, after) }),
+                { selectData: (response) => pageAttributesFromResponse(response.data), debugKey: `attributes:${workspaceId}:${boardId}` },
+            ),
+        );
+        return { attributes, status: 200 };
+    } catch (err) {
+        return { attributes: null, status: err?.response?.status || 500 };
     }
-
-    return { attributes, status: 200 };
 }
 
 /** Load board attributes once per board for a setLogo run when attributesCache is provided. */
