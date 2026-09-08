@@ -107,12 +107,40 @@ function paymentRows(payments, period) {
 }
 
 /**
+ * Everything that had happened by the time the statement was struck.
+ *
+ * A document raised after `asAt` is not on this statement — it did not exist
+ * yet — and neither is a payment recorded after it. Without this boundary the
+ * ageing counted invoices the closing balance never saw, and the statement's
+ * own two figures disagreed: a local run produced buckets totalling $423.70
+ * against a closing balance of $400.50, which section 4.3's check rightly
+ * refused to render.
+ *
+ * A payment with no usable date is kept. It cannot be placed on either side of
+ * the boundary, and dropping it would report money as still owing that the
+ * client has already sent — the worse of the two errors to make on a document
+ * that asks them to pay.
+ */
+function asAtCutoff(invoices, payments, asAt) {
+  const at = new Date(asAt).getTime();
+  if (Number.isNaN(at)) return { invoices, payments };
+  const notAfter = (value) => {
+    const when = new Date(value).getTime();
+    return Number.isNaN(when) || when <= at;
+  };
+  return {
+    invoices: invoices.filter((inv) => notAfter(inv.createdAt)),
+    payments: payments.filter((p) => notAfter(p.date)),
+  };
+}
+
+/**
  * What is still owing on each invoice, for the ageing summary.
  *
  * Ageing is computed from the outstanding amount, not the invoiced amount: a
- * settled invoice must not keep appearing in a bucket. Every invoice is
- * considered, not only those raised in the period, because an older unpaid
- * invoice is exactly what the 90+ bucket is for.
+ * settled invoice must not keep appearing in a bucket. Every invoice raised by
+ * the statement date is considered, not only those raised in the period,
+ * because an older unpaid invoice is exactly what the 90+ bucket is for.
  */
 function outstandingByInvoice(invoices, payments) {
   return invoices
@@ -153,7 +181,10 @@ export function buildStatementLedger({
   ];
 
   const ledger = buildRunningBalance(openingBalance, rows);
-  const ageing = buildAgeingSummary(outstandingByInvoice(invoices, payments), asAt, timezone);
+  const settled = asAtCutoff(invoices, payments, asAt);
+  const ageing = buildAgeingSummary(
+    outstandingByInvoice(settled.invoices, settled.payments), asAt, timezone,
+  );
 
   return { ledger, ageing, payments };
 }
