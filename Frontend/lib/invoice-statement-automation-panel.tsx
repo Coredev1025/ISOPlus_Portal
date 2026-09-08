@@ -11,10 +11,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AutomationEmailBlock } from "@/lib/automation-email-block";
 import { AutomationScheduleBlock } from "@/lib/automation-schedule-block";
 import { AutomationStatusPanel } from "@/lib/automation-status-panel";
-import { hasInvalidEmail } from "@/lib/automation-helpers";
+import { hasInvalidEmail, mergeRecentDocuments } from "@/lib/automation-helpers";
 import { AUTOMATION_PANEL_POLL_MS } from "@/constants/automation";
 import {
   DEFAULT_BLOCK,
+  fetchAutomationDocuments,
   fetchAutomationSettings,
   saveAutomationSettings,
   type AutomationBlock,
@@ -143,10 +144,25 @@ export function InvoiceStatementAutomationPanel({
   const [savedSettings, setSavedSettings] =
     useState<AutomationSettings>(defaultSettings);
   // Held apart from settings because the PUT echo does not carry it — a save
-  // must not blank the recent-documents list.
+  // must not blank the recent-documents list. This is always the NEWEST page:
+  // both the mount fetch and every poll overwrite it with whatever
+  // `automation-settings` currently reports as page one.
   const [recentDocuments, setRecentDocuments] = useState<
     AutomationRecentDocument[]
   >([]);
+  // The pages a client has paged back through via Load More, oldest action
+  // last. Deliberately separate state from `recentDocuments`: a poll landing
+  // mid-way through a client reading last quarter's statements must refresh
+  // the newest page without discarding the history they already fetched.
+  // `mergeRecentDocuments` recombines the two for display on every render.
+  const [olderDocuments, setOlderDocuments] = useState<
+    AutomationRecentDocument[]
+  >([]);
+  // The cursor Load More sends next — the boundary right after the newest
+  // page, then advanced by each successful load. Null means there is nothing
+  // further back to fetch, so the button does not render.
+  const [documentsCursor, setDocumentsCursor] = useState<string | null>(null);
+  const [loadingMoreDocuments, setLoadingMoreDocuments] = useState(false);
   // Held apart from settings for the same reason as recentDocuments: the PUT
   // echo does not carry it, so a save must not blank the health notices.
   const [health, setHealth] = useState<AutomationSettings["health"]>(undefined);
@@ -178,6 +194,9 @@ export function InvoiceStatementAutomationPanel({
           if (first) setSettings(loaded);
           setSavedSettings(loaded);
           setRecentDocuments(loaded.recentDocuments ?? []);
+          // Re-anchors Load More to the page after whatever is now newest.
+          // olderDocuments is untouched — see the state comment above.
+          setDocumentsCursor(loaded.recentDocumentsCursor ?? null);
           setHealth(loaded.health);
           setLoadState("loaded");
         })
@@ -206,6 +225,27 @@ export function InvoiceStatementAutomationPanel({
   const restoreDefaults = () => {
     setShowSuccess(false);
     setSettings(defaultSettings());
+  };
+
+  /**
+   * Fetches the next page of document history and appends it to
+   * `olderDocuments`. A failure is swallowed rather than surfaced as a form
+   * error — the same choice the poll makes for its own failures — because the
+   * panel already has content and the cursor is left untouched, so the client
+   * can just click Load More again.
+   */
+  const handleLoadMore = async () => {
+    if (!documentsCursor || loadingMoreDocuments) return;
+    setLoadingMoreDocuments(true);
+    try {
+      const page = await fetchAutomationDocuments(workspaceId, documentsCursor);
+      setOlderDocuments((current) => mergeRecentDocuments(current, page.documents));
+      setDocumentsCursor(page.nextCursor);
+    } catch {
+      // Left as-is: see the comment above.
+    } finally {
+      setLoadingMoreDocuments(false);
+    }
   };
 
   const handleSave = async () => {
@@ -240,8 +280,14 @@ export function InvoiceStatementAutomationPanel({
       <AutomationStatusPanel
         invoice={savedSettings.invoice}
         statement={savedSettings.statement}
-        recentDocuments={recentDocuments}
+        // Recombined on every render rather than merged into state: this is
+        // what lets a poll refresh recentDocuments without wiping the pages
+        // already loaded in olderDocuments — see the comment on that state.
+        recentDocuments={mergeRecentDocuments(recentDocuments, olderDocuments)}
         health={health}
+        hasMoreDocuments={documentsCursor !== null}
+        loadingMoreDocuments={loadingMoreDocuments}
+        onLoadMoreDocuments={handleLoadMore}
       />
 
       <AutomationSection

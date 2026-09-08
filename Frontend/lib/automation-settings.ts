@@ -82,6 +82,13 @@ export type AutomationSettings = {
   /** GET only — the PUT echo does not carry it. */
   recentDocuments?: AutomationRecentDocument[];
   /**
+   * GET only, like recentDocuments. The cursor to pass to
+   * `fetchAutomationDocuments` for the page after `recentDocuments`. Null
+   * means `recentDocuments` already is the whole history, so Load More has
+   * nothing to fetch.
+   */
+  recentDocumentsCursor?: string | null;
+  /**
    * GET only, like recentDocuments. Queue and accounting-connection signals
    * from the same sources the admin System Health screen reads — see
    * `AutomationHealth` in lib/automation-status-panel.tsx.
@@ -113,10 +120,35 @@ export const DEFAULT_BLOCK: AutomationBlock = Object.freeze({
 const path = (workspaceId: string) =>
   `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/${workspaceId}/automation-settings`;
 
+const documentsPath = (workspaceId: string) =>
+  `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/${workspaceId}/automation-documents`;
+
 export async function fetchAutomationSettings(
   workspaceId: string,
 ): Promise<AutomationSettings> {
   const response = await axios.get(path(workspaceId));
+  return response.data;
+}
+
+/** One page of `automation-documents`, in the shape the route returns it. */
+export type AutomationDocumentsPage = {
+  documents: AutomationRecentDocument[];
+  nextCursor: string | null;
+};
+
+/**
+ * The page of recent-document history after `recentDocumentsCursor` (or after
+ * whatever cursor a previous call to this function returned). Omitting
+ * `cursor` — which nothing here does; that is what `fetchAutomationSettings`
+ * is for — would return the newest page again.
+ */
+export async function fetchAutomationDocuments(
+  workspaceId: string,
+  cursor: string,
+): Promise<AutomationDocumentsPage> {
+  const response = await axios.get(documentsPath(workspaceId), {
+    params: { cursor },
+  });
   return response.data;
 }
 

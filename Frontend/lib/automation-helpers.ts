@@ -170,6 +170,40 @@ export function blockNeedsAttention(block: AutomationBlock): boolean {
   );
 }
 
+/**
+ * Combines the poll-refreshed newest page of recent documents with the older
+ * pages a client has already paged back through via Load More.
+ *
+ * The panel polls every 60s, but a poll only ever refetches the newest page —
+ * see the effect in `lib/invoice-statement-automation-panel.tsx`. Without this
+ * merge, a poll landing while a client had Load More'd back several pages
+ * would replace `recentDocuments` and silently drop everything they had
+ * loaded. The two are kept as separate state and recombined here on every
+ * render instead.
+ *
+ * De-duplicated by pdfUrl — the one field the backend guarantees unique per
+ * document — because the newest page and an older page can legitimately
+ * overlap: a document generated between two polls shifts the page boundary by
+ * one, so the same document can arrive as both the tail of "newest" and the
+ * head of an already-loaded older page. `newest` is listed first, so its copy
+ * wins over a possibly-stale one from an older page.
+ *
+ * Pure: returns a new array and never touches its inputs.
+ */
+export function mergeRecentDocuments(
+  newest: readonly AutomationRecentDocument[],
+  older: readonly AutomationRecentDocument[]
+): AutomationRecentDocument[] {
+  const seen = new Set<string>();
+  const merged: AutomationRecentDocument[] = [];
+  for (const document of [...newest, ...older]) {
+    if (seen.has(document.pdfUrl)) continue;
+    seen.add(document.pdfUrl);
+    merged.push(document);
+  }
+  return merged;
+}
+
 /** Derived from EMAIL_TEXT_FIELDS so a new address field is validated too. */
 const EMAIL_FIELD_KEYS = EMAIL_TEXT_FIELDS.filter((field) => field.isEmail).map(
   (field) => field.key

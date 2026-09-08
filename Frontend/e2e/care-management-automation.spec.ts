@@ -1,6 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
 
 import { resetAutomationRun } from "./support/automation-run";
+import {
+  clearDocumentHistory,
+  seedDocumentHistory,
+} from "./support/document-history";
 import { signInSupportAdmin } from "./helpers/support-auth";
 
 /**
@@ -320,5 +324,52 @@ test.describe("Care Management automation (KAN-10 fixture)", () => {
     await expect.poll(() => rows.count()).toBeGreaterThan(5);
     await status.getByRole("button", { name: /show fewer/i }).click();
     await expect(rows).toHaveCount(5);
+  });
+
+  /**
+   * The third step of the same control. Five rows answer "did last night's run
+   * work"; expanding reaches the first page; Load more is how a client gets to
+   * a document from months ago, which is the only way the list is a record
+   * rather than a dashboard.
+   *
+   * Seeded rather than generated: proving it needs more than one page of
+   * documents, and a page is fifty. Generating those for real would be fifty
+   * PDF renders. See support/document-history.ts.
+   */
+  test("load more reaches documents behind the first page", async ({ page }) => {
+    // More than one page, by enough that the count after the fetch is a number
+    // this test can state exactly rather than merely bound.
+    seedDocumentHistory(WORKSPACE, 55);
+    try {
+      await page.goto("/dashboard");
+      await page.goto(AUTOMATION_URL);
+
+      const status = page.getByRole("region", { name: /automation status/i });
+      const rows = status.getByRole("listitem");
+      await expect(rows.first()).toBeVisible();
+
+      // Collapsed, so Load more is not on offer yet: the client has not been
+      // shown the page they already have.
+      await expect(status.getByRole("button", { name: /load more/i })).toHaveCount(0);
+
+      await status.getByRole("button", { name: /show \d+ more/i }).click();
+      await expect.poll(() => rows.count()).toBe(50);
+
+      const loadMore = status.getByRole("button", { name: /load more/i });
+      await expect(loadMore).toBeVisible();
+      await loadMore.click();
+
+      // The five behind the first page, and nothing repeated.
+      await expect.poll(() => rows.count(), { timeout: 15_000 }).toBeGreaterThan(50);
+      const references = await rows.allInnerTexts();
+      const seeded = references.filter((text) => text.includes("INV-HIST-"));
+      expect(new Set(seeded).size).toBe(seeded.length);
+
+      // Nothing further back, so the button retires rather than fetching an
+      // empty page forever.
+      await expect(loadMore).toHaveCount(0);
+    } finally {
+      clearDocumentHistory();
+    }
   });
 });

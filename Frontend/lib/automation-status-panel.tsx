@@ -159,16 +159,55 @@ function RecentDocumentRow({
  * and a remembered "expanded" that comes back on a later visit showing a
  * different run's documents is a worse default than starting from the top.
  */
+/**
+ * Fetches the next page of history from the server. Distinct from the
+ * expand/collapse button above it: that one reveals rows already in memory,
+ * this one asks the backend for rows that are not. It only makes sense once
+ * the in-memory list is fully shown — offering it against a collapsed list
+ * would let a client page the server for history the panel is already
+ * hiding client-side.
+ */
+function LoadMoreButton({
+  loading,
+  onLoadMore,
+}: Readonly<{ loading?: boolean; onLoadMore?: () => void }>) {
+  return (
+    <div className="mt-2 flex justify-center">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled={loading}
+        onClick={onLoadMore}
+        className="h-7 px-2.5 text-[12px] font-medium text-muted-foreground hover:text-foreground"
+      >
+        {loading ? "Loading…" : "Load more"}
+      </Button>
+    </div>
+  );
+}
+
 function RecentDocumentList({
   documents,
   timeZone,
+  hasMore,
+  loadingMore,
+  onLoadMore,
 }: Readonly<{
   documents: readonly AutomationRecentDocument[];
   timeZone?: string;
+  /** More history exists on the server beyond `documents`. */
+  hasMore?: boolean;
+  /** A Load More request is in flight. */
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
 }>) {
   const [expanded, setExpanded] = useState(false);
   const canExpand = documents.length > COLLAPSED_RECENT_DOCUMENTS;
   const shown = expanded ? documents : documents.slice(0, COLLAPSED_RECENT_DOCUMENTS);
+  // Only once everything already in memory is showing does "more" mean
+  // "more than the panel has at all" rather than "more than is shown".
+  const showLoadMore = expanded && hasMore;
 
   return (
     <div className="mt-4 border-t pt-3">
@@ -203,6 +242,9 @@ function RecentDocumentList({
           </Button>
         </div>
       ) : null}
+      {showLoadMore ? (
+        <LoadMoreButton loading={loadingMore} onLoadMore={onLoadMore} />
+      ) : null}
     </div>
   );
 }
@@ -226,6 +268,12 @@ type AutomationStatusPanelProps = Readonly<{
   recentDocuments: readonly AutomationRecentDocument[];
   /** Absent on a response from a backend that predates the health block. */
   health?: AutomationHealth;
+  /** More document history exists on the server beyond `recentDocuments`. */
+  hasMoreDocuments?: boolean;
+  /** A Load More request for the next page is in flight. */
+  loadingMoreDocuments?: boolean;
+  /** Fetches the next page. Only ever called while `hasMoreDocuments` is true. */
+  onLoadMoreDocuments?: () => void;
 }>;
 
 /**
@@ -253,6 +301,9 @@ export function AutomationStatusPanel({
   statement,
   recentDocuments,
   health,
+  hasMoreDocuments,
+  loadingMoreDocuments,
+  onLoadMoreDocuments,
 }: AutomationStatusPanelProps) {
   const notices = healthNotices(health);
   return (
@@ -299,6 +350,9 @@ export function AutomationStatusPanel({
           <RecentDocumentList
             documents={recentDocuments}
             timeZone={invoice.timezone ?? statement.timezone}
+            hasMore={hasMoreDocuments}
+            loadingMore={loadingMoreDocuments}
+            onLoadMore={onLoadMoreDocuments}
           />
         ) : null}
       </Card>
