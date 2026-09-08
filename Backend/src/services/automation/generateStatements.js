@@ -7,10 +7,7 @@ import {
 } from '../../constants/automation.js';
 import { ATTRIBUTE_NAMES } from '../../constants/monthlyStatementAttributes.js';
 import { canGenerateMonthlyStatement } from '../../utils/automationBoardFlags.js';
-import {
-  previousCalendarMonth,
-  previousMonthServiceDeliveryWindow,
-} from '../../utils/automationPreviousMonth.js';
+import { statementPeriodForSchedule } from '../../utils/automationStatementPeriod.js';
 import {
   generateStatementOfAccount,
   statementOfAccountItemId,
@@ -140,8 +137,27 @@ async function statementOfAccountFor({
   });
 }
 
+/**
+ * One participant's budget statement, or null when the period is not a
+ * calendar month and the document therefore cannot be issued for it.
+ *
+ * A replayed slot hands back the row already written rather than claiming a
+ * second statement number and uploading a second PDF.
+ */
+async function budgetStatementFor({
+  workspaceId, boardId, participant, period, timezone, periodKey, deps, existingByItemId,
+}) {
+  if (!period) return null;
+  const itemId = statementItemId(boardId, participant);
+  const existing = existingByItemId.get(itemId);
+  if (existing) return replayRow(existing, itemId, participant);
+  return generateOneStatement({
+    workspaceId, boardId, participant, period, timezone, periodKey, deps,
+  });
+}
+
 export async function generateStatementsForBoard({
-  workspaceId, boardId, slot, timezone, periodKey,
+  workspaceId, boardId, slot, timezone, periodKey, schedule,
 }) {
   const board = await Board.findOne({ boardId: mongoEq(String(boardId)) }).lean();
   const label = board?.label || '';
@@ -158,25 +174,33 @@ export async function generateStatementsForBoard({
   const existingAccounts = await existingStatementLinks(
     workspaceId, periodKey, PDFLINK_TYPE_STATEMENT_OF_ACCOUNT,
   );
-  const period = previousCalendarMonth(slot, timezone);
-  // The same calendar month, as instants — the statement of account works in
-  // dates, where the budget statement works in a month label and a year.
-  const window = previousMonthServiceDeliveryWindow(slot, timezone);
+  // Section 4.1: the period follows the configured cadence, not the calendar.
+  // The statement of account works in instants, so it takes the window as it
+  // is; the budget statement works in a month label and a year, and has one
+  // only when the period is a whole calendar month.
+  const { window, budgetPeriod } = statementPeriodForSchedule(slot, timezone, schedule);
   const accountPeriod = { start: window.serviceDeliveryStart, end: window.serviceDeliveryEnd };
+  if (!budgetPeriod) {
+    info('Automation', 'Statement period is not a calendar month; budget statement not issued', {
+      workspaceId, boardId, periodKey, every: schedule?.every, window,
+    });
+  }
   const participants = await listStatementParticipants(workspaceId, boardId);
   const deps = liveMonthlyStatementDeps();
   const results = [];
 
   for (const participant of participants) {
-    const itemId = statementItemId(boardId, participant);
-    const existing = existingByItemId.get(itemId);
-    if (existing) {
-      results.push(replayRow(existing, itemId, participant));
-    } else {
-      results.push(await generateOneStatement({
-        workspaceId, boardId, participant, period, timezone, periodKey, deps,
-      }));
-    }
+    const budget = await budgetStatementFor({
+      workspaceId,
+      boardId,
+      participant,
+      period: budgetPeriod,
+      timezone,
+      periodKey,
+      deps,
+      existingByItemId,
+    });
+    if (budget) results.push(budget);
 
     const account = await settledStatementOfAccount({
       workspaceId, boardId, participant, timezone, periodKey, accountPeriod, existingAccounts,

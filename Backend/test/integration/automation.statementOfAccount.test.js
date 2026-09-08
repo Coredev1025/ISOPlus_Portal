@@ -150,6 +150,32 @@ describe('a scheduled statement run', () => {
     expect(written).toBe(1);
   });
 
+  /**
+   * Section 4.1: the period is configured separately from invoicing and can be
+   * weekly. The cadence already decides when the job fires; it must also
+   * decide what the statement covers, or a weekly workspace receives the whole
+   * of last month again every week.
+   *
+   * The slot is 1 September in Sydney, so a weekly period is 25–31 August. The
+   * seeded invoice (5 August) and its payment (20 August) both fall before it:
+   * they belong to the opening balance, not to this period's charges and
+   * payments, and the account still closes at the $150 owing.
+   */
+  it('covers the week, not the month, on a weekly cadence', async () => {
+    await generateStatementsForBoard({
+      workspaceId: WORKSPACE,
+      boardId: BOARD,
+      slot: SLOT,
+      timezone: TZ,
+      periodKey: PERIOD_KEY,
+      schedule: { every: { n: 1, unit: 'week' } },
+    });
+
+    const rendered = statementRender();
+    expect(rendered).toBeDefined();
+    expect(JSON.parse(rendered.summary)[0]).toEqual(['$150.00', '$0.00', '$0.00', '$150.00']);
+  });
+
   // Section 4.5. Nothing invoiced, nothing owing, nothing to say.
   it('sends no statement of account for an account with no activity', async () => {
     await PDFLink.deleteMany({ type: PDFLINK_TYPE_NDIS_INVOICE });
