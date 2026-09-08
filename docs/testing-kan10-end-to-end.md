@@ -117,11 +117,20 @@ npm run dev:user -- --create --email dev@local.test         # NOT the bare form 
   still prints `local-dev-only`, but nothing will accept that password. The
   local way in is the one-time OAuth ticket the e2e helper uses —
   `node Backend/scripts/e2e-support-ticket.mjs`, then load
-  `http://localhost:3100/?ticket=<ticket>`. Observed 2026-09-08: exchanging that
-  ticket over the API answered **503** while `GET /api/auth/verify` answered
-  200, and the Automation tab then bounced to Financial Settings with the
-  business profile blank — i.e. a session existed but the workspace read was
-  refused. Budget for this before promising a browser screenshot.
+  `http://localhost:3100/?ticket=<ticket>`. **The exchange answers 503 while
+  `PERSONAL_ACCESS_TOKEN` is blank** — `applyPrivilegedSessionAuth` refuses to
+  issue a support_admin session without one, and `GET /api/auth/verify` still
+  answering 200 is what makes it look like the session exists. The local fix
+  is a placeholder token with offline mode pinned on, so nothing tries to use
+  it against ISO+:
+
+  ```
+  PERSONAL_ACCESS_TOKEN=local-offline-placeholder
+  ISOPLUS_OFFLINE=1
+  ```
+
+  then `docker compose up -d --force-recreate --no-deps backend`. With that the
+  exchange answers 200 and the e2e helper signs in.
 - **Offline mode is expected.** With `PERSONAL_ACCESS_TOKEN` blank the backend is
   in offline mode. Track A is unaffected — the handler reads boards from Mongo,
   not from ISO+. `board_sync` schedules deliberately skip; that is a success, not
@@ -179,19 +188,38 @@ docker exec -i isoplus-mongo mongosh business-dashboard --quiet --eval '
 rm -rf Backend/.local-s3/outbox/55390
 ```
 
-**Playwright will not start on Node 25.** `e2e/helpers/support-auth.ts` uses
-`import.meta`, and Playwright's TS loader on Node 25 rejects it with
-*"SyntaxError: Cannot use 'import.meta' outside a module"* → `Error: No tests
-found`. CI pins **Node 22** (`.github/workflows/cicd.yml`), so this is a local
-toolchain mismatch rather than a broken spec — but it means the e2e suite cannot
-be run on a machine that only has Node 25, and neither can the Frontend unit
-suite in full (`window.localStorage.clear is not a function` fails ~370 tests
-there for the same reason). Use Node 22 locally, or let CI run them.
+**Playwright, and the two things that stopped it starting.** Until 2026-09-08
+`e2e/helpers/support-auth.ts` used `import.meta`, which Playwright's TS loader
+rejects on **every** Node version because it transpiles e2e files to CommonJS
+(*"Cannot use 'import.meta' outside a module"* → `Error: No tests found`). That
+was misdiagnosed as a Node 25 problem; it reproduced on Node 22 and is fixed.
+The Frontend unit suite's Node 25 failure (`window.localStorage.clear is not a
+function`, ~370 tests) is real and separate — use Node 22 for that.
 
-Playwright covers this journey in `Frontend/e2e/care-management-automation.spec.ts`
-(needs `E2E_EMAIL`/`E2E_PASSWORD` from `npm run dev:user`, plus
-`E2E_SCHEDULER_API_KEY` for the tick test; `E2E_LOAD_FIXTURES=1` makes
-global-setup load the fixture). The fixture's pipeline invariants are pinned by
+Still broken on develop: `e2e/board-sync-schedule.spec.ts` was truncated to 20
+lines, mid-function, by the Google-auth commit `249492a1`, so a bare
+`npx playwright test` aborts with *"Unexpected token (21:0)"* before running
+anything. Name the other specs on the command line until it is restored.
+
+Playwright covers this journey in `Frontend/e2e/care-management-automation.spec.ts`.
+Sign-in is the one-time Google-support ticket (see Preconditions), minted by
+the helper itself; it needs `E2E_SCHEDULER_API_KEY` for the tick test and
+`E2E_LOAD_FIXTURES=1` to make global-setup load the fixture:
+
+```bash
+cd Frontend
+E2E_BACKEND_URL=http://localhost:4001 PLAYWRIGHT_BASE_URL=http://localhost:3100 \
+E2E_MONGO_DB=business-dashboard E2E_LOAD_FIXTURES=1 \
+E2E_SCHEDULER_API_KEY=$(grep '^SCHEDULER_API_KEY=' ../Backend/.env | cut -d= -f2-) \
+npx playwright test smoke auth-boundary care-management-automation \
+  invoice-statement-automation system-health
+```
+
+Against develop as of 2026-09-08 that is 37 passed, 3 skipped (the non-admin
+and flag-off cases want `E2E_USER_*` / `E2E_WORKSPACE_ID_NO_FLAG`), and two
+failures that are develop's, not the automation's: a signed-out `/dashboard`
+now redirects to `/` (KAN-27), and the System Health drill-down loses a cold
+deep-link to the `AppContext` race — it passes on rerun. The fixture's pipeline invariants are pinned by
 `Backend/test/unit/fixtures/careManagementAutomationFixture.test.js`, which runs
 the items through the real NDIS row builders.
 
