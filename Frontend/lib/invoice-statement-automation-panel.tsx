@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CalendarClock, Receipt } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -162,6 +162,10 @@ export function InvoiceStatementAutomationPanel({
   // page, then advanced by each successful load. Null means there is nothing
   // further back to fetch, so the button does not render.
   const [documentsCursor, setDocumentsCursor] = useState<string | null>(null);
+  // Has Load More advanced the cursor past the newest page? A ref, not state:
+  // the poll effect must read the current answer, and it runs once per
+  // workspaceId, so anything it closed over would be the mount value forever.
+  const pagedBackRef = useRef(false);
   const [loadingMoreDocuments, setLoadingMoreDocuments] = useState(false);
   // Held apart from settings for the same reason as recentDocuments: the PUT
   // echo does not carry it, so a save must not blank the health notices.
@@ -194,9 +198,16 @@ export function InvoiceStatementAutomationPanel({
           if (first) setSettings(loaded);
           setSavedSettings(loaded);
           setRecentDocuments(loaded.recentDocuments ?? []);
-          // Re-anchors Load More to the page after whatever is now newest.
-          // olderDocuments is untouched — see the state comment above.
-          setDocumentsCursor(loaded.recentDocumentsCursor ?? null);
+          // Re-anchors Load More to the page after whatever is now newest —
+          // but only while the client is still on page one. The polled cursor
+          // is always the boundary after page ONE, so adopting it once Load
+          // More has advanced past that would send the client back there: the
+          // next click refetches a page already merged in, the merge dedupes
+          // it away, and the button visibly does nothing. A functional update
+          // ref rather than the olderDocuments state, because this effect runs
+          // once per workspaceId and would otherwise close over the value that
+          // state had on mount — always empty.
+          if (!pagedBackRef.current) setDocumentsCursor(loaded.recentDocumentsCursor ?? null);
           setHealth(loaded.health);
           setLoadState("loaded");
         })
@@ -241,6 +252,7 @@ export function InvoiceStatementAutomationPanel({
       const page = await fetchAutomationDocuments(workspaceId, documentsCursor);
       setOlderDocuments((current) => mergeRecentDocuments(current, page.documents));
       setDocumentsCursor(page.nextCursor);
+      pagedBackRef.current = true;
     } catch {
       // Left as-is: see the comment above.
     } finally {

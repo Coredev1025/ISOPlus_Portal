@@ -163,9 +163,13 @@ async function recordPdfLinks({
     periodStart: period?.start ? new Date(period.start) : undefined,
     periodEnd: period?.end ? new Date(period.end) : undefined,
     invoiceType: invoiceType ?? undefined,
-    // The figure the invoice billed. Recorded once, on the row that represents
-    // the document, so the statement never has to recompute it — the Age Care
-    // total in particular depends on whether the board is Low Cat.
+    // The figure the invoice billed, so the statement never has to recompute
+    // it — the Age Care total in particular depends on whether the board is
+    // Low Cat. It is the whole document's total and it is stamped on every one
+    // of the invoice's rows, because there is one row per itemId and no row
+    // that stands for the document on its own. Any reader summing these must
+    // therefore dedupe by `pdfLink` first; `participantInvoices` does.
+
     invoiceTotal: Number.isFinite(Number(invoiceTotal)) ? Number(invoiceTotal) : undefined,
     invoiceNumber,
     participant,

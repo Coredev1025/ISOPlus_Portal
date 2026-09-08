@@ -315,6 +315,19 @@ Recorded here rather than by editing the sections above, per the convention in
   product decision as much as a technical one and is flagged on the pull
   request; making the budget statement period-aware means changing its template
   and its budget query, which is its own ticket.
+- **2.3, reusing the manual date resolution — deferred.** Membership is the OR
+  of 2.1 and is implemented and tested. The other half of 2.3 — selection and
+  the renderers agreeing on which single date an item HAS — is not: the two PDF
+  renderers still each resolve the date themselves, so an NDIS Cancelled shift
+  selected on its Actual Start can print a Scheduled Start outside the billed
+  period. Closing it means both renderers reading one shared resolver, which is
+  a change on the PDF-generation path, and first closing two gaps in them:
+  `computeNdisServiceDate` compares the status string exactly rather than
+  through the alias/trailing-period normalisation selection uses, and
+  `resolveParticipantTaxRowDate` has no fallback to the other field. A
+  configuration-driven resolver was written during this work and then removed
+  because nothing called it; an exported, tested, uncalled function that
+  comments describe as load-bearing is worse than an honest gap.
 - **2.7, selection as a query.** Status, date and already-invoiced predicates
   run in application code over the id list the Invoice Generator listing
   returns, not as a Mongo query. Equivalent at current volumes; the section's
@@ -330,9 +343,13 @@ Recorded here rather than by editing the sections above, per the convention in
   item first and records the ledger row second. A ledger-write failure
   deliberately does **not** release the claim, because by then the document
   exists and has usually been sent; releasing would hand an already-invoiced item
-  back to the next run. A marked item with no ledger row is excluded from every
-  future run, is visible, and is repairable. This is the same choice the
-  automated path already makes.
+  back to the next run. This is the same choice the automated path already makes.
+  A failed *claim* does not skip the ledger write: both partial states are
+  visible and repairable, and the ledger row is the Age Care path's own
+  re-billing guard (`generateAgeCareGeneratorInvoices` drops listed rows
+  carrying an `invoiceNumber`), so it is the last guard standing in exactly that
+  case. Claim-first is preferred because `Item.invoicedBy` is the only guard the
+  NDIS scheduled path reads.
 - **6, template deliverables.** The live template is
   `Backend/src/assets/statementOfAccount.json`, not
   `templates/statement-pdfme-template.json`, and a second copy under the

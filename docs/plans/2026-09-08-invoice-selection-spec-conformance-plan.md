@@ -113,27 +113,6 @@ items the spec says belong on the invoice. The failing test must pin both
 directions — a cancelled shift now selected, and no previously-billed item
 selected twice.
 
-## Task 3 — Selection and rendering disagree on which date an item has
-
-Spec 2.3 says reuse the manual date resolution. Selection does not: it OR-s both
-fields unconditionally, while `computeNdisServiceDate`
-(`utils/ndisMasterPlanLineHelpers.js:516-529`) and `resolveParticipantTaxRowDate`
-(`utils/webhookParticipantTaxPdfHelpers.js:99-110`) pick **one** field by status
-— NDIS Cancelled takes Scheduled, SaH `Delivered - To be claimed and invoiced.`
-takes Actual End.
-
-The two can disagree on a real item: an NDIS Cancelled shift whose Actual Start
-is inside the period but whose Scheduled Start is outside is selected by
-automation, then dated by the renderer to a day outside the billed period. The
-invoice carries a service date the period does not cover.
-
-`resolveParticipantTaxRowDate` is not even exported, so nothing can reuse it.
-
-**Fix:** export the resolver, and have selection agree with it. Keep the OR as
-the *membership* test the spec asks for in 2.1, and use the resolved date as the
-one printed. Add a test that pins selection and rendering to the same date for a
-cancelled shift.
-
 ## Task 4 — The manual path fails toward double billing
 
 Spec 3.4: if the design forces a choice, prefer leaving items unbilled.
@@ -193,6 +172,23 @@ priority in this plan.
 
 ## Deferred, with reasons
 
+- **Task 3 — spec 2.3's shared date resolution** — selection still OR-s both
+  date fields (spec 2.1 membership, which is correct and tested) while the two
+  renderers each pick one field by status, so an NDIS Cancelled shift can be
+  selected on its Actual Start and printed on a Scheduled Start outside the
+  billed period. Closing it means both PDF renderers reading one shared
+  resolver — a change on the PDF-generation path, with its own blast radius —
+  and closing two semantic gaps first: `computeNdisServiceDate` compares
+  `'Job Status' === 'Cancelled'` exactly, with none of the alias and
+  trailing-period handling `normalizeStatus`/`readStatusField` apply, and
+  `resolveParticipantTaxRowDate` has no `a || b` fallback, so a delivered SaH
+  row with no Actual End prints `' '`. A configuration-driven `resolvedItemDate`
+  was written and tested during this work but had no production caller; rather
+  than ship an exported, uncalled function that comments describe as
+  load-bearing, it was removed along with the `dateResolution` rows in
+  `constants/invoiceSelection.js` and the docstring claims that pointed at it.
+  `resolveParticipantTaxRowDate` stays exported — the export is harmless and
+  the resolver will need it.
 - **Spec 2.7's "query"** — status, date and invoiced predicates run in JS over an
   id list rather than in Mongo. Functionally equivalent at current volumes and
   not a correctness defect. Revisit if the OR proves slow on real data, which 2.7

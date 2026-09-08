@@ -139,17 +139,31 @@ async function writeInvoiceNumberRow({ workspaceId, boardId, itemId, invoiceNumb
  *
  * Neither write is retried and neither throws, because by the time this is
  * called the document already exists and has usually been sent; failing the
- * request would not un-send it. What the ordering buys is which half survives a
- * partial failure, and a marked item with no ledger row is the safe half: it is
- * excluded from every future run, so nobody is billed twice, and the missing row
- * is visible (an `invoicedBy` with no matching `invoicenumber` document) and
- * repairable. A ledger row with no marker is neither.
+ * request would not un-send it. What the ordering buys is which guard is more
+ * likely to be standing afterwards.
  *
- * So a failed claim skips the ledger write, and a failed ledger write does NOT
- * release the claim. Releasing it would hand the item straight back to the next
- * run — the double bill this ordering exists to prevent.
- * `generateUnderClaim` keeps its claim on a ledger failure for exactly this
- * reason; see the note on `record` there.
+ * Both partial states are equally visible and equally repairable — an
+ * `invoicedBy` with no matching `invoicenumber` row is exactly as greppable as
+ * the inverse. What is not equal is what reads them:
+ *
+ *   `Item.invoicedBy`  is the ONLY guard the NDIS scheduled path consults
+ *                      (`isAlreadyInvoiced` in utils/invoiceItemSelection.js).
+ *                      Lose it and that path bills the item again.
+ *   the ledger row     is a second guard on the Age Care path, which drops
+ *                      listed rows carrying an `invoiceNumber`
+ *                      (`generateAgeCareGeneratorInvoices`). It protects one
+ *                      path, not both.
+ *
+ * So the claim goes first, because it is the guard that covers every path. But
+ * a failed claim does not skip the ledger write: the Age Care guard is the only
+ * one left in that case, and dropping it too would leave a sent document with
+ * no defence anywhere. Both failures are warned about separately, so which half
+ * landed is readable from the logs.
+ *
+ * A failed ledger write does NOT release the claim. Releasing it would hand the
+ * item straight back to the next run — the double bill this ordering exists to
+ * prevent. `generateUnderClaim` keeps its claim on a ledger failure for exactly
+ * this reason; see the note on `record` there.
  */
 export async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, type, pdfLink = null) {
   try {
@@ -158,15 +172,14 @@ export async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNum
     });
     if (rejected.length > 0) await warnAlreadyInvoiced({ workspaceId, boardId, itemId, invoiceNumber, type });
   } catch (err) {
-    // The claim did not land, so the ledger row is not written either. Writing
-    // it here would produce the one state section 3.4 rules out — a recorded
-    // invoice for an unmarked item, which the next run bills again. A refusal
-    // is different and does not come through here: the item is marked, by an
-    // earlier invoice, and the second document is still worth recording.
-    warn('Webhook-Service', 'Failed to mark item as invoiced; the invoice number was not recorded either', {
+    // The claim did not land, so the item carries no marker. The ledger write
+    // below still runs: it is the Age Care path's own re-billing guard, and it
+    // is the only guard left standing here. A refusal is different and does not
+    // come through here — the item is marked, by an earlier invoice, and the
+    // second document is still worth recording.
+    warn('Webhook-Service', 'Failed to mark item as invoiced; the invoice number is still recorded', {
       workspaceId, boardId, itemId, invoiceNumber, type, error: err.message,
     }, {});
-    return;
   }
 
   try {

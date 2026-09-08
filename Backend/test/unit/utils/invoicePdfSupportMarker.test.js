@@ -109,23 +109,27 @@ describe('saveInvoiceNumber also sets the invoiced marker', () => {
  * unbilled — an unbilled item is recoverable on the next run, a double-billed
  * participant is not.
  *
- * Selection reads only `Item.invoicedBy` (`isAlreadyInvoiced` in
- * utils/invoiceItemSelection.js), never the `invoicenumber` ledger. So of the
- * two partial-failure states, only one is safe:
- *
- *   marker set, ledger row missing  → the item is excluded from every future
- *                                     run. Nobody is billed twice, and the
- *                                     missing row is visible and repairable.
- *   ledger row written, no marker   → the next scheduled run selects the item
- *                                     again and bills the participant twice.
- *
- * The second is the direction this used to fail in, because it wrote the
- * ledger row first and marked afterwards with only a warning.
+ * The NDIS scheduled path reads only `Item.invoicedBy` (`isAlreadyInvoiced` in
+ * utils/invoiceItemSelection.js), so the claim goes first: it is the guard
+ * that covers every path, and it used to be written last with only a warning
+ * on failure. The Age Care path additionally drops listed rows carrying an
+ * `invoiceNumber`, which comes from the ledger, so the ledger row is a second
+ * guard there — which is why it is still attempted after a failed claim
+ * rather than skipped.
  */
 describe('saveInvoiceNumber fails towards not billing twice', () => {
-  it('does not write the ledger row when the item could not be marked', async () => {
+  it('still writes the ledger row when the item could not be marked', async () => {
     // A real failure of the claim, provoked at the driver rather than by
     // mocking the marker module, so the whole claim path runs.
+    //
+    // This test previously asserted the opposite — that a failed claim skipped
+    // the ledger write. That expectation was wrong, not the code. The ledger
+    // row is not merely a record: `generateAgeCareGeneratorInvoices` filters
+    // the listing on `!row.invoiceNumber`, which comes from this collection, so
+    // on the Age Care path the row is a second re-billing guard. Skipping the
+    // write removed that guard in precisely the case where the first guard —
+    // the marker — had just failed to land. Both partial states are visible and
+    // repairable; only one of them leaves any guard standing on Age Care.
     const updateMany = vi.spyOn(Item, 'updateMany').mockRejectedValue(new Error('mongo is down'));
     try {
       await saveInvoiceNumber(WS, BOARD, 'a', INVOICE, 'PDF', 'https://s3/x.pdf');
@@ -133,8 +137,9 @@ describe('saveInvoiceNumber fails towards not billing twice', () => {
       updateMany.mockRestore();
     }
 
-    expect(await InvoiceNumber.findOne({ itemId: 'a' }).lean()).toBeNull();
-    const message = warnedMessages().find((m) => /was not recorded either/i.test(m));
+    const row = await InvoiceNumber.findOne({ itemId: 'a' }).lean();
+    expect(row.invoiceNumber).toBe(INVOICE);
+    const message = warnedMessages().find((m) => /Failed to mark item as invoiced/i.test(m));
     expect(message).toBeTruthy();
   });
 

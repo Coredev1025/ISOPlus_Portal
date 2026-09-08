@@ -14,6 +14,8 @@
  * second place.
  */
 
+import { uniqBy } from 'lodash-es';
+
 import Business from '../../models/Business.js';
 import Item from '../../models/Item.js';
 import PDFLink from '../../models/PDFLink.js';
@@ -55,6 +57,18 @@ export function statementOfAccountItemId(boardId, participant) {
  * to match the payments below: with the invoices read across the workspace, a
  * participant on two eligible boards had both boards' charges on each
  * statement and only one board's payments applied against them.
+ *
+ * One row per document, not per row. `recordPdfLinks` writes a PDFLink row per
+ * itemId and stamps the whole invoice's `invoiceTotal` on every one of them, so
+ * an invoice covering N shifts arrives here as N rows of the full amount. Left
+ * undeduped it charges the participant N times — and with no payment recorded
+ * the ageing buckets scale by the same N, so section 4.3's and 4.4's checks
+ * both pass and the overstated statement renders. `pdfLink` is the document
+ * identity the rest of the codebase already uses (`uniquePdfResults`, and the
+ * `$group: { _id: '$pdfLink' }` behind recent documents); `invoiceNumber` is a
+ * weaker key because a hand-raised row may carry none. A row with no `pdfLink`
+ * at all falls back to its own `_id` so that legacy rows stand alone rather
+ * than collapsing into one another on a shared null.
  */
 async function participantInvoices(workspaceId, boardId, participant) {
   const rows = await PDFLink.find({
@@ -63,8 +77,8 @@ async function participantInvoices(workspaceId, boardId, participant) {
     participant: mongoEq(String(participant)),
     type: { $in: [PDFLINK_TYPE_NDIS_INVOICE, PDFLINK_TYPE_AGE_CARE_INVOICE] },
     isDeleted: { $ne: true },
-  }).select('type invoiceNumber invoiceTotal createdAt').lean();
-  return invoicesFromDocuments(rows);
+  }).select('type invoiceNumber invoiceTotal createdAt pdfLink').lean();
+  return invoicesFromDocuments(uniqBy(rows, (row) => row.pdfLink ?? row._id));
 }
 
 /**

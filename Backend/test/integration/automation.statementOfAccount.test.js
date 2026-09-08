@@ -262,3 +262,66 @@ describe('a scheduled statement run, on untidy data', () => {
     expect(budget.map((row) => row.participant)).toEqual(['Aaron Test', PARTICIPANT]);
   });
 });
+
+/**
+ * The shape a real automation run actually writes.
+ *
+ * `recordPdfLinks` files one PDFLink row per itemId and stamps the whole
+ * invoice's `invoiceTotal` on every one of them, so an invoice covering N
+ * shifts leaves N rows carrying the full amount and one shared `pdfLink`. The
+ * statement must read them as one document. It cannot key on `invoiceNumber` —
+ * a hand-raised row may carry none — so `pdfLink` is the identity, which is
+ * what `uniquePdfResults` and the recent-documents aggregation already use.
+ *
+ * The reason this is worth an integration test rather than a unit one: with no
+ * payment recorded, the charges and the ageing buckets scale by the same N, so
+ * section 4.3's and 4.4's reconciliation checks both pass and the overstated
+ * statement is rendered, filed and emailed.
+ */
+describe('a scheduled statement run, on a multi-item invoice', () => {
+  const run = () => generateStatementsForBoard({
+    workspaceId: WORKSPACE, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: PERIOD_KEY,
+  });
+
+  /** The second shift on INV-1205: same document, same total, its own row. */
+  const secondRowOf = (overrides) => PDFLink.create({
+    workspaceId: WORKSPACE,
+    boardId: BOARD,
+    itemId: 'item-1b',
+    participant: PARTICIPANT,
+    type: PDFLINK_TYPE_NDIS_INVOICE,
+    invoiceNumber: 'INV-1205',
+    invoiceTotal: 250,
+    periodKey: '20260801-2300',
+    pdfLink: 'https://s3.example/inv-1205.pdf',
+    createdAt: new Date('2026-08-05T00:00:00.000Z'),
+    ...overrides,
+  });
+
+  it('charges a two-item invoice once, not once per item', async () => {
+    // No payment: this is the case where both reconciliation checks still pass.
+    await Item.updateOne({ itemId: 'item-1' }, { $unset: { 'data.Amount Received($)': '' } });
+    await secondRowOf({});
+
+    await run();
+
+    const rendered = statementRender();
+    expect(rendered).toBeDefined();
+    expect(JSON.parse(rendered.transactions)).toHaveLength(1);
+    expect(JSON.parse(rendered.summary)[0]).toEqual(['$0.00', '$250.00', '$0.00', '$250.00']);
+  });
+
+  it('carries a prior-period multi-item invoice into the opening balance once', async () => {
+    await Item.updateOne({ itemId: 'item-1' }, { $unset: { 'data.Amount Received($)': '' } });
+    // Both rows moved to July, before the August period opens.
+    const july = new Date('2026-07-05T00:00:00.000Z');
+    await PDFLink.updateOne({ itemId: 'item-1' }, { $set: { createdAt: july } });
+    await secondRowOf({ createdAt: july });
+
+    await run();
+
+    const rendered = statementRender();
+    expect(rendered).toBeDefined();
+    expect(JSON.parse(rendered.summary)[0]).toEqual(['$250.00', '$0.00', '$0.00', '$250.00']);
+  });
+});

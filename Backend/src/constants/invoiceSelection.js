@@ -115,37 +115,6 @@ const SAH_STATUSES = [
   'Adjustment (Charge) - To be claimed and invoiced.',
 ];
 
-/**
- * Which of the two date fields an item of this type actually HAS, per section
- * 2.3 — the one the renderer prints, as opposed to the OR in 2.1 that decides
- * membership. `whenStatusIn` names the statuses that take `use`; everything
- * else takes `otherwise`. Both are 'primary'/'secondary' indexes into
- * `dateFields` above, so a type cannot name a field it does not select on.
- *
- * The two rows below are exactly the two renderers, expressed as data:
- *   NDIS  computeNdisServiceDate         — Cancelled takes the scheduled start,
- *                                          otherwise the actual start.
- *   SaH   resolveParticipantTaxRowDate   — 'Delivered - To be claimed and
- *                                          invoiced.' takes the actual end,
- *                                          otherwise the scheduled start.
- *
- * Statuses are compared through normalizeStatus, so the trailing period the
- * SaH value sometimes carries does not matter here.
- *
- * Read by: utils/invoiceItemSelection.js (resolvedItemDate).
- */
-const NDIS_DATE_RESOLUTION = {
-  whenStatusIn: ['Cancelled'],
-  use: 'primary',
-  otherwise: 'secondary',
-};
-
-const SAH_DATE_RESOLUTION = {
-  whenStatusIn: ['Delivered - To be claimed and invoiced'],
-  use: 'secondary',
-  otherwise: 'primary',
-};
-
 const NDIS_SELECTION = {
   statusField: 'Job Status',
   statuses: NDIS_STATUSES,
@@ -153,7 +122,6 @@ const NDIS_SELECTION = {
     'Scheduled Shift Start Date & Time',
     'Actual Shift Start Date and Time',
   ],
-  dateResolution: NDIS_DATE_RESOLUTION,
 };
 
 const SAH_SELECTION = {
@@ -163,7 +131,6 @@ const SAH_SELECTION = {
     'Scheduled Shift Start Date & Time',
     'Actual Shift End Date and Time',
   ],
-  dateResolution: SAH_DATE_RESOLUTION,
 };
 
 /**

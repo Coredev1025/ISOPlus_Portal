@@ -9,24 +9,8 @@ import {
 } from '../../../src/constants/invoiceSelection.js';
 import {
   isItemInvoiceable,
-  resolvedItemDate,
   selectInvoiceableItems,
 } from '../../../src/utils/invoiceItemSelection.js';
-import { computeNdisServiceDate } from '../../../src/utils/ndisMasterPlanLineHelpers.js';
-import { resolveParticipantTaxRowDate } from '../../../src/utils/webhookParticipantTaxPdfHelpers.js';
-import { ATTRIBUTE_NAMES } from '../../../src/constants/monthlyStatementAttributes.js';
-import { formatLabelValue } from '../../../src/utils/ndisServiceRecords.js';
-
-/**
- * The collaborators routes/webhook.js hands the participant-tax renderer,
- * reduced to the four resolveParticipantTaxRowDate actually reads.
- */
-const participantTaxHelpers = (dateFmt) => ({
-  getValueFromFlatData: (item, name) => item?.data?.[name] ?? null,
-  attributeNames: ATTRIBUTE_NAMES,
-  formatLabelValue,
-  dateFmt,
-});
 
 /**
  * Selection is the rule in section 2.1 of the invoice selection spec: an item
@@ -349,95 +333,5 @@ describe('selectInvoiceableItems', () => {
 
   it('returns an empty array for no input rather than throwing', () => {
     expect(selectInvoiceableItems([], INVOICE_TYPE_NDIS_CERTIFICATION, JAN_PERIOD)).toEqual([]);
-  });
-});
-
-/**
- * Section 2.3: selection and rendering must agree on which date an item HAS.
- *
- * Membership stays the OR of 2.1 — either field inside the period qualifies —
- * but the date the invoice PRINTS is resolved by status, and the renderers
- * already do that: `computeNdisServiceDate` takes the scheduled start for a
- * Cancelled NDIS shift and the actual start otherwise;
- * `resolveParticipantTaxRowDate` takes the actual end for a delivered SaH row
- * and the scheduled start otherwise.
- *
- * Without a shared resolver an NDIS Cancelled shift whose actual start is
- * inside the period and whose scheduled start is outside it is selected by
- * automation and then printed with a service date the billed period does not
- * cover. These tests pin the two to the same field.
- */
-describe('resolvedItemDate (spec 2.3)', () => {
-  const TZ = 'Australia/Sydney';
-  const dateOnly = (value) => new Date(value).toLocaleString('en-AU', {
-    day: '2-digit', month: '2-digit', year: 'numeric', timeZone: TZ,
-  });
-
-  const CANCELLED_SCHEDULED = '2025-01-07T11:00:00.000000+11:00';
-  const CANCELLED_ACTUAL = '2025-02-19T11:00:00.000000+11:00';
-
-  it('dates a cancelled NDIS shift by the same field the renderer prints', () => {
-    const data = {
-      'Job Status': 'Cancelled',
-      'Scheduled Shift Start Date & Time': CANCELLED_SCHEDULED,
-      'Actual Shift Start Date and Time': CANCELLED_ACTUAL,
-    };
-
-    expect(resolvedItemDate(ndisItem(data), INVOICE_TYPE_NDIS_CERTIFICATION))
-      .toBe(CANCELLED_SCHEDULED);
-    expect(dateOnly(resolvedItemDate(ndisItem(data), INVOICE_TYPE_NDIS_CERTIFICATION)))
-      .toBe(computeNdisServiceDate(data, TZ));
-  });
-
-  it('dates a completed NDIS shift by the actual start, as the renderer does', () => {
-    const data = {
-      'Job Status': 'Completed',
-      'Scheduled Shift Start Date & Time': CANCELLED_SCHEDULED,
-      'Actual Shift Start Date and Time': CANCELLED_ACTUAL,
-    };
-
-    expect(resolvedItemDate(ndisItem(data), INVOICE_TYPE_NDIS_CERTIFICATION))
-      .toBe(CANCELLED_ACTUAL);
-    expect(dateOnly(resolvedItemDate(ndisItem(data), INVOICE_TYPE_NDIS_CERTIFICATION)))
-      .toBe(computeNdisServiceDate(data, TZ));
-  });
-
-  it('falls back to the other field when the resolved one is empty', () => {
-    const data = {
-      'Job Status': 'Cancelled',
-      'Actual Shift Start Date and Time': CANCELLED_ACTUAL,
-    };
-
-    expect(resolvedItemDate(ndisItem(data), INVOICE_TYPE_NDIS_CERTIFICATION))
-      .toBe(CANCELLED_ACTUAL);
-  });
-
-  it('dates a delivered SaH row by the actual end, as the renderer prints it', () => {
-    const data = {
-      'Transaction Status': 'Delivered - To be claimed and invoiced.',
-      'Scheduled Shift Start Date & Time': CANCELLED_SCHEDULED,
-      // The '& Time' spelling deliberately: resolveParticipantTaxRowDate reads
-      // that one only, so pinning agreement on the 'and Time' spelling would
-      // pin the renderer's own 2.4 gap instead of the shared rule.
-      'Actual Shift End Date & Time': CANCELLED_ACTUAL,
-    };
-    const item = sahItem(data);
-
-    expect(resolvedItemDate(item, INVOICE_TYPE_SAH)).toBe(CANCELLED_ACTUAL);
-    expect(dateOnly(resolvedItemDate(item, INVOICE_TYPE_SAH)))
-      .toBe(resolveParticipantTaxRowDate(item, participantTaxHelpers(dateOnly)));
-  });
-
-  it('dates a cancelled SaH row by the scheduled start, as the renderer prints it', () => {
-    const data = {
-      'Transaction Status': 'Cancelled - To be claimed and invoiced if applicable',
-      'Scheduled Shift Start Date & Time': CANCELLED_SCHEDULED,
-      'Actual Shift End Date and Time': CANCELLED_ACTUAL,
-    };
-    const item = sahItem(data);
-
-    expect(resolvedItemDate(item, INVOICE_TYPE_SAH)).toBe(CANCELLED_SCHEDULED);
-    expect(dateOnly(resolvedItemDate(item, INVOICE_TYPE_SAH)))
-      .toBe(resolveParticipantTaxRowDate(item, participantTaxHelpers(dateOnly)));
   });
 });

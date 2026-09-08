@@ -442,7 +442,7 @@ month** (`every: {n: 1, unit: 'month'}`, or no schedule at all). On a weekly,
 fortnightly, quarterly or multi-month cadence it is withheld, because its
 template says "previous calendar month" in fixed text; the statement of account
 below follows the configured period and still goes out. The run logs
-`Statement period is not a calendar month; no budget statement` once per run
+`Statement period is not a calendar month; budget statement not issued` once per run
 in that case.
 
 **A statement slot now produces two documents per participant, not one.** The
@@ -458,7 +458,14 @@ participant, so **a participant with no invoices gets no statement of account**
 — section 4.5, logged as `No account activity; no statement of account`. On a
 fresh fixture that is every participant, because the invoice branch drops
 everything at selection (`Invoice selection removed listed items from this
-period`). To exercise it, seed invoice rows and a payment by hand:
+period`). To exercise it, seed invoice rows and a payment by hand. **Seed the
+shape production writes, not one row per invoice.** `recordPdfLinks` writes one
+`pdflinks` row *per item* with the whole invoice's `invoiceTotal` on every row,
+so a real two-shift invoice is two rows sharing one `pdfLink` and one
+`invoiceNumber`. The statement path dedupes those by `pdfLink`; a seed of one row
+per invoice cannot tell whether it does, and that is exactly how a statement that
+charged a multi-item invoice once per item passed every hand-seeded check on
+2026-09-08. Insert two rows for at least one invoice and confirm one charge row:
 
 ```bash
 docker exec -i isoplus-mongo mongosh business-dashboard --quiet --eval '

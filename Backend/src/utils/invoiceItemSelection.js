@@ -18,7 +18,6 @@ import {
 import {
   hasDateInPeriod,
   normalizeStatus,
-  readField,
   readStatusField,
 } from './invoiceSelectionFields.js';
 
@@ -75,31 +74,6 @@ export function isItemInvoiceable(item, invoiceType, period) {
   const qualifies = statuses.some((candidate) => normalizeStatus(candidate) === status);
   if (!qualifies) return false;
   return hasDateInPeriod(item, dateFields, period);
-}
-
-/**
- * The single date this item HAS, per section 2.3.
- *
- * Membership is the OR of 2.1 and stays that way — `isItemInvoiceable` is
- * unchanged. This is the other half: once an item is on the invoice, which of
- * its two dates the document prints. The renderers pick one field by status
- * (computeNdisServiceDate, resolveParticipantTaxRowDate) and this reads the
- * same decision out of the configuration table, so selection and rendering
- * cannot date the same item differently.
- *
- * Falls back to the other field when the resolved one is empty, which is what
- * both renderers' `a || b` does and what the note under 2.3 asks for. Returns
- * '' when the item carries neither, the same miss `readField` reports.
- */
-export function resolvedItemDate(item, invoiceType) {
-  const { statusField, dateFields, dateResolution } = selectionConfigFor(invoiceType);
-  const status = normalizeStatus(readStatusField(item, statusField));
-  const matched = dateResolution.whenStatusIn
-    .some((candidate) => normalizeStatus(candidate) === status);
-  const chosen = matched ? dateResolution.use : dateResolution.otherwise;
-  const [primary, secondary] = dateFields;
-  const [first, second] = chosen === 'primary' ? [primary, secondary] : [secondary, primary];
-  return readField(item, first) || readField(item, second);
 }
 
 /**
