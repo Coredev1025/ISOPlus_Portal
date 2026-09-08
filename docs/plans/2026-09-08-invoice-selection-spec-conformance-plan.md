@@ -18,6 +18,37 @@ incorrectly today. This plan closes them in risk order.
   touchpoint comments. No hardcoded `'Australia/Sydney'`.
 - Backend suite green before each commit. This repo auto-deploys on merge.
 
+## Task 0 — A weekly statement restates the whole previous month (the reported defect)
+
+Spec 4.1: the statement period is configured separately from invoicing, and can
+be **weekly or monthly**. The code ignores the configured cadence entirely.
+`services/automation/generateStatements.js:161,164` calls
+`previousCalendarMonth(slot, timezone)` and
+`previousMonthServiceDeliveryWindow(slot, timezone)` unconditionally; neither
+takes a period unit.
+
+The cadence is real everywhere else. `AutomationSettings.statement` reuses the
+invoice block schema, `every.unit` accepts day through year, and the Frontend
+exposes the weekday picker for `week`. That cadence correctly drives *when* the
+job fires. It simply never reaches the period the document covers.
+
+So a workspace set to weekly statements receives a statement every week, each one
+restating **the entire previous calendar month again**, each with a fresh
+statement number from a fresh weekly `periodKey`. To the person receiving it,
+that is four wrong documents a month. This is the closest match in the whole
+audit to the client's report that the statement he receives is still wrong.
+
+The cadence-aware primitive already exists and is already used by invoices:
+`utils/automationScheduleWindow.js:51-64`
+`schedulePeriodServiceDeliveryWindow(slot, timezone, schedule)`, called from
+`services/automation/generateDocuments.js`. The statement path never calls it.
+
+**Fix:** thread the schedule through and derive the period from the cadence,
+reusing that primitive. Preserve monthly behaviour byte-for-byte — characterize
+it with a passing test first. Decide deliberately what the older NDIS budget
+statement's month label and year mean on a weekly period rather than rendering a
+misleading month name.
+
 ## Task 1 — Xero routes never mark an item invoiced (double billing, live)
 
 `Backend/src/routes/xero.js:125` declares a private `saveInvoiceNumber` that
@@ -130,6 +161,24 @@ false for every item — the whole board bills nothing, silently. This is the sa
 failure that was already hit once on portal-dev ("listed 5, selected 0").
 
 **Fix:** add the alias. One row in the table.
+
+## Task 7 — The template deliverables section 6 promises do not exist
+
+Section 6 names `templates/statement-pdfme-template.json`,
+`templates/statement-sample.pdf`, `templates/render-sample.mjs` and
+`templates/README.md`. None exists anywhere in the repo. The working template is
+`Backend/src/assets/statementOfAccount.json`, with no committed sample to look
+at and no written record of the layout constraints the next person editing it
+must respect.
+
+Not a functional defect — the template renders, the dynamic table paginates, and
+`@pdfme/generator` is pinned at the 5.5.8 the spec names. It is a documentation
+gap, and the constraints are the part worth having: they are what stops the next
+edit breaking pagination.
+
+**Fix:** write `templates/README.md` recording the constraints, and a
+`render-sample.mjs` that produces a sample from the committed template. Lowest
+priority in this plan.
 
 ## Deferred, with reasons
 
