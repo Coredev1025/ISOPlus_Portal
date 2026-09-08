@@ -1,10 +1,13 @@
 import { execSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import type { Page } from "@playwright/test";
 import { expect } from "@playwright/test";
 
-const backendRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../Backend");
+// __dirname, not import.meta.url: Playwright's TS loader transpiles this file
+// to CommonJS, where import.meta is a syntax error and every spec importing
+// this helper fails to load — on Node 22 as well as 25. global-setup.ts and
+// support/automation-run.ts resolve the repo the same way.
+const backendRoot = resolve(__dirname, "../../../Backend");
 
 const BACKEND =
   process.env.E2E_BACKEND_URL ??
