@@ -1,10 +1,20 @@
 import Board from '../../models/Board.js';
 import Item from '../../models/Item.js';
 import PDFLink from '../../models/PDFLink.js';
-import { PDFLINK_TYPE_MONTHLY_STATEMENT } from '../../constants/automation.js';
+import {
+  PDFLINK_TYPE_MONTHLY_STATEMENT,
+  PDFLINK_TYPE_STATEMENT_OF_ACCOUNT,
+} from '../../constants/automation.js';
 import { ATTRIBUTE_NAMES } from '../../constants/monthlyStatementAttributes.js';
 import { canGenerateMonthlyStatement } from '../../utils/automationBoardFlags.js';
-import { previousCalendarMonth } from '../../utils/automationPreviousMonth.js';
+import {
+  previousCalendarMonth,
+  previousMonthServiceDeliveryWindow,
+} from '../../utils/automationPreviousMonth.js';
+import {
+  generateStatementOfAccount,
+  statementOfAccountItemId,
+} from './generateStatementOfAccount.js';
 import { renderMonthlyStatementPdf } from '../../utils/webhookMonthlyStatementPdfHelpers.js';
 import { liveMonthlyStatementDeps } from '../../routes/webhook.js';
 import { claimDocumentNumber } from '../../utils/documentNumberAllocator.js';
@@ -28,11 +38,11 @@ function statementItemId(boardId, participant) {
   return `statement:${boardId}:${participant}`;
 }
 
-async function existingStatementLinks(workspaceId, periodKey) {
+async function existingStatementLinks(workspaceId, periodKey, type = PDFLINK_TYPE_MONTHLY_STATEMENT) {
   const existing = await PDFLink.find({
     workspaceId: mongoEq(String(workspaceId)),
     periodKey: mongoEq(String(periodKey)),
-    type: PDFLINK_TYPE_MONTHLY_STATEMENT,
+    type,
   }).lean();
   return new Map(existing.map((link) => [link.itemId, link]));
 }
@@ -91,6 +101,37 @@ async function generateOneStatement({
   return { itemId, participant, pdfUrl: upload.fileUrl, statementNumber };
 }
 
+/**
+ * The statement of account for one participant, or null when there is nothing
+ * to state.
+ *
+ * A replayed slot hands back the row already written rather than claiming a
+ * second statement number and uploading a second PDF to the client — the same
+ * rule the budget statement above follows, keyed on its own itemId so the two
+ * documents replay independently.
+ */
+async function statementOfAccountFor({
+  workspaceId, boardId, participant, timezone, periodKey, accountPeriod, existingAccounts,
+}) {
+  const itemId = statementOfAccountItemId(boardId, participant);
+  const existing = existingAccounts.get(itemId);
+  if (existing) {
+    const row = { itemId, participant, pdfUrl: existing.pdfLink };
+    if (existing.invoiceNumber) row.statementNumber = existing.invoiceNumber;
+    return row;
+  }
+  return generateStatementOfAccount({
+    workspaceId,
+    boardId,
+    participant,
+    period: accountPeriod,
+    timezone,
+    periodKey,
+    claimStatementNumber: () => allocateStatementNumber(workspaceId),
+    nameField: ATTRIBUTE_NAMES.FULL_NAME,
+  });
+}
+
 export async function generateStatementsForBoard({
   workspaceId, boardId, slot, timezone, periodKey,
 }) {
@@ -104,7 +145,14 @@ export async function generateStatementsForBoard({
   }
 
   const existingByItemId = await existingStatementLinks(workspaceId, periodKey);
+  const existingAccounts = await existingStatementLinks(
+    workspaceId, periodKey, PDFLINK_TYPE_STATEMENT_OF_ACCOUNT,
+  );
   const period = previousCalendarMonth(slot, timezone);
+  // The same calendar month, as instants — the statement of account works in
+  // dates, where the budget statement works in a month label and a year.
+  const window = previousMonthServiceDeliveryWindow(slot, timezone);
+  const accountPeriod = { start: window.serviceDeliveryStart, end: window.serviceDeliveryEnd };
   const participants = await listStatementParticipants(workspaceId, boardId);
   const deps = liveMonthlyStatementDeps();
   const results = [];
@@ -119,11 +167,16 @@ export async function generateStatementsForBoard({
       // rendering blank.
       if (existing.invoiceNumber) row.statementNumber = existing.invoiceNumber;
       results.push(row);
-      continue;
+    } else {
+      results.push(await generateOneStatement({
+        workspaceId, boardId, participant, period, timezone, periodKey, deps,
+      }));
     }
-    results.push(await generateOneStatement({
-      workspaceId, boardId, participant, period, timezone, periodKey, deps,
-    }));
+
+    const account = await statementOfAccountFor({
+      workspaceId, boardId, participant, timezone, periodKey, accountPeriod, existingAccounts,
+    });
+    if (account) results.push(account);
   }
   return results;
 }

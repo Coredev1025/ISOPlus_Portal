@@ -46,6 +46,7 @@ export const OUTPUT_TYPE = {
   NDIS_QUOTE: 'NDIS-quote',
   PARTICIPANT_INVOICE: 'Participant-invoices',
   MONTHLY_STATEMENT: 'monthly-statements',
+  STATEMENT_OF_ACCOUNT: 'statements-of-account',
   INVOICE: 'invoices',
   QUOTE: 'quote',
   PURCHASE_ORDER: 'purchaseorder',
