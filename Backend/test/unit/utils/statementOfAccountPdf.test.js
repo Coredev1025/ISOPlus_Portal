@@ -154,3 +154,59 @@ describe('renderStatementOfAccountPdf', () => {
     )).rejects.toThrow(/does not reconcile/i);
   });
 });
+
+/**
+ * pdfme's multiVariableText refuses to render a block if ANY of its variables
+ * is empty — `validateVariables` returns false and `pdfRender` returns without
+ * drawing anything. Found on a local run: a participant whose profile carried
+ * no address produced a statement with the whole STATEMENT TO block missing,
+ * name included, so the document did not say who it was for.
+ *
+ * The same trap covers every block on this template: a business with no ABN
+ * would lose its entire letterhead, and one missing bank field would take the
+ * whole payment block with it.
+ */
+describe('buildStatementInputs — a missing value must not blank its block', () => {
+  const statement = {
+    provider: { name: 'Dev-Test11', abn: '', address: '' },
+    recipient: { name: 'Jane Smith', address: '' },
+    meta: {
+      statementNumber: 'STM-23',
+      statementDate: '2026-08-31T00:00:00.000Z',
+      periodStart: '2026-08-01T00:00:00.000Z',
+      periodEnd: '2026-08-31T00:00:00.000Z',
+      accountNumber: 'Jane Smith',
+    },
+    ledger: {
+      rows: [], openingBalance: 0, closingBalance: 0, totalCharges: 0, totalPayments: 0,
+    },
+    ageing: {
+      current: 0, d1to30: 0, d31to60: 0, d61to90: 0, d90plus: 0,
+    },
+    bank: {
+      accountName: 'Dev-Test11', bankName: '', bsb: '', accountNumber: '', reference: 'STM-23',
+    },
+  };
+
+  const variablesOf = (field) => Object.values(JSON.parse(field));
+
+  it('keeps every variable non-empty, so the block still renders', () => {
+    const inputs = buildStatementInputs(statement);
+    for (const field of ['provider', 'recipient', 'metaValues', 'paymentValues']) {
+      expect(variablesOf(inputs[field]).every((value) => value !== ''), field).toBe(true);
+    }
+  });
+
+  it('still shows the values that are there', () => {
+    const inputs = buildStatementInputs(statement);
+    expect(JSON.parse(inputs.recipient).recipientName).toBe('Jane Smith');
+    expect(JSON.parse(inputs.provider).providerName).toBe('Dev-Test11');
+  });
+
+  // A space, not a dash or "N/A": the statement must not print a placeholder at
+  // a client, it must simply leave the line empty.
+  it('substitutes nothing visible for the missing value', () => {
+    const inputs = buildStatementInputs(statement);
+    expect(JSON.parse(inputs.recipient).recipientAddress.trim()).toBe('');
+  });
+});

@@ -51,6 +51,23 @@ export function formatStatementMoney(value) {
 const moneyCell = (value) => (Number(value || 0) === 0 ? '' : formatStatementMoney(value));
 
 /**
+ * A variables object no multiVariableText will refuse.
+ *
+ * pdfme's `validateVariables` returns false — and `pdfRender` then draws
+ * NOTHING — when any one variable of a block is empty. A participant with no
+ * address on their profile therefore lost the entire STATEMENT TO block, name
+ * included, so the statement did not say who it was for. A business with no
+ * ABN would lose its whole letterhead the same way.
+ *
+ * A single space rather than a dash or 'N/A': it satisfies the plugin's
+ * truthiness test and prints nothing, which is what a missing address should
+ * look like on a document that goes to a client.
+ */
+const variables = (values) => JSON.stringify(
+  Object.fromEntries(Object.entries(values).map(([key, value]) => [key, value || ' '])),
+);
+
+/**
  * The transaction rows, as the table plugin wants them.
  */
 export function buildTransactionRows(rows, timezone) {
@@ -84,16 +101,16 @@ export function buildStatementInputs(statement, timezone = DEFAULT_TIMEZONE) {
   // Only the table and multiVariableText schemas appear here; the label-only
   // blocks are static text in the template and need no input.
   return {
-    provider: JSON.stringify({
+    provider: variables({
       providerName: provider.name,
       providerAbn: provider.abn,
       providerAddress: provider.address,
     }),
-    recipient: JSON.stringify({
+    recipient: variables({
       recipientName: recipient.name,
       recipientAddress: recipient.address,
     }),
-    metaValues: JSON.stringify({
+    metaValues: variables({
       statementNumber: meta.statementNumber,
       statementDate: formatDateNumericAU(meta.statementDate, timezone),
       period: `${formatDateNumericAU(meta.periodStart, timezone)} to ${formatDateNumericAU(meta.periodEnd, timezone)}`,
@@ -109,7 +126,7 @@ export function buildStatementInputs(statement, timezone = DEFAULT_TIMEZONE) {
     transactions: JSON.stringify(buildTransactionRows(ledger.rows, timezone)),
     ageing: JSON.stringify([AGEING_BUCKETS.map((b) => formatStatementMoney(ageing[b.key]))]),
 
-    paymentValues: JSON.stringify({
+    paymentValues: variables({
       bankAccountName: bank.accountName,
       bankName: bank.bankName,
       bankBsb: bank.bsb,
