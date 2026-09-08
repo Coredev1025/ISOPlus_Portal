@@ -9,6 +9,8 @@ function buildSetLogoContext(deps) {
     requestId,
     // One attributes fetch per board for the whole setLogo run (many document views share a board).
     attributesCache: new Map(),
+    // Document cover outcomes — used so setLogo cannot log success when every view failed/skipped.
+    documentCover: { attempted: 0, saved: 0, skipped: 0, failed: 0 },
     operationContext: {
       workspaceId,
       logoType: type,
@@ -368,12 +370,10 @@ async function resolveDocumentCoverAttributeId(deps, ctx, boardItem, viewItem) {
   return coverAttributeId;
 }
 
-function logDocumentItemCoverError(deps, ctx, err, boardItem, viewItem, item, itemValues, coverAttributeId, uploadImageURL) {
+function logDocumentItemCoverError(deps, ctx, err, boardItem, viewItem, item, coverAttributeId, uploadImageURL, requestPayload) {
   const {
-    authorization, workspaceId, logo, type, req,
-    getAllViews, iterateBoardItems, validateBoardAttributes, getItemValues,
-    getErrorMessage, errorMessageIncludes, sleep, logoItemsPageSize,
-    info, warn, error, logAttributeError, logApiError,
+    workspaceId, logo, req,
+    getErrorMessage, errorMessageIncludes, logAttributeError, logApiError,
   } = deps;
   const { requestId } = ctx;
   const errorContext = {
@@ -390,16 +390,8 @@ function logDocumentItemCoverError(deps, ctx, err, boardItem, viewItem, item, it
     requestId,
     errorDetails: getErrorMessage(err),
     statusCode: err.response?.status,
-    requestPayload: {
-      values: [{ data: uploadImageURL?.data?.id, attribute_id: coverAttributeId }],
-    },
+    requestPayload,
     stackTrace: err.stack,
-    itemValues: itemValues?.values?.map((v) => ({
-      attributeId: v.attribute?.id,
-      attributeName: v.attribute?.name,
-      attributeType: v.attribute?.type,
-      data: v.data,
-    })) || [],
     viewSettings: viewItem.settings,
     uploadDetails: {
       uploadId: uploadImageURL?.data?.id,
@@ -424,54 +416,21 @@ function logDocumentItemCoverError(deps, ctx, err, boardItem, viewItem, item, it
   }
 }
 
+/**
+ * Write the cover attachment onto the item directly.
+ * Do not GET item values first — getItemValues swallows non-404 failures as null, which
+ * previously skipped cover writes while still allowing a misleading view-level success path.
+ */
 async function updateDocumentItemCover(deps, ctx, boardItem, viewItem, item, coverAttributeId, uploadImageURL) {
-  const {
-    authorization, workspaceId, logo, type, req,
-    getAllViews, iterateBoardItems, validateBoardAttributes, getItemValues,
-    getErrorMessage, errorMessageIncludes, sleep, logoItemsPageSize,
-    info, warn, error, logAttributeError, logApiError,
-  } = deps;
-  const { requestId } = ctx;
-  let itemValues;
-  try {
-    itemValues = await getItemValues(workspaceId, boardItem.id, item.id, authorization);
-  } catch (err) {
-    const itemValuesErrorContext = {
-      workspaceId,
-      requestId,
-      boardId: boardItem.id,
-      viewId: viewItem.id,
-      itemId: item.id,
-      itemName: item.name,
-      coverAttributeId,
-      errorDetails: getErrorMessage(err),
-      statusCode: err.response?.status,
-      stackTrace: err.stack,
-    };
-    if (errorMessageIncludes(err, 'timeout') || err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
-      warn('ISO+™ Service', 'Request timeout when fetching item values', itemValuesErrorContext, req);
-    } else if (errorMessageIncludes(err, 'network') || err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED') {
-      warn('ISO+™ Service', 'Network error when fetching item values', itemValuesErrorContext, req);
-    } else {
-      warn('ISO+™ Service', 'Error fetching item values', itemValuesErrorContext, req);
-    }
-    return;
-  }
-
-  if (!itemValues) return;
-
-  let doc = itemValues.values.find((v) => v.attribute.id == coverAttributeId);
-  const coverData = [{ id: uploadImageURL.data.id }];
-  if (doc) {
-    doc.data = coverData;
-  } else {
-    doc = { data: coverData, attribute: { id: coverAttributeId } };
-  }
+  const { authorization, workspaceId, sleep } = deps;
+  const requestPayload = {
+    values: [{ data: [{ id: uploadImageURL.data.id }], attribute_id: coverAttributeId }],
+  };
 
   try {
     const itemUpdateResponse = await axios.put(
       `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardItem.id}/items/${item.id}`,
-      { values: [{ data: doc.data, attribute_id: doc.attribute.id }] },
+      requestPayload,
       {
         headers: {
           Authorization: authorization,
@@ -490,21 +449,25 @@ async function updateDocumentItemCover(deps, ctx, boardItem, viewItem, item, cov
       }
     }
   } catch (err) {
-    logDocumentItemCoverError(deps, ctx, err, boardItem, viewItem, item, itemValues, coverAttributeId, uploadImageURL);
+    logDocumentItemCoverError(deps, ctx, err, boardItem, viewItem, item, coverAttributeId, uploadImageURL, requestPayload);
   }
   await sleep(2000);
 }
 
+function viewHasEditorItems(viewItem) {
+  const editorItems = viewItem?.settings?.editorItems;
+  return Boolean(editorItems && Object.keys(editorItems).length > 0);
+}
+
 async function processDocumentViewItemPages(deps, ctx, boardItem, viewItem, coverAttributeId, uploadImageURL) {
   const {
-    authorization, workspaceId, logo, type, req,
-    getAllViews, iterateBoardItems, validateBoardAttributes, getItemValues,
+    authorization, workspaceId, req,
+    iterateBoardItems,
     getErrorMessage, errorMessageIncludes, sleep, logoItemsPageSize,
-    info, warn, error, logAttributeError, logApiError,
+    warn,
   } = deps;
   const { requestId } = ctx;
   let totalItemsProcessed = 0;
-  let pageNumber = 0;
   try {
     const itemIterator = iterateBoardItems(workspaceId, boardItem.id, viewItem.folder_id, {
       limit: logoItemsPageSize,
@@ -513,7 +476,6 @@ async function processDocumentViewItemPages(deps, ctx, boardItem, viewItem, cove
     while (true) {
       const { value: itemsPage, done } = await itemIterator.next();
       if (done) break;
-      pageNumber += 1;
       totalItemsProcessed += itemsPage.length;
       for (const item of itemsPage) {
         await updateDocumentItemCover(deps, ctx, boardItem, viewItem, item, coverAttributeId, uploadImageURL);
@@ -531,6 +493,8 @@ async function processDocumentViewItemPages(deps, ctx, boardItem, viewItem, cove
       errorDetails: getErrorMessage(err),
       statusCode: err.response?.status,
       stackTrace: err.stack,
+      totalItemsProcessed,
+      hasEditorItems: viewHasEditorItems(viewItem),
     };
     if (errorMessageIncludes(err, 'timeout') || err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
       warn('ISO+™ Service', 'Request timeout when fetching items for document view', itemsErrorContext, req);
@@ -539,7 +503,7 @@ async function processDocumentViewItemPages(deps, ctx, boardItem, viewItem, cove
     } else {
       warn('ISO+™ Service', 'Error fetching items for document view', itemsErrorContext, req);
     }
-    return { ok: false, totalItemsProcessed: 0 };
+    return { ok: false, totalItemsProcessed };
   }
 
   if (totalItemsProcessed === 0) {
@@ -585,48 +549,9 @@ function logDocumentViewSaveError(deps, err, boardItem, viewItem, requestId) {
   }
 }
 
-async function applyDocumentLogoToView(deps, ctx, boardItem, viewItem, uploadImageURL) {
-  const {
-    authorization, workspaceId, logo, type, req,
-    getAllViews, iterateBoardItems, validateBoardAttributes, getItemValues,
-    getErrorMessage, errorMessageIncludes, sleep, logoItemsPageSize,
-    info, warn, error, logAttributeError, logApiError,
-  } = deps;
-  const { requestId } = ctx;
-  info('ISO+™ Service', 'Processing document view for logo update', {
-    workspaceId,
-    requestId,
-    boardId: boardItem.id,
-    viewId: viewItem.id,
-    viewName: viewItem.name,
-    viewType: viewItem.type,
-    folderId: viewItem.folder_id,
-    settings: viewItem.settings,
-  }, req);
-
-  const coverAttributeId = await resolveDocumentCoverAttributeId(deps, ctx, boardItem, viewItem);
-  if (!coverAttributeId) return;
-
-  const itemsResult = await processDocumentViewItemPages(
-    deps,
-    ctx,
-    boardItem,
-    viewItem,
-    coverAttributeId,
-    uploadImageURL,
-  );
-  if (!itemsResult.ok) {
-    warn('ISO+™ Service', 'Skipping view save after items fetch failure', {
-      workspaceId,
-      requestId,
-      boardId: boardItem.id,
-      viewId: viewItem.id,
-      folderId: viewItem.folder_id,
-      coverAttributeId,
-    }, req);
-    return;
-  }
-
+async function saveDocumentView(deps, ctx, boardItem, viewItem) {
+  const { authorization, workspaceId, sleep, info } = deps;
+  const { requestId, documentCover } = ctx;
   try {
     await axios.put(
       `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardItem.id}/views/${viewItem.id}`,
@@ -640,10 +565,95 @@ async function applyDocumentLogoToView(deps, ctx, boardItem, viewItem, uploadIma
       },
     );
     info('ISO+™ Service', `Logo set successfully for view: ${viewItem.id}`);
+    documentCover.saved += 1;
   } catch (err) {
+    documentCover.failed += 1;
     logDocumentViewSaveError(deps, err, boardItem, viewItem, requestId);
   }
   await sleep(2000);
+}
+
+async function applyDocumentLogoToView(deps, ctx, boardItem, viewItem, uploadImageURL) {
+  const { workspaceId, req, warn } = deps;
+  const { requestId, documentCover } = ctx;
+  documentCover.attempted += 1;
+
+  infoProcessingDocumentView(deps, ctx, boardItem, viewItem);
+
+  const coverAttributeId = await resolveDocumentCoverAttributeId(deps, ctx, boardItem, viewItem);
+  if (!coverAttributeId) {
+    documentCover.skipped += 1;
+    return;
+  }
+
+  const itemsResult = await processDocumentViewItemPages(
+    deps,
+    ctx,
+    boardItem,
+    viewItem,
+    coverAttributeId,
+    uploadImageURL,
+  );
+
+  // Mid-run list failure may already have written some item covers — persist editorItems when present.
+  if (!itemsResult.ok && !viewHasEditorItems(viewItem)) {
+    documentCover.skipped += 1;
+    warn('ISO+™ Service', 'Skipping view save after items fetch failure', {
+      workspaceId,
+      requestId,
+      boardId: boardItem.id,
+      viewId: viewItem.id,
+      folderId: viewItem.folder_id,
+      coverAttributeId,
+      totalItemsProcessed: itemsResult.totalItemsProcessed,
+    }, req);
+    return;
+  }
+
+  if (!itemsResult.ok) {
+    warn('ISO+™ Service', 'Saving view after partial items fetch failure', {
+      workspaceId,
+      requestId,
+      boardId: boardItem.id,
+      viewId: viewItem.id,
+      folderId: viewItem.folder_id,
+      coverAttributeId,
+      totalItemsProcessed: itemsResult.totalItemsProcessed,
+    }, req);
+  }
+
+  await saveDocumentView(deps, ctx, boardItem, viewItem);
+}
+
+function infoProcessingDocumentView(deps, ctx, boardItem, viewItem) {
+  const { workspaceId, req, info } = deps;
+  info('ISO+™ Service', 'Processing document view for logo update', {
+    workspaceId,
+    requestId: ctx.requestId,
+    boardId: boardItem.id,
+    viewId: viewItem.id,
+    viewName: viewItem.name,
+    viewType: viewItem.type,
+    folderId: viewItem.folder_id,
+    settings: viewItem.settings,
+  }, req);
+}
+
+function assertDocumentCoverOutcome(deps, ctx) {
+  if (deps.type !== 'document') return;
+  const { attempted, saved, skipped, failed } = ctx.documentCover;
+  if (attempted > 0 && saved === 0) {
+    throw new Error(
+      `Document cover update failed for all views (attempted=${attempted}, skipped=${skipped}, failed=${failed})`,
+    );
+  }
+  if (skipped > 0 || failed > 0) {
+    deps.warn('ISO+™ Service', 'Document cover update completed with partial failures', {
+      workspaceId: deps.workspaceId,
+      requestId: ctx.requestId,
+      ...ctx.documentCover,
+    }, deps.req ?? null);
+  }
 }
 
 export async function executeSetLogo(deps) {
@@ -663,7 +673,16 @@ export async function executeSetLogo(deps) {
     } else {
       throw new Error('Failed to fetch boards');
     }
-    deps.logOperationEnd('ISO+™ Service', 'setLogo', { workspaceId: deps.workspaceId, logoType: deps.type, success: true }, deps.req);
+    assertDocumentCoverOutcome(deps, ctx);
+    const endPayload = {
+      workspaceId: deps.workspaceId,
+      logoType: deps.type,
+      success: true,
+    };
+    if (deps.type === 'document' && ctx.documentCover.attempted > 0) {
+      endPayload.documentCover = { ...ctx.documentCover };
+    }
+    deps.logOperationEnd('ISO+™ Service', 'setLogo', endPayload, deps.req);
   } catch (err) {
     return handleSetLogoFailure(deps, ctx, err);
   }

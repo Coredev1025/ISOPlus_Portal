@@ -459,12 +459,6 @@ describe('executeSetLogo - document views', () => {
       iterateBoardItems: vi.fn(async function* () {
         yield [{ id: 'item_1', name: 'Plan A' }];
       }),
-      getItemValues: vi.fn(async () => ({
-        values: [
-          { attribute: { id: 'attr_cover_1', name: 'Cover', type: 'file' }, data: [{ id: 'old_att' }] },
-          { attribute: { id: 'attr_other', name: 'Notes', type: 'text' }, data: 'hello' },
-        ],
-      })),
       ...overrides,
     });
   }
@@ -481,7 +475,7 @@ describe('executeSetLogo - document views', () => {
       limit: 50,
       authorization: 'Bearer tok_abc123',
     });
-    expect(deps.getItemValues).toHaveBeenCalledWith(WORKSPACE_ID, BOARD_ID, 'item_1', 'Bearer tok_abc123');
+    expect(deps.getItemValues).not.toHaveBeenCalled();
     expect(itemPuts).toHaveLength(1);
     expect(itemPuts[0].params).toEqual({ workspaceId: WORKSPACE_ID, boardId: BOARD_ID, itemId: 'item_1' });
     expect(itemPuts[0].body).toEqual({
@@ -499,20 +493,29 @@ describe('executeSetLogo - document views', () => {
         editorItems: { item_1: { cover: UPLOAD_ID } },
       },
     });
+    expect(deps.logOperationEnd).toHaveBeenCalledWith(
+      'ISO+™ Service',
+      'setLogo',
+      expect.objectContaining({
+        success: true,
+        documentCover: expect.objectContaining({ attempted: 1, saved: 1, skipped: 0, failed: 0 }),
+      }),
+      deps.req,
+    );
   });
 
-  it('creates the cover value when the item has no value for the cover attribute', async () => {
+  it('writes item covers without a prior getItemValues round-trip', async () => {
     captureUpload();
     const itemPuts = captureItemPut();
     captureViewPut();
     const deps = documentDeps({
-      getItemValues: vi.fn(async () => ({
-        values: [{ attribute: { id: 'attr_other', name: 'Notes', type: 'text' }, data: 'hello' }],
-      })),
+      getItemValues: vi.fn(async () => null),
     });
 
     await executeSetLogo(deps);
 
+    expect(deps.getItemValues).not.toHaveBeenCalled();
+    expect(itemPuts).toHaveLength(1);
     expect(itemPuts[0].body).toEqual({
       values: [{ data: [{ id: UPLOAD_ID }], attribute_id: 'attr_cover_1' }],
     });
@@ -528,12 +531,10 @@ describe('executeSetLogo - document views', () => {
         views: [{ id: VIEW_ID, name: 'Care Plan Doc', type: 'document', folder_id: 'fld_88', settings: {} }],
       })),
       validateBoardAttributes: vi.fn(async () => ({ attribute: { id: 'attr_resolved_9' } })),
-      getItemValues: vi.fn(async () => ({ values: [] })),
     });
 
     await executeSetLogo(deps);
 
-    expect(deps.warn.mock.calls[0][1]).toBe(`No cover attribute id found for view ${VIEW_ID}; attempting fallback`);
     expect(deps.validateBoardAttributes).toHaveBeenCalledWith(
       WORKSPACE_ID,
       BOARD_ID,
@@ -547,7 +548,7 @@ describe('executeSetLogo - document views', () => {
     expect(viewPuts[0].body.settings.editorCoverAttributeId).toBe('attr_resolved_9');
   });
 
-  it('skips the view entirely when no cover attribute can be resolved', async () => {
+  it('skips the view entirely when no cover attribute can be resolved and reports setLogo failure', async () => {
     captureUpload();
     const itemPuts = captureItemPut();
     const viewPuts = captureViewPut();
@@ -563,22 +564,12 @@ describe('executeSetLogo - document views', () => {
       expect.objectContaining({ viewId: VIEW_ID, coverAttributeId: 'attr_cover_1' }),
       deps.req,
     );
-  });
-
-  it('warns and leaves the item alone when its values cannot be fetched', async () => {
-    captureUpload();
-    const itemPuts = captureItemPut();
-    const viewPuts = captureViewPut();
-    const deps = documentDeps({
-      getItemValues: vi.fn(async () => { throw Object.assign(new Error('timeout of 0ms'), { code: 'ETIMEDOUT' }); }),
-    });
-
-    await executeSetLogo(deps);
-
-    expect(itemPuts).toHaveLength(0);
-    expect(deps.warn.mock.calls.map((c) => c[1])).toContain('Request timeout when fetching item values');
-    expect(viewPuts).toHaveLength(1);
-    expect(viewPuts[0].body.settings.editorItems).toBeUndefined();
+    expect(deps.logOperationEnd).toHaveBeenCalledWith(
+      'ISO+™ Service',
+      'setLogo',
+      expect.objectContaining({ success: false }),
+      deps.req,
+    );
   });
 
   it('routes an unrecognised-attribute failure on the item PUT to logAttributeError with the cover id', async () => {
@@ -595,14 +586,8 @@ describe('executeSetLogo - document views', () => {
     expect(deps.logAttributeError.mock.calls[0][2]).toBe('attr_cover_1');
     expect(deps.logAttributeError.mock.calls[0][3]).toMatchObject({
       itemId: 'item_1',
-      requestPayload: { values: [{ data: UPLOAD_ID, attribute_id: 'attr_cover_1' }] },
-      itemValues: [
-        { attributeId: 'attr_cover_1', attributeName: 'Cover', attributeType: 'file', data: [{ id: UPLOAD_ID }] },
-        { attributeId: 'attr_other', attributeName: 'Notes', attributeType: 'text', data: 'hello' },
-      ],
+      requestPayload: { values: [{ data: [{ id: UPLOAD_ID }], attribute_id: 'attr_cover_1' }] },
     });
-    // The view PUT still goes out, but with no editorItems — the same shape as
-    // the timeout path above, since the item PUT never produced any.
     expect(viewPuts[0].body.settings.editorItems).toBeUndefined();
   });
 
@@ -621,7 +606,7 @@ describe('executeSetLogo - document views', () => {
     );
   });
 
-  it('warns and does not save the view when item iteration throws', async () => {
+  it('warns and does not save the view when item iteration throws before any cover write', async () => {
     captureUpload();
     const viewPuts = captureViewPut();
     const deps = documentDeps({
@@ -633,6 +618,46 @@ describe('executeSetLogo - document views', () => {
     expect(deps.warn.mock.calls.map((c) => c[1])).toContain('Network error when fetching items for document view');
     expect(deps.warn.mock.calls.map((c) => c[1])).toContain('Skipping view save after items fetch failure');
     expect(viewPuts).toHaveLength(0);
+    expect(deps.logOperationEnd).toHaveBeenCalledWith(
+      'ISO+™ Service',
+      'setLogo',
+      expect.objectContaining({ success: false }),
+      deps.req,
+    );
+  });
+
+  it('still saves the view when item iteration fails after some covers were written', async () => {
+    captureUpload();
+    const itemPuts = captureItemPut();
+    const viewPuts = captureViewPut();
+    let calls = 0;
+    const deps = documentDeps({
+      iterateBoardItems: vi.fn(() => ({
+        next: async () => {
+          calls += 1;
+          if (calls === 1) {
+            return { value: [{ id: 'item_1', name: 'Plan A' }], done: false };
+          }
+          throw Object.assign(new Error('network is unreachable'), { code: 'ENOTFOUND' });
+        },
+      })),
+    });
+
+    await executeSetLogo(deps);
+
+    expect(itemPuts).toHaveLength(1);
+    expect(viewPuts).toHaveLength(1);
+    expect(viewPuts[0].body.settings.editorItems).toEqual({ item_1: { cover: UPLOAD_ID } });
+    expect(deps.warn.mock.calls.map((c) => c[1])).toContain('Saving view after partial items fetch failure');
+    expect(deps.logOperationEnd).toHaveBeenCalledWith(
+      'ISO+™ Service',
+      'setLogo',
+      expect.objectContaining({
+        success: true,
+        documentCover: expect.objectContaining({ attempted: 1, saved: 1 }),
+      }),
+      deps.req,
+    );
   });
 
   it('sleeps 2s after every item, every page and every view save', async () => {
@@ -653,7 +678,7 @@ describe('executeSetLogo - document views', () => {
     expect(deps.sleep.mock.calls.every((call) => call[0] === 2000)).toBe(true);
   });
 
-  it('reports a failed view save through logApiError without failing the operation', async () => {
+  it('reports a failed view save as setLogo failure when no view was saved', async () => {
     captureUpload();
     captureItemPut();
     captureViewPut(403);
@@ -662,7 +687,7 @@ describe('executeSetLogo - document views', () => {
     await executeSetLogo(deps);
 
     expect(deps.logApiError.mock.calls.at(-1)[1]).toBe('Forbidden when setting document logo:');
-    expect(deps.logOperationEnd.mock.calls[0][2].success).toBe(true);
+    expect(deps.logOperationEnd.mock.calls[0][2].success).toBe(false);
   });
 });
 
