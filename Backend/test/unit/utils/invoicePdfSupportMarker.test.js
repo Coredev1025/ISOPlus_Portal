@@ -102,3 +102,56 @@ describe('saveInvoiceNumber also sets the invoiced marker', () => {
     await expect(saveInvoiceNumber(WS, BOARD, 'missing', INVOICE, 'PDF')).resolves.toBeUndefined();
   });
 });
+
+/**
+ * Section 3.4: the invoice write and the item marking must succeed or fail
+ * together, and where the design forces a choice, prefer leaving items
+ * unbilled — an unbilled item is recoverable on the next run, a double-billed
+ * participant is not.
+ *
+ * Selection reads only `Item.invoicedBy` (`isAlreadyInvoiced` in
+ * utils/invoiceItemSelection.js), never the `invoicenumber` ledger. So of the
+ * two partial-failure states, only one is safe:
+ *
+ *   marker set, ledger row missing  → the item is excluded from every future
+ *                                     run. Nobody is billed twice, and the
+ *                                     missing row is visible and repairable.
+ *   ledger row written, no marker   → the next scheduled run selects the item
+ *                                     again and bills the participant twice.
+ *
+ * The second is the direction this used to fail in, because it wrote the
+ * ledger row first and marked afterwards with only a warning.
+ */
+describe('saveInvoiceNumber fails towards not billing twice', () => {
+  it('does not write the ledger row when the item could not be marked', async () => {
+    // A real failure of the claim, provoked at the driver rather than by
+    // mocking the marker module, so the whole claim path runs.
+    const updateMany = vi.spyOn(Item, 'updateMany').mockRejectedValue(new Error('mongo is down'));
+    try {
+      await saveInvoiceNumber(WS, BOARD, 'a', INVOICE, 'PDF', 'https://s3/x.pdf');
+    } finally {
+      updateMany.mockRestore();
+    }
+
+    expect(await InvoiceNumber.findOne({ itemId: 'a' }).lean()).toBeNull();
+    const message = warnedMessages().find((m) => /was not recorded either/i.test(m));
+    expect(message).toBeTruthy();
+  });
+
+  it('keeps the marker when the ledger row cannot be written', async () => {
+    // Releasing the claim here would hand the item straight back to the next
+    // run, which is the double bill the ordering exists to prevent — the same
+    // reason generateUnderClaim keeps its claim when `record` throws.
+    const findOneAndUpdate = vi.spyOn(InvoiceNumber, 'findOneAndUpdate')
+      .mockRejectedValue(new Error('mongo is down'));
+    try {
+      await saveInvoiceNumber(WS, BOARD, 'a', INVOICE, 'PDF', 'https://s3/x.pdf');
+    } finally {
+      findOneAndUpdate.mockRestore();
+    }
+
+    const row = await Item.findOne({ itemId: 'a' }).lean();
+    expect(row.invoicedBy).toBe(INVOICE);
+    expect(warnedMessages().find((m) => /Failed to save invoice number/i.test(m))).toBeTruthy();
+  });
+});

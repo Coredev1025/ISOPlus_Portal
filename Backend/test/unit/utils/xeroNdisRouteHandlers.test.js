@@ -100,6 +100,14 @@ function roundTo(value, dp) {
 const round2 = (value) => roundTo(value, 2);
 const round4 = (value) => roundTo(value, 4);
 
+// `saveInvoiceNumber` stays injected here, and these tests still assert only
+// that it was called: this file covers the handlers in isolation, and the
+// handlers genuinely do not care which implementation they are given. What was
+// missing is the other half — that src/routes/xero.js passes in the shared
+// implementation, which marks the item as invoiced (spec 3.3) rather than a
+// private copy that only wrote the ledger row. That is covered by driving the
+// real router in test/integration/xero.invoicedMarker.route.test.js.
+
 function makeRes() {
   return { status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis() };
 }

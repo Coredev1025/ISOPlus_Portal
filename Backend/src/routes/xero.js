@@ -1,7 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import Business from '../models/Business.js';
-import InvoiceNumber from '../models/InvoiceNumber.js';
 import Board from '../models/Board.js';
 import Item from '../models/Item.js';
 import { authenticateToken } from '../middleware/auth.js';
@@ -73,6 +72,11 @@ import {
   buildNdisXeroInvoiceReference,
   enrichNdisInvoiceGeneratorRows,
 } from '../utils/ndisInvoiceGeneratorOutput.js';
+// Section 3.3 of the invoice selection spec: every path that allocates an
+// invoice number must set the same invoiced marker, or the next scheduled run
+// finds these items unmarked and bills them again. This router used to keep a
+// private copy that only wrote the ledger row.
+import { saveInvoiceNumber } from '../utils/invoicePdfSupport.js';
 import {
   handleXeroInvoicendis,
   handleXeroQuotendis,
@@ -120,52 +124,6 @@ async function initializeXeroOperation(workspaceId, boardId, item) {
   await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
   return business;
-}
-
-async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, type) {
-  try {
-    const safeItemId = mongoEq(itemId);
-    const safeWorkspaceId = mongoEq(workspaceId);
-    const safeBoardId = mongoEq(boardId);
-    const safeType = mongoEq(type);
-    const safeInvoiceNumber = mongoEq(invoiceNumber);
-
-    await InvoiceNumber.findOneAndUpdate(
-      {
-        itemId: { $eq: String(safeItemId) },
-        workspaceId: { $eq: String(safeWorkspaceId) },
-        boardId: { $eq: String(safeBoardId) },
-        type: { $eq: String(safeType) }
-      },
-      {
-        $set: {
-          itemId: safeItemId,
-          workspaceId: safeWorkspaceId,
-          boardId: safeBoardId,
-          invoiceNumber: safeInvoiceNumber,
-          type: safeType,
-          updatedAt: new Date()
-        },
-        $setOnInsert: {
-          createdAt: new Date()
-        }
-      },
-      {
-        upsert: true,
-        new: true
-      }
-    );
-  } catch (err) {
-    // Log error but don't fail the invoice generation if saving fails
-    warn('Xero-Service', 'Failed to save invoice number to database', {
-      workspaceId,
-      boardId,
-      itemId,
-      invoiceNumber,
-      type,
-      error: err.message
-    }, null);
-  }
 }
 
 function createContactPayload(values, isUpdate = false) {
