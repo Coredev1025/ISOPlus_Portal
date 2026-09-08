@@ -557,10 +557,10 @@ export async function getFolder(workspaceId, boardId) {
     }
 }
 
-async function buildItemRequest(workspaceId, boardId, folderId, limit, after) {
+async function buildItemRequest(workspaceId, boardId, folderId, limit, after, authorization) {
     const url = buildIsoPlusV2BoardItemsUrl(workspaceId, boardId);
     const headers = {
-        "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+        "Authorization": authorization || `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
         "Content-Type": "application/json",
         "Accept": "application/json",
         "X-API-Version": "2025-02-26.morava",
@@ -581,7 +581,14 @@ export function iterateBoardItems(workspaceId, boardId, folderId, options = {}) 
     const limit = options.limit || DEFAULT_ITEM_PAGE_SIZE;
     return createPaginator(
         async (after) => {
-            const requestConfig = await buildItemRequest(workspaceId, boardId, folderId, limit, after);
+            const requestConfig = await buildItemRequest(
+                workspaceId,
+                boardId,
+                folderId,
+                limit,
+                after,
+                options.authorization,
+            );
             return axios.get(requestConfig.url, { headers: requestConfig.headers, params: requestConfig.params });
         },
         { pageDelayMs: options.pageDelayMs, debugKey: `items:${workspaceId}:${boardId}:${folderId || 'all'}` }
@@ -726,7 +733,7 @@ export async function putTimeTracking(workspaceId, boardId, itemId, startTime, e
 
 export const ITEM_DELETED = Symbol('ITEM_DELETED');
 
-export async function getItemValues(workspaceId, boardId, itemId) {
+export async function getItemValues(workspaceId, boardId, itemId, authorization) {
     const maxRetries = 5; // Increased from 3 to handle rate limits better
     let lastError = null;
     let retryDelay = 2000; // Start with 2 seconds (increased from 1 second)
@@ -735,7 +742,7 @@ export async function getItemValues(workspaceId, boardId, itemId) {
         try {
             const url = `${buildIsoPlusV2ItemUrl(workspaceId, boardId, itemId)}?expand[]=values.attribute`;
             const headers = {
-                "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                "Authorization": authorization || `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
                 "Content-Type": "application/json",
                 "Accept": "application/json",
                 "X-API-Version": "2025-02-26.morava",
@@ -968,8 +975,104 @@ function errorMessageIncludes(err, searchString) {
     return typeof errorMsg === 'string' && errorMsg.includes(searchString);
 }
 
-// Function to validate board attributes before logo processing
-async function validateBoardAttributes(workspaceId, boardId, viewId, coverAttributeId, req) {
+function pageAttributesFromResponse(data) {
+    if (Array.isArray(data?.data)) return data.data;
+    if (Array.isArray(data?.attributes)) return data.attributes;
+    return [];
+}
+
+/**
+ * ISO+ attributes are capped at 100 per page; walk `after` until has_more is false.
+ *
+ * Uses the shared `createPaginator` (see iterateWorkspaces/iterateBoards above) instead of a
+ * hand-rolled while loop so this gets the same two safety guards for free:
+ *   - a max-page cap, so a runaway loop can't hang the request forever;
+ *   - a same/missing-cursor check, so if ISO+ ever reports has_more:true without giving a
+ *     usable `after` (or the same one twice), we throw instead of silently returning a
+ *     truncated-but-reported-as-successful attribute list — which would quietly reintroduce
+ *     the "attributes are missing" bug this function exists to fix, just via a different
+ *     trigger. A previous version of this function reimplemented pagination by hand and had
+ *     neither guard.
+ */
+async function fetchAllBoardAttributes(workspaceId, boardId, authorization) {
+    const url = buildIsoPlusV2BoardAttributesUrl(workspaceId, boardId);
+    const headers = {
+        Authorization: authorization,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-API-Version': '2025-02-26.morava',
+    };
+    const baseParams = {
+        limit: '100',
+        sort_by: 'created_at',
+        sort_direction: 'desc',
+    };
+
+    try {
+        const attributes = await collectPaginated(
+            createPaginator(
+                (after) => isoPlusClient.get(url, { headers, params: withAfterParam(baseParams, after) }),
+                { selectData: (response) => pageAttributesFromResponse(response.data), debugKey: `attributes:${workspaceId}:${boardId}` },
+            ),
+        );
+        return { attributes, status: 200 };
+    } catch (err) {
+        return { attributes: null, status: err?.response?.status || 500 };
+    }
+}
+
+/** Load board attributes once per board for a setLogo run when attributesCache is provided. */
+async function loadAttributesForCoverValidation(
+    workspaceId,
+    boardId,
+    authorization,
+    attributesCache,
+    req,
+    viewId,
+    coverAttributeId,
+) {
+    if (attributesCache?.has(boardId)) {
+        const attributes = attributesCache.get(boardId);
+        info('ISO+™ Service', 'Board attributes reused from setLogo cache', {
+            workspaceId,
+            boardId,
+            viewId,
+            coverAttributeId,
+            attributeCount: attributes.length,
+        }, req);
+        return attributes;
+    }
+
+    const attributesResult = await fetchAllBoardAttributes(workspaceId, boardId, authorization);
+    if (attributesResult.status !== 200 || !attributesResult.attributes) {
+        return null;
+    }
+
+    const attributes = attributesResult.attributes;
+    attributesCache?.set(boardId, attributes);
+    info('ISO+™ Service', 'Board attributes fetched for document cover validation', {
+        workspaceId,
+        boardId,
+        viewId,
+        coverAttributeId,
+        attributeCount: attributes.length,
+    }, req);
+    return attributes;
+}
+
+// Function to validate board attributes before logo processing.
+// Uses the caller's ISO+ Authorization (req.session.Authorization), not PERSONAL_ACCESS_TOKEN —
+// document logo sync is a user action and the PAT often lacks board attribute access.
+// Optional attributesCache (Map boardId -> attributes[]) avoids re-fetching per document view.
+export async function validateBoardAttributes(
+    workspaceId,
+    boardId,
+    viewId,
+    coverAttributeId,
+    req,
+    authorization,
+    attributesCache,
+) {
     try {
         info('ISO+™ Service', 'Validating board attributes', { 
             workspaceId, 
@@ -978,63 +1081,55 @@ async function validateBoardAttributes(workspaceId, boardId, viewId, coverAttrib
             coverAttributeId 
         }, req);
         
-        // Get board attributes to validate the cover attribute exists
-        const attributesResponse = await axios.get(
-            buildIsoPlusV2BoardAttributesUrl(workspaceId, boardId),
-            {
-                headers: {
-                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                    "Accept": "application/json",
-                    "X-API-Version": "2025-02-26.morava",
-                }
-            }
+        const attributes = await loadAttributesForCoverValidation(
+            workspaceId,
+            boardId,
+            authorization,
+            attributesCache,
+            req,
+            viewId,
+            coverAttributeId,
         );
-        
-        if (attributesResponse.status === 200) {
-            const attributes = Array.isArray(attributesResponse.data?.data)
-                ? attributesResponse.data.data
-                : Array.isArray(attributesResponse.data?.attributes)
-                    ? attributesResponse.data.attributes
-                    : [];
-            const coverAttribute = attributes.find(attr => attr.id === coverAttributeId);
-            
-            if (!coverAttribute) {
-                const fallbackAttribute = findFallbackCoverAttribute(attributes);
-                if (fallbackAttribute) {
-                    warn('ISO+™ Service', 'Cover attribute not found; assigning fallback attribute', {
-                        workspaceId,
-                        boardId,
-                        viewId,
-                        requestedCoverAttributeId: coverAttributeId,
-                        fallbackAttributeId: fallbackAttribute.id,
-                        fallbackAttributeName: fallbackAttribute.name,
-                        fallbackAttributeType: fallbackAttribute.type
-                    }, req);
-                    return { status: 'fallback', attribute: fallbackAttribute };
-                }
+        if (!attributes) {
+            return { status: 'error', attribute: null };
+        }
 
-                warn('ISO+™ Service', 'Cover attribute not found and no fallback available', {
+        const coverAttribute = attributes.find(attr => attr.id === coverAttributeId);
+            
+        if (!coverAttribute) {
+            const fallbackAttribute = findFallbackCoverAttribute(attributes);
+            if (fallbackAttribute) {
+                warn('ISO+™ Service', 'Cover attribute not found; assigning fallback attribute', {
                     workspaceId,
                     boardId,
                     viewId,
-                    coverAttributeId,
-                    availableAttributes: attributes.map(attr => ({ id: attr.id, name: attr.name, type: attr.type }))
+                    requestedCoverAttributeId: coverAttributeId,
+                    fallbackAttributeId: fallbackAttribute.id,
+                    fallbackAttributeName: fallbackAttribute.name,
+                    fallbackAttributeType: fallbackAttribute.type
                 }, req);
-                return { status: 'missing', attribute: null };
+                return { status: 'fallback', attribute: fallbackAttribute };
             }
-            
-            info('ISO+™ Service', 'Cover attribute validation successful', {
+
+            warn('ISO+™ Service', 'Cover attribute not found and no fallback available', {
                 workspaceId,
                 boardId,
                 viewId,
                 coverAttributeId,
-                attributeName: coverAttribute.name,
-                attributeType: coverAttribute.type
+                availableAttributes: attributes.map(attr => ({ id: attr.id, name: attr.name, type: attr.type }))
             }, req);
-            return { status: 'valid', attribute: coverAttribute };
+            return { status: 'missing', attribute: null };
         }
-        
-        return { status: 'error', attribute: null };
+            
+        info('ISO+™ Service', 'Cover attribute validation successful', {
+            workspaceId,
+            boardId,
+            viewId,
+            coverAttributeId,
+            attributeName: coverAttribute.name,
+            attributeType: coverAttribute.type
+        }, req);
+        return { status: 'valid', attribute: coverAttribute };
     } catch (err) {
         error('ISO+™ Service', 'Error validating board attributes', {
             workspaceId,
