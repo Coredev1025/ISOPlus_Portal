@@ -968,37 +968,30 @@ export async function getBoardAttributes(workspaceId, boardId) {
     try {
         const url = buildIsoPlusV2BoardAttributesUrl(workspaceId, boardId);
         const headers = {
-            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
+            Authorization: `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'X-API-Version': '2025-02-26.morava',
         };
-        const params = {
-            "limit": "100",
-            "sort_by": "created_at",
-            "sort_direction": "desc",
+        const baseParams = {
+            limit: '100',
+            sort_by: 'created_at',
+            sort_direction: 'desc',
         };
 
-        let attribute = [];
-        const result = await axios.get(url, { headers, params });
-
-        if (result.status === 200) {
-            attribute = attribute.concat(result.data.data);
-            let has_more = result.data.has_more, after = result.data.after;
-
-            while (has_more) {
-                const response = await axios.get(url, { headers, params: { ...params, after } });
-                if (response.status === 200) {
-                    attribute = attribute.concat(response.data.data);
-                    has_more = response.data.has_more;
-                    after = response.data.after;
-                } else {
-                    has_more = false;
-                }
-            }
-        }
-        return { attribute: attribute, status: 200 };
+        // Same paginator guards as fetchAllBoardAttributes (max pages + cursor safety).
+        const attribute = await collectPaginated(
+            createPaginator(
+                (after) => isoPlusClient.get(url, { headers, params: withAfterParam(baseParams, after) }),
+                {
+                    selectData: (response) => pageAttributesFromResponse(response.data),
+                    debugKey: `board-attributes:${workspaceId}:${boardId}`,
+                },
+            ),
+        );
+        return { attribute, status: 200 };
     } catch (err) {
-        return { message: err.message, status: 500 };
+        return { message: err.message, status: err?.response?.status || 500 };
     }
 }
 
