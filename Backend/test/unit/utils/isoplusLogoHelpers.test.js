@@ -477,7 +477,11 @@ describe('executeSetLogo - document views', () => {
 
     await executeSetLogo(deps);
 
-    expect(deps.iterateBoardItems).toHaveBeenCalledWith(WORKSPACE_ID, BOARD_ID, 'fld_88', { limit: 50 });
+    expect(deps.iterateBoardItems).toHaveBeenCalledWith(WORKSPACE_ID, BOARD_ID, 'fld_88', {
+      limit: 50,
+      authorization: 'Bearer tok_abc123',
+    });
+    expect(deps.getItemValues).toHaveBeenCalledWith(WORKSPACE_ID, BOARD_ID, 'item_1', 'Bearer tok_abc123');
     expect(itemPuts).toHaveLength(1);
     expect(itemPuts[0].params).toEqual({ workspaceId: WORKSPACE_ID, boardId: BOARD_ID, itemId: 'item_1' });
     expect(itemPuts[0].body).toEqual({
@@ -530,7 +534,15 @@ describe('executeSetLogo - document views', () => {
     await executeSetLogo(deps);
 
     expect(deps.warn.mock.calls[0][1]).toBe(`No cover attribute id found for view ${VIEW_ID}; attempting fallback`);
-    expect(deps.validateBoardAttributes).toHaveBeenCalledWith(WORKSPACE_ID, BOARD_ID, VIEW_ID, undefined, deps.req);
+    expect(deps.validateBoardAttributes).toHaveBeenCalledWith(
+      WORKSPACE_ID,
+      BOARD_ID,
+      VIEW_ID,
+      undefined,
+      deps.req,
+      deps.authorization,
+      expect.any(Map),
+    );
     expect(itemPuts[0].body.values[0].attribute_id).toBe('attr_resolved_9');
     expect(viewPuts[0].body.settings.editorCoverAttributeId).toBe('attr_resolved_9');
   });
@@ -609,7 +621,7 @@ describe('executeSetLogo - document views', () => {
     );
   });
 
-  it('warns and still saves the view when item iteration throws', async () => {
+  it('warns and does not save the view when item iteration throws', async () => {
     captureUpload();
     const viewPuts = captureViewPut();
     const deps = documentDeps({
@@ -619,7 +631,8 @@ describe('executeSetLogo - document views', () => {
     await executeSetLogo(deps);
 
     expect(deps.warn.mock.calls.map((c) => c[1])).toContain('Network error when fetching items for document view');
-    expect(viewPuts).toHaveLength(1);
+    expect(deps.warn.mock.calls.map((c) => c[1])).toContain('Skipping view save after items fetch failure');
+    expect(viewPuts).toHaveLength(0);
   });
 
   it('sleeps 2s after every item, every page and every view save', async () => {

@@ -7,6 +7,8 @@ function buildSetLogoContext(deps) {
   const requestId = req?.headers?.['x-request-id'] || `logo_${Date.now()}_${randomAlphanumeric(9)}`;
   return {
     requestId,
+    // One attributes fetch per board for the whole setLogo run (many document views share a board).
+    attributesCache: new Map(),
     operationContext: {
       workspaceId,
       logoType: type,
@@ -321,7 +323,7 @@ async function resolveDocumentCoverAttributeId(deps, ctx, boardItem, viewItem) {
     getErrorMessage, errorMessageIncludes, sleep, logoItemsPageSize,
     info, warn, error, logAttributeError, logApiError,
   } = deps;
-  const { requestId } = ctx;
+  const { requestId, attributesCache } = ctx;
   let coverAttributeId = viewItem.settings?.editorCoverAttributeId;
   if (!coverAttributeId) {
     warn('ISO+™ Service', `No cover attribute id found for view ${viewItem.id}; attempting fallback`, {
@@ -341,6 +343,8 @@ async function resolveDocumentCoverAttributeId(deps, ctx, boardItem, viewItem) {
     viewItem.id,
     coverAttributeId,
     req,
+    authorization,
+    attributesCache,
   );
   const resolvedCoverAttributeId = attributeValidation?.attribute?.id;
   if (!resolvedCoverAttributeId) {
@@ -430,7 +434,7 @@ async function updateDocumentItemCover(deps, ctx, boardItem, viewItem, item, cov
   const { requestId } = ctx;
   let itemValues;
   try {
-    itemValues = await getItemValues(workspaceId, boardItem.id, item.id);
+    itemValues = await getItemValues(workspaceId, boardItem.id, item.id, authorization);
   } catch (err) {
     const itemValuesErrorContext = {
       workspaceId,
@@ -504,6 +508,7 @@ async function processDocumentViewItemPages(deps, ctx, boardItem, viewItem, cove
   try {
     const itemIterator = iterateBoardItems(workspaceId, boardItem.id, viewItem.folder_id, {
       limit: logoItemsPageSize,
+      authorization,
     });
     while (true) {
       const { value: itemsPage, done } = await itemIterator.next();
@@ -534,7 +539,7 @@ async function processDocumentViewItemPages(deps, ctx, boardItem, viewItem, cove
     } else {
       warn('ISO+™ Service', 'Error fetching items for document view', itemsErrorContext, req);
     }
-    return 0;
+    return { ok: false, totalItemsProcessed: 0 };
   }
 
   if (totalItemsProcessed === 0) {
@@ -546,7 +551,7 @@ async function processDocumentViewItemPages(deps, ctx, boardItem, viewItem, cove
       folderId: viewItem.folder_id,
     }, req);
   }
-  return totalItemsProcessed;
+  return { ok: true, totalItemsProcessed };
 }
 
 function logDocumentViewSaveError(deps, err, boardItem, viewItem, requestId) {
@@ -602,7 +607,25 @@ async function applyDocumentLogoToView(deps, ctx, boardItem, viewItem, uploadIma
   const coverAttributeId = await resolveDocumentCoverAttributeId(deps, ctx, boardItem, viewItem);
   if (!coverAttributeId) return;
 
-  await processDocumentViewItemPages(deps, ctx, boardItem, viewItem, coverAttributeId, uploadImageURL);
+  const itemsResult = await processDocumentViewItemPages(
+    deps,
+    ctx,
+    boardItem,
+    viewItem,
+    coverAttributeId,
+    uploadImageURL,
+  );
+  if (!itemsResult.ok) {
+    warn('ISO+™ Service', 'Skipping view save after items fetch failure', {
+      workspaceId,
+      requestId,
+      boardId: boardItem.id,
+      viewId: viewItem.id,
+      folderId: viewItem.folder_id,
+      coverAttributeId,
+    }, req);
+    return;
+  }
 
   try {
     await axios.put(
