@@ -1,6 +1,6 @@
 # ISO+ Portal — Invoice Item Selection and Statement Generation
 
-**Status:** Specification, ready to build
+**Status:** Implemented on `feature/KAN-10_statement_of_account`, with deviations — see [Changes since approval](#changes-since-approval)
 **Related:** Epic 5 (scheduler), Epic 6 (delivery and monitoring)
 **Last updated:** 20 August 2026
 
@@ -296,3 +296,47 @@ that must not be omitted.
 
 Steps 3, 4, 5, 6 and 8 are what stop a wrong document reaching a participant.
 They are not polish.
+
+## Changes since approval
+
+Recorded here rather than by editing the sections above, per the convention in
+`CLAUDE.md`. Each entry says what shipped differently and why.
+
+- **4.1, the NDIS budget statement on a non-monthly cadence.** The statement of
+  account follows the configured period exactly. The older NDIS *budget*
+  statement does not and cannot: its template carries fixed read-only text
+  saying "the services you received in the previous calendar month", and its
+  budget rows are queried by month and year, not by a date range. On any period
+  that is not a single calendar month it is therefore **withheld** rather than
+  rendered with a body that contradicts its own header. Before this it was
+  issued every run, restating the same month each time under a fresh number. A
+  weekly workspace now receives the statement of account weekly and no budget
+  statement. Quarterly and yearly cadences behave the same way. This is a
+  product decision as much as a technical one and is flagged on the pull
+  request; making the budget statement period-aware means changing its template
+  and its budget query, which is its own ticket.
+- **2.7, selection as a query.** Status, date and already-invoiced predicates
+  run in application code over the id list the Invoice Generator listing
+  returns, not as a Mongo query. Equivalent at current volumes; the section's
+  own performance question remains to be measured on real data.
+- **3.2(a), the unique constraint.** It lives on `pdflinks`, keyed on
+  `workspaceId + boardId + type + periodKey + itemId`, rather than on
+  `invoicenumbers` keyed by participant. That is stricter than specified. Its
+  partial filter (`periodKey` must be a string) means manually generated rows,
+  which carry no `periodKey`, are outside it; those rely entirely on the item
+  marker, which 3.3 now guarantees on every path. Closing the hole at the index
+  needs its own migration.
+- **3.4, the manual path's failure direction.** The shared writer now claims the
+  item first and records the ledger row second. A ledger-write failure
+  deliberately does **not** release the claim, because by then the document
+  exists and has usually been sent; releasing would hand an already-invoiced item
+  back to the next run. A marked item with no ledger row is excluded from every
+  future run, is visible, and is repairable. This is the same choice the
+  automated path already makes.
+- **6, template deliverables.** The live template is
+  `Backend/src/assets/statementOfAccount.json`, not
+  `templates/statement-pdfme-template.json`, and a second copy under the
+  promised path would be a copy that drifts. `templates/README.md` records the
+  layout constraints and points at the live file; `templates/render-sample.mjs`
+  renders from it. A sample PDF is not committed, because a binary goes stale
+  silently; the README says how to produce one.

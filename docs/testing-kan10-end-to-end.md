@@ -436,7 +436,14 @@ number.
 
 Statement slots carry **Monthly Statement** PDFs — one per participant for the
 **previous complete calendar month** of the claimed slot — on Care Management
-boards that are not Low Cat. NDIS-only boards no-op statements.
+boards that are not Low Cat. NDIS-only boards no-op statements. That budget
+statement is issued **only when the statement cadence is a single calendar
+month** (`every: {n: 1, unit: 'month'}`, or no schedule at all). On a weekly,
+fortnightly, quarterly or multi-month cadence it is withheld, because its
+template says "previous calendar month" in fixed text; the statement of account
+below follows the configured period and still goes out. The run logs
+`Statement period is not a calendar month; no budget statement` once per run
+in that case.
 
 **A statement slot now produces two documents per participant, not one.** The
 budget statement above says what was *delivered*; the **Statement of Account**
