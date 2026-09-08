@@ -39,6 +39,11 @@ import {
 } from '../services/offlineIsoplus.js';
 import { requireWorkspaceMember } from '../utils/workspaceAccessHelpers.js';
 import {
+  decodeRecentDocumentsCursor,
+  encodeRecentDocumentsCursor,
+  recentDocumentsCursorStage,
+} from '../utils/recentDocumentsCursor.js';
+import {
   requireOwnerOrSupportAdmin,
   parseWorkspaceIdParam,
   buildFeatureTogglesPayload,
@@ -476,12 +481,21 @@ async function clientAutomationHealth(workspaceId) {
   };
 }
 
-async function loadRecentAutomationDocuments(workspaceId) {
+/**
+ * One page of a workspace's automation documents, newest first.
+ *
+ * `cursor` is where the previous page stopped, decoded — null for the first
+ * page. Returns the page and the cursor for the page after it, or null when
+ * this page reached the end of the history. See utils/recentDocumentsCursor.js
+ * for why the cursor carries an id as well as a timestamp.
+ */
+async function loadRecentAutomationDocuments(workspaceId, cursor = null) {
   // Dedupe in the database, not after a truncated read. The previous pipeline
   // took the newest 50 rows and deduped those, so a single 50-item invoice —
   // 50 rows sharing one pdfLink — collapsed to one document and hid the nine
   // older ones that should have filled the list. Grouping first makes the
   // limit a limit on documents rather than on rows.
+  const cursorStage = recentDocumentsCursorStage(cursor);
   const rows = await PDFLink.aggregate([
     { $match: { workspaceId: { $eq: workspaceId }, periodKey: { $nin: [null, ''] } } },
     { $sort: { createdAt: -1 } },
@@ -514,12 +528,18 @@ async function loadRecentAutomationDocuments(workspaceId) {
       },
     },
     // $group does not preserve the sort, so order the surviving documents
-    // again before the cap.
-    { $sort: { createdAt: -1 } },
+    // again before the cap. `pdfLinkId` is the tiebreaker rather than
+    // decoration: paging needs a total order, and two documents from one run
+    // can share a millisecond.
+    { $sort: { createdAt: -1, pdfLinkId: -1 } },
+    // After the group, never before it. Filtering rows on the way in would
+    // re-admit a document whose newest row sat on the previous page but whose
+    // older rows did not, and page the same document twice.
+    ...(cursorStage ? [cursorStage] : []),
     { $limit: RECENT_DOCUMENTS_LIMIT },
   ]);
 
-  return rows.map((row) => ({
+  const documents = rows.map((row) => ({
     type: row.type,
     invoiceNumber: row.invoiceNumber ?? null,
     // Always present, null when the row carries none, so the client can tell
@@ -541,6 +561,15 @@ async function loadRecentAutomationDocuments(workspaceId) {
     // plumbing for the SES event lookup, not something a page needs.
     deliveryDetail: row.deliveryDetail ?? null,
   }));
+
+  // A full page means there may be more behind it; a short one is the end of
+  // the history. Derived from the raw row so the cursor can carry the
+  // `pdfLinkId` the mapped document exposes only inside its download path.
+  const last = rows.length === RECENT_DOCUMENTS_LIMIT ? rows[rows.length - 1] : null;
+  return {
+    documents,
+    nextCursor: last ? encodeRecentDocumentsCursor(last) : null,
+  };
 }
 
 /**
@@ -585,11 +614,14 @@ router.get('/:workspaceId/automation-settings', authenticateToken, async (req, r
 
     const settings = await AutomationSettings.findOne({ workspaceId: { $eq: workspaceId } }).lean();
     const jobs = await loadAutomationJobs(workspaceId);
-    const recentDocuments = await loadRecentAutomationDocuments(workspaceId);
+    const page = await loadRecentAutomationDocuments(workspaceId);
     const health = await clientAutomationHealth(workspaceId);
     return res.status(200).json({
       ...buildAutomationSettingsPayload(settings, jobs),
-      recentDocuments,
+      recentDocuments: page.documents,
+      // Null when this page is the whole history, which is what tells the panel
+      // not to offer a Load more button at all.
+      recentDocumentsCursor: page.nextCursor,
       health,
     });
   } catch (err) {
@@ -600,6 +632,50 @@ router.get('/:workspaceId/automation-settings', authenticateToken, async (req, r
       req ?? null
     );
     return res.status(500).json({ message: 'Failed to fetch automation settings' });
+  }
+});
+
+/**
+ * Older automation documents, a page at a time.
+ *
+ * A separate route rather than a parameter on automation-settings: that
+ * payload is polled on a timer and carries the saved schedules and the email
+ * blocks, so paging through history on it would refetch a form's worth of data
+ * per click and hand the panel a settings object it must be careful not to
+ * apply. This returns documents and nothing else.
+ *
+ * No cursor means the newest page, which makes the route answerable on its own
+ * rather than only as a continuation.
+ */
+router.get('/:workspaceId/automation-documents', authenticateToken, async (req, res) => {
+  try {
+    const workspaceId = parseWorkspaceIdParam(req.params.workspaceId);
+    if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
+
+    // The same tenancy gate as the settings read, and for the same reason: a
+    // document row names the client it was raised for and links to a route
+    // that re-signs their invoice.
+    if (!(await requireWorkspaceMember(req, res, workspaceId))) return;
+
+    const raw = req.query.cursor;
+    const cursor = raw === undefined ? null : decodeRecentDocumentsCursor(String(raw));
+    // A cursor is only ever one this API issued. A malformed one is a bug or a
+    // tampered request, and answering it with the first page would look like
+    // paging that silently restarts.
+    if (raw !== undefined && !cursor) {
+      return res.status(400).json({ message: 'Invalid cursor' });
+    }
+
+    const page = await loadRecentAutomationDocuments(workspaceId, cursor);
+    return res.status(200).json(page);
+  } catch (err) {
+    error(
+      'Workspace-Service',
+      'Failed to fetch automation documents',
+      sanitizeLogValue({ workspaceId: req.params.workspaceId, error: err.message }),
+      req ?? null
+    );
+    return res.status(500).json({ message: 'Failed to fetch automation documents' });
   }
 });
 
