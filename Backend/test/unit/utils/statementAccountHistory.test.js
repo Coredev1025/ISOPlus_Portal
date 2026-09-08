@@ -33,6 +33,14 @@ describe('invoicesFromDocuments', () => {
     expect(new Date(invoice.dueDate).toISOString()).toBe('2026-08-15T00:00:00.000Z');
   });
 
+  // Mongoose defaults createdAt, so only a hand-inserted row lacks it — and
+  // the seeding recipe in the docs is exactly how such rows get made. Without
+  // a date the invoice cannot be placed on the ledger, and deriving a due
+  // date from it threw a RangeError instead.
+  it('drops a row with no createdAt rather than throwing', () => {
+    expect(invoicesFromDocuments([doc({ createdAt: undefined })])).toEqual([]);
+  });
+
   it('carries the billed figure through unchanged', () => {
     const [invoice] = invoicesFromDocuments([doc({ invoiceTotal: 1232.5 })]);
     expect(invoice.invoiceTotal).toBe(1232.5);
@@ -57,10 +65,16 @@ describe('openingBalanceBefore', () => {
     expect(openingBalanceBefore([], [], '2026-08-01T00:00:00.000Z')).toBe(0);
   });
 
-  // An undated payment cannot be placed before or after the boundary, and
-  // guessing would either double-count it or hide it.
-  it('ignores a payment with no date', () => {
+  // An undated payment takes its invoice's date, the same rule the ledger
+  // applies, so the two agree on which side of the boundary it fell. Dropping
+  // it here while the ageing kept it is what made section 4.3's check throw.
+  it('places a payment with no date on its invoice', () => {
     expect(openingBalanceBefore(invoices, [{ invoiceNumber: 'INV-1', amount: 40 }], '2026-08-01T00:00:00.000Z'))
+      .toBe(60);
+  });
+
+  it('leaves an undated payment on an invoice raised in the period out of the opening balance', () => {
+    expect(openingBalanceBefore(invoices, [{ invoiceNumber: 'INV-2', amount: 50 }], '2026-08-01T00:00:00.000Z'))
       .toBe(100);
   });
 });

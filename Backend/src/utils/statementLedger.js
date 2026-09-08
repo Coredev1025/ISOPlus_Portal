@@ -59,6 +59,9 @@ export function collectPayments(items) {
   return payments;
 }
 
+/** Whether a payment carries a date the ledger can place it by. */
+const isDated = (payment) => !Number.isNaN(new Date(payment.date).getTime());
+
 const withinPeriod = (value, period) => {
   const at = new Date(value).getTime();
   if (Number.isNaN(at)) return false;
@@ -75,9 +78,13 @@ const paidAgainst = (payments, invoiceNumber) => roundMoney(
  * Charge rows, one per invoice raised in the period.
  *
  * When payments cannot be dated, the payment is netted onto the charge row
- * rather than given a row of its own — see `buildStatementLedger`.
+ * rather than given a row of its own — see `buildStatementLedger`. In dated
+ * mode the same happens to the individual payment that has no date: it takes
+ * its invoice's date, because that is the earliest it can have been made and
+ * the one date the ageing already knows it by.
  */
 function chargeRows(invoices, payments, period, datedPayments) {
+  const netted = datedPayments ? payments.filter((p) => !isDated(p)) : payments;
   return invoices
     .filter((inv) => withinPeriod(inv.createdAt, period))
     .map((inv, index) => ({
@@ -85,7 +92,7 @@ function chargeRows(invoices, payments, period, datedPayments) {
       reference: inv.invoiceNumber,
       description: inv.description || 'Services invoiced',
       charge: roundMoney(parseAmount(inv.invoiceTotal)),
-      payment: datedPayments ? 0 : paidAgainst(payments, inv.invoiceNumber),
+      payment: paidAgainst(netted, inv.invoiceNumber),
       sequence: index * 2,
     }));
 }
@@ -116,14 +123,14 @@ function paymentRows(payments, period) {
  * against a closing balance of $400.50, which section 4.3's check rightly
  * refused to render.
  *
- * A payment with no usable date is kept. It cannot be placed on either side of
- * the boundary, and dropping it would report money as still owing that the
- * client has already sent — the worse of the two errors to make on a document
- * that asks them to pay.
+ * A payment with no usable date is kept, on its invoice's date: `chargeRows`
+ * nets it onto the same invoice, and `openingBalanceBefore` counts it from the
+ * same date, so the ledger and the ageing agree on it. They did not always —
+ * kept here and dropped there, a single undated payment made section 4.3's
+ * check throw, which failed the whole board's run.
  */
 function asAtCutoff(invoices, payments, asAt) {
   const at = new Date(asAt).getTime();
-  if (Number.isNaN(at)) return { invoices, payments };
   const notAfter = (value) => {
     const when = new Date(value).getTime();
     return Number.isNaN(when) || when <= at;
@@ -163,7 +170,9 @@ function outstandingByInvoice(invoices, payments) {
  *
  * The two must not be mixed. Netting a payment onto its charge row *and*
  * giving it a row of its own would count it twice, so the flag is threaded
- * through both row builders from one place.
+ * through both row builders from one place. The one exception is a payment
+ * with no date: dated mode has no row to give it, so it is netted onto its
+ * invoice instead, and `paymentRows` never sees it.
  */
 export function buildStatementLedger({
   invoices = [],

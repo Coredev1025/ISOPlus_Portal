@@ -19,7 +19,7 @@ import { renderMonthlyStatementPdf } from '../../utils/webhookMonthlyStatementPd
 import { liveMonthlyStatementDeps } from '../../routes/webhook.js';
 import { claimDocumentNumber } from '../../utils/documentNumberAllocator.js';
 import { mongoEq } from '../../utils/securityHelpers.js';
-import { info, warn } from '../../utils/logger.js';
+import { error, info, warn } from '../../utils/logger.js';
 
 export async function listStatementParticipants(workspaceId, boardId) {
   const items = await Item.find({
@@ -38,13 +38,25 @@ function statementItemId(boardId, participant) {
   return `statement:${boardId}:${participant}`;
 }
 
-async function existingStatementLinks(workspaceId, periodKey, type = PDFLINK_TYPE_MONTHLY_STATEMENT) {
+async function existingStatementLinks(workspaceId, periodKey, type) {
   const existing = await PDFLink.find({
     workspaceId: mongoEq(String(workspaceId)),
     periodKey: mongoEq(String(periodKey)),
     type,
   }).lean();
   return new Map(existing.map((link) => [link.itemId, link]));
+}
+
+/**
+ * The result row for a slot already written, handing back the number on the
+ * customer's PDF rather than claiming a second one. Absent rather than empty
+ * for a row written before statements were numbered, so {{statement_number}}
+ * survives verbatim instead of rendering blank.
+ */
+function replayRow(existing, itemId, participant) {
+  const row = { itemId, participant, pdfUrl: existing.pdfLink };
+  if (existing.invoiceNumber) row.statementNumber = existing.invoiceNumber;
+  return row;
 }
 
 /**
@@ -115,11 +127,7 @@ async function statementOfAccountFor({
 }) {
   const itemId = statementOfAccountItemId(boardId, participant);
   const existing = existingAccounts.get(itemId);
-  if (existing) {
-    const row = { itemId, participant, pdfUrl: existing.pdfLink };
-    if (existing.invoiceNumber) row.statementNumber = existing.invoiceNumber;
-    return row;
-  }
+  if (existing) return replayRow(existing, itemId, participant);
   return generateStatementOfAccount({
     workspaceId,
     boardId,
@@ -144,7 +152,9 @@ export async function generateStatementsForBoard({
     return [];
   }
 
-  const existingByItemId = await existingStatementLinks(workspaceId, periodKey);
+  const existingByItemId = await existingStatementLinks(
+    workspaceId, periodKey, PDFLINK_TYPE_MONTHLY_STATEMENT,
+  );
   const existingAccounts = await existingStatementLinks(
     workspaceId, periodKey, PDFLINK_TYPE_STATEMENT_OF_ACCOUNT,
   );
@@ -161,22 +171,44 @@ export async function generateStatementsForBoard({
     const itemId = statementItemId(boardId, participant);
     const existing = existingByItemId.get(itemId);
     if (existing) {
-      const row = { itemId, participant, pdfUrl: existing.pdfLink };
-      // Absent rather than empty for a row written before statements were
-      // numbered, so {{statement_number}} survives verbatim instead of
-      // rendering blank.
-      if (existing.invoiceNumber) row.statementNumber = existing.invoiceNumber;
-      results.push(row);
+      results.push(replayRow(existing, itemId, participant));
     } else {
       results.push(await generateOneStatement({
         workspaceId, boardId, participant, period, timezone, periodKey, deps,
       }));
     }
 
-    const account = await statementOfAccountFor({
+    const account = await settledStatementOfAccount({
       workspaceId, boardId, participant, timezone, periodKey, accountPeriod, existingAccounts,
     });
     if (account) results.push(account);
   }
   return results;
+}
+
+/**
+ * One participant's statement of account, or null if it could not be stated.
+ *
+ * The account refuses to render when its own figures disagree — section 4.3's
+ * check, which a payment against an invoice the ledger has no row for can
+ * trip. That is one ISO+ record for an operator to fix, and it must not take
+ * the rest of the board with it: thrown from here it failed the BullMQ job,
+ * every participant after this one got no budget statement either, and the
+ * same record failed every retry. Logged as an error, because it is one, and
+ * the run carries on; the budget statement for this participant has already
+ * been written above.
+ */
+async function settledStatementOfAccount(args) {
+  try {
+    return await statementOfAccountFor(args);
+  } catch (err) {
+    error('Automation', 'Statement of account could not be stated; continuing with the board', {
+      workspaceId: args.workspaceId,
+      boardId: args.boardId,
+      participant: args.participant,
+      periodKey: args.periodKey,
+      reason: err?.message,
+    });
+    return null;
+  }
 }

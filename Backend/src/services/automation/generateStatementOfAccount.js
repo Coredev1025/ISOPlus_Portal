@@ -29,10 +29,13 @@ import {
 } from '../../constants/storage.js';
 import { buildOutputKey } from '../../utils/s3OutputKey.js';
 import { buildStatementDocument } from '../../utils/statementOfAccountDocument.js';
-import { buildStatementLedger, hasStatementActivity } from '../../utils/statementLedger.js';
+import {
+  buildStatementLedger,
+  collectPayments,
+  hasStatementActivity,
+} from '../../utils/statementLedger.js';
 import { invoicesFromDocuments, openingBalanceBefore } from '../../utils/statementAccountHistory.js';
 import { renderStatementOfAccountPdf } from '../../utils/statementOfAccountPdf.js';
-import { collectPayments } from '../../utils/statementLedger.js';
 import { findParticipantProfile } from '../email/recipients.js';
 import { getS3FileUrl, uploadFileToS3 } from '../../utils/uploadS3.js';
 import { mongoEq } from '../../utils/securityHelpers.js';
@@ -44,14 +47,19 @@ export function statementOfAccountItemId(boardId, participant) {
 }
 
 /**
- * Every invoice ever raised for this participant, not only this period's.
+ * Every invoice ever raised on this board for this participant, not only this
+ * period's.
  *
  * Ageing needs the old unpaid ones — that is what the 90+ bucket is for — and
- * the opening balance needs everything before the period opened.
+ * the opening balance needs everything before the period opened. Board-scoped
+ * to match the payments below: with the invoices read across the workspace, a
+ * participant on two eligible boards had both boards' charges on each
+ * statement and only one board's payments applied against them.
  */
-async function participantInvoices(workspaceId, participant) {
+async function participantInvoices(workspaceId, boardId, participant) {
   const rows = await PDFLink.find({
     workspaceId: mongoEq(String(workspaceId)),
+    boardId: mongoEq(String(boardId)),
     participant: mongoEq(String(participant)),
     type: { $in: [PDFLINK_TYPE_NDIS_INVOICE, PDFLINK_TYPE_AGE_CARE_INVOICE] },
     isDeleted: { $ne: true },
@@ -90,21 +98,6 @@ async function uploadStatement(pdfBytes, { workspaceId, boardId, participant, pe
 }
 
 /**
- * Assemble the ledger. Separated from the I/O so the decision to send — which
- * is section 4.5's, and depends on the settled figures — is made on one value.
- */
-async function settleAccount({
-  workspaceId, boardId, participant, period, timezone, nameField,
-}) {
-  const invoices = await participantInvoices(workspaceId, participant);
-  const items = await participantPaymentItems(workspaceId, boardId, participant, nameField);
-  const openingBalance = openingBalanceBefore(invoices, collectPayments(items), period.start);
-  return buildStatementLedger({
-    invoices, items, period, openingBalance, timezone,
-  });
-}
-
-/**
  * Generate and file one statement of account, or nothing.
  *
  * Returns null when section 4.5 says there is nothing to send, so the caller
@@ -119,8 +112,11 @@ async function settleAccount({
 export async function generateStatementOfAccount({
   workspaceId, boardId, participant, period, timezone, periodKey, claimStatementNumber, nameField,
 }) {
-  const { ledger, ageing } = await settleAccount({
-    workspaceId, boardId, participant, period, timezone, nameField,
+  const invoices = await participantInvoices(workspaceId, boardId, participant);
+  const items = await participantPaymentItems(workspaceId, boardId, participant, nameField);
+  const openingBalance = openingBalanceBefore(invoices, collectPayments(items), period.start);
+  const { ledger, ageing } = buildStatementLedger({
+    invoices, items, period, openingBalance, timezone,
   });
 
   if (!hasStatementActivity(ledger)) {

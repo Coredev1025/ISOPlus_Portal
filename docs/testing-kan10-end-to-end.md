@@ -401,7 +401,9 @@ boards that are not Low Cat. NDIS-only boards no-op statements.
 budget statement above says what was *delivered*; the **Statement of Account**
 (`PDFLINK_TYPE_STATEMENT_OF_ACCOUNT`, key `statements-of-account/`) says what is
 *owed* — opening balance, charges, payments, closing balance, ageing. They run
-alongside each other and replay on separate itemIds.
+alongside each other and replay on separate itemIds, and both go out in the one
+email — the worker groups a run's documents by participant, so
+`{{statement_number}}` renders as the two numbers comma-joined.
 
 Its charges come from `PDFLink.invoiceTotal` on **invoice** rows for the same
 participant, so **a participant with no invoices gets no statement of account**
@@ -634,7 +636,7 @@ an item. This was checked and was not the blocker.
 | PDFs generated but blank | real defect — run step 11; the source rows resolved no values |
 | A whole block missing from a statement PDF | one of its multiVariableText variables was empty — pdfme skips the block, not just the field |
 | `No account activity; no statement of account` for everyone | no invoice PDFLink rows carry `invoiceTotal` for those participants — expected on a fresh fixture |
-| Statement job fails, "ageing does not reconcile" | the two figures on the document disagree; the check refused to send it. Read the numbers, do not weaken the check |
+| `Statement of account could not be stated` for one participant, "ageing does not reconcile" | the two figures on that document disagree; the check refused to send it and the run carried on without it. Usually a payment against an invoice the ledger has no row for. Read the numbers, do not weaken the check |
 | Tick green, replay generates nothing | a completed `bull:automation:*` jobId for that periodKey is still in Redis — clear it |
 | An email lists another board's PDFs | real defect — a PDF lookup lost its `boardId` scope |
 | Online, tick green, nothing generated at all | no delivery backend resolved — `EMAIL_FROM` or an AWS variable is blank, so the worker refused before claiming invoice numbers |

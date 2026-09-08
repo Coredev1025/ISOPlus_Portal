@@ -163,3 +163,76 @@ describe('a scheduled statement run', () => {
     expect(written).toBe(0);
   });
 });
+
+/**
+ * The three ways a real board's data can differ from the tidy seed above.
+ * Each of these took the whole board's run down, not one participant's.
+ */
+describe('a scheduled statement run, on untidy data', () => {
+  const run = () => generateStatementsForBoard({
+    workspaceId: WORKSPACE, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: PERIOD_KEY,
+  });
+
+  // ISO+ lets the amount and the received date be entered separately.
+  it('still states the account when a payment has no received date', async () => {
+    await Item.updateOne({ itemId: 'item-1' }, { $unset: { 'data.Invoice Received Date': '' } });
+
+    await run();
+
+    const rendered = statementRender();
+    expect(rendered).toBeDefined();
+    // Netted onto the invoice's row rather than given a dated one.
+    expect(JSON.parse(rendered.transactions)).toHaveLength(1);
+    expect(JSON.parse(rendered.summary)[0]).toEqual(['$0.00', '$250.00', '$100.00', '$150.00']);
+  });
+
+  // Payments are read per board; the invoices must be too, or an invoice
+  // raised on board B shows as owing on board A's statement as well.
+  it('leaves an invoice raised on another board to that board\'s statement', async () => {
+    await PDFLink.create({
+      workspaceId: WORKSPACE,
+      boardId: 'otherBoard01',
+      itemId: 'item-9',
+      participant: PARTICIPANT,
+      type: PDFLINK_TYPE_NDIS_INVOICE,
+      invoiceNumber: 'INV-9999',
+      invoiceTotal: 999,
+      periodKey: '20260801-2300',
+      pdfLink: 'https://s3.example/inv-9999.pdf',
+      createdAt: new Date('2026-08-06T00:00:00.000Z'),
+    });
+
+    await run();
+
+    const rendered = statementRender();
+    expect(JSON.parse(rendered.summary)[0]).toEqual(['$0.00', '$250.00', '$100.00', '$150.00']);
+  });
+
+  // A payment recorded against an invoice the ledger has no row for — one
+  // raised by hand, before the generators recorded a total — puts a payment on
+  // the ledger and nothing in the ageing, so the two cannot agree and section
+  // 4.3's check refuses the document. That is one participant's problem to fix
+  // on ISO+, and the rest of the board must not wait on it.
+  it('finishes the board when one participant\'s account cannot be stated', async () => {
+    await Item.create({
+      itemId: 'item-2',
+      workspaceId: WORKSPACE,
+      boardId: BOARD,
+      folderId: 'folder-1',
+      invoicedBy: 'INV-GHOST',
+      data: {
+        'Full Name/Preferred Name': 'Aaron Test',
+        'Amount Received($)': '50',
+        'Invoice Received Date': '2026-08-20T00:00:00.000Z',
+      },
+    });
+
+    const results = await run();
+
+    const accounts = await PDFLink.find({ type: PDFLINK_TYPE_STATEMENT_OF_ACCOUNT }).lean();
+    expect(accounts.map((row) => row.participant)).toEqual([PARTICIPANT]);
+    // Both budget statements were still written, and both are handed back.
+    const budget = results.filter((row) => row.itemId.startsWith('statement:'));
+    expect(budget.map((row) => row.participant)).toEqual(['Aaron Test', PARTICIPANT]);
+  });
+});
