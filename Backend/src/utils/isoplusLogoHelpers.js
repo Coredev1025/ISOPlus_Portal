@@ -368,12 +368,10 @@ async function resolveDocumentCoverAttributeId(deps, ctx, boardItem, viewItem) {
   return coverAttributeId;
 }
 
-function logDocumentItemCoverError(deps, ctx, err, boardItem, viewItem, item, itemValues, coverAttributeId, uploadImageURL) {
+function logDocumentItemCoverError(deps, ctx, err, boardItem, viewItem, item, coverAttributeId, uploadImageURL, requestPayload) {
   const {
-    authorization, workspaceId, logo, type, req,
-    getAllViews, iterateBoardItems, validateBoardAttributes, getItemValues,
-    getErrorMessage, errorMessageIncludes, sleep, logoItemsPageSize,
-    info, warn, error, logAttributeError, logApiError,
+    workspaceId, logo, req,
+    getErrorMessage, errorMessageIncludes, logAttributeError, logApiError,
   } = deps;
   const { requestId } = ctx;
   const errorContext = {
@@ -390,16 +388,8 @@ function logDocumentItemCoverError(deps, ctx, err, boardItem, viewItem, item, it
     requestId,
     errorDetails: getErrorMessage(err),
     statusCode: err.response?.status,
-    requestPayload: {
-      values: [{ data: uploadImageURL?.data?.id, attribute_id: coverAttributeId }],
-    },
+    requestPayload,
     stackTrace: err.stack,
-    itemValues: itemValues?.values?.map((v) => ({
-      attributeId: v.attribute?.id,
-      attributeName: v.attribute?.name,
-      attributeType: v.attribute?.type,
-      data: v.data,
-    })) || [],
     viewSettings: viewItem.settings,
     uploadDetails: {
       uploadId: uploadImageURL?.data?.id,
@@ -425,53 +415,15 @@ function logDocumentItemCoverError(deps, ctx, err, boardItem, viewItem, item, it
 }
 
 async function updateDocumentItemCover(deps, ctx, boardItem, viewItem, item, coverAttributeId, uploadImageURL) {
-  const {
-    authorization, workspaceId, logo, type, req,
-    getAllViews, iterateBoardItems, validateBoardAttributes, getItemValues,
-    getErrorMessage, errorMessageIncludes, sleep, logoItemsPageSize,
-    info, warn, error, logAttributeError, logApiError,
-  } = deps;
-  const { requestId } = ctx;
-  let itemValues;
-  try {
-    itemValues = await getItemValues(workspaceId, boardItem.id, item.id, authorization);
-  } catch (err) {
-    const itemValuesErrorContext = {
-      workspaceId,
-      requestId,
-      boardId: boardItem.id,
-      viewId: viewItem.id,
-      itemId: item.id,
-      itemName: item.name,
-      coverAttributeId,
-      errorDetails: getErrorMessage(err),
-      statusCode: err.response?.status,
-      stackTrace: err.stack,
-    };
-    if (errorMessageIncludes(err, 'timeout') || err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
-      warn('ISO+™ Service', 'Request timeout when fetching item values', itemValuesErrorContext, req);
-    } else if (errorMessageIncludes(err, 'network') || err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED') {
-      warn('ISO+™ Service', 'Network error when fetching item values', itemValuesErrorContext, req);
-    } else {
-      warn('ISO+™ Service', 'Error fetching item values', itemValuesErrorContext, req);
-    }
-    return;
-  }
-
-  if (!itemValues) return;
-
-  let doc = itemValues.values.find((v) => v.attribute.id == coverAttributeId);
-  const coverData = [{ id: uploadImageURL.data.id }];
-  if (doc) {
-    doc.data = coverData;
-  } else {
-    doc = { data: coverData, attribute: { id: coverAttributeId } };
-  }
+  const { authorization, workspaceId, sleep } = deps;
+  const requestPayload = {
+    values: [{ data: [{ id: uploadImageURL.data.id }], attribute_id: coverAttributeId }],
+  };
 
   try {
     const itemUpdateResponse = await axios.put(
       `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardItem.id}/items/${item.id}`,
-      { values: [{ data: doc.data, attribute_id: doc.attribute.id }] },
+      requestPayload,
       {
         headers: {
           Authorization: authorization,
@@ -490,7 +442,7 @@ async function updateDocumentItemCover(deps, ctx, boardItem, viewItem, item, cov
       }
     }
   } catch (err) {
-    logDocumentItemCoverError(deps, ctx, err, boardItem, viewItem, item, itemValues, coverAttributeId, uploadImageURL);
+    logDocumentItemCoverError(deps, ctx, err, boardItem, viewItem, item, coverAttributeId, uploadImageURL, requestPayload);
   }
   await sleep(2000);
 }
