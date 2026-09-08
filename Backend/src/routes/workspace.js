@@ -436,12 +436,7 @@ async function loadAutomationJobs(workspaceId) {
  * by pdfLink before the cap. The oversampled limit leaves room for that
  * dedupe without reading the whole collection.
  *
- * Fifty rather than ten because the panel now collapses to five and expands:
- * ten was the whole history the client could ever reach, which is one run on a
- * board with a handful of participants. Fifty is a few runs' worth and still
- * one aggregation. When it stops being enough the answer is a `before` cursor
- * on this route, not a larger number.
- * ponytail: fixed cap, no pagination — add a `before` cursor when 50 runs out.
+ * Fifty is a few runs' worth; when it runs out, add a `before` cursor here.
  */
 const RECENT_DOCUMENTS_LIMIT = 50;
 

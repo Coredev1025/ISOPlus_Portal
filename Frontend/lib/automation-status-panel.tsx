@@ -190,9 +190,6 @@ function RecentDocumentList({
             onClick={() => setExpanded(!expanded)}
             className="h-7 gap-1.5 px-2.5 text-[12px] font-medium text-muted-foreground hover:text-foreground"
           >
-            {/* One control, rotated rather than swapped: the chevron turning
-                is what says the same list grew, where a second icon would
-                read as a different action. */}
             <ChevronDown
               aria-hidden
               className={cn(

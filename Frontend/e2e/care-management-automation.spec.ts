@@ -317,7 +317,7 @@ test.describe("Care Management automation (KAN-10 fixture)", () => {
     await expander.click();
 
     // More than five now, and the button offers the way back.
-    expect(await rows.count()).toBeGreaterThan(5);
+    await expect.poll(() => rows.count()).toBeGreaterThan(5);
     await status.getByRole("button", { name: /show fewer/i }).click();
     await expect(rows).toHaveCount(5);
   });
