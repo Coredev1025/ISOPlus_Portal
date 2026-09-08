@@ -459,6 +459,12 @@ describe('executeSetLogo - document views', () => {
       iterateBoardItems: vi.fn(async function* () {
         yield [{ id: 'item_1', name: 'Plan A' }];
       }),
+      getItemValues: vi.fn(async () => ({
+        values: [
+          { attribute: { id: 'attr_cover_1', name: 'Cover', type: 'file' }, data: [{ id: 'old_att' }] },
+          { attribute: { id: 'attr_other', name: 'Notes', type: 'text' }, data: 'hello' },
+        ],
+      })),
       ...overrides,
     });
   }
@@ -475,6 +481,7 @@ describe('executeSetLogo - document views', () => {
       limit: 50,
       authorization: 'Bearer tok_abc123',
     });
+    expect(deps.getItemValues).toHaveBeenCalledWith(WORKSPACE_ID, BOARD_ID, 'item_1', 'Bearer tok_abc123');
     expect(itemPuts).toHaveLength(1);
     expect(itemPuts[0].params).toEqual({ workspaceId: WORKSPACE_ID, boardId: BOARD_ID, itemId: 'item_1' });
     expect(itemPuts[0].body).toEqual({
@@ -494,6 +501,23 @@ describe('executeSetLogo - document views', () => {
     });
   });
 
+  it('creates the cover value when the item has no value for the cover attribute', async () => {
+    captureUpload();
+    const itemPuts = captureItemPut();
+    captureViewPut();
+    const deps = documentDeps({
+      getItemValues: vi.fn(async () => ({
+        values: [{ attribute: { id: 'attr_other', name: 'Notes', type: 'text' }, data: 'hello' }],
+      })),
+    });
+
+    await executeSetLogo(deps);
+
+    expect(itemPuts[0].body).toEqual({
+      values: [{ data: [{ id: UPLOAD_ID }], attribute_id: 'attr_cover_1' }],
+    });
+  });
+
   it('adopts the cover attribute id resolved by validateBoardAttributes when the view has none', async () => {
     captureUpload();
     const itemPuts = captureItemPut();
@@ -504,6 +528,7 @@ describe('executeSetLogo - document views', () => {
         views: [{ id: VIEW_ID, name: 'Care Plan Doc', type: 'document', folder_id: 'fld_88', settings: {} }],
       })),
       validateBoardAttributes: vi.fn(async () => ({ attribute: { id: 'attr_resolved_9' } })),
+      getItemValues: vi.fn(async () => ({ values: [] })),
     });
 
     await executeSetLogo(deps);
@@ -540,24 +565,20 @@ describe('executeSetLogo - document views', () => {
     );
   });
 
-  it('still writes item covers when getItemValues returns null (swallowed upstream 403)', async () => {
+  it('warns and leaves the item alone when its values cannot be fetched', async () => {
     captureUpload();
     const itemPuts = captureItemPut();
     const viewPuts = captureViewPut();
     const deps = documentDeps({
-      getItemValues: vi.fn(async () => null),
+      getItemValues: vi.fn(async () => { throw Object.assign(new Error('timeout of 0ms'), { code: 'ETIMEDOUT' }); }),
     });
 
     await executeSetLogo(deps);
 
-    expect(deps.getItemValues).not.toHaveBeenCalled();
-    expect(itemPuts).toHaveLength(1);
-    expect(itemPuts[0].body).toEqual({
-      values: [{ data: [{ id: UPLOAD_ID }], attribute_id: 'attr_cover_1' }],
-    });
-    expect(viewPuts[0].body.settings.editorItems).toEqual({
-      item_1: { cover: UPLOAD_ID },
-    });
+    expect(itemPuts).toHaveLength(0);
+    expect(deps.warn.mock.calls.map((c) => c[1])).toContain('Request timeout when fetching item values');
+    expect(viewPuts).toHaveLength(1);
+    expect(viewPuts[0].body.settings.editorItems).toBeUndefined();
   });
 
   it('routes an unrecognised-attribute failure on the item PUT to logAttributeError with the cover id', async () => {
@@ -574,8 +595,14 @@ describe('executeSetLogo - document views', () => {
     expect(deps.logAttributeError.mock.calls[0][2]).toBe('attr_cover_1');
     expect(deps.logAttributeError.mock.calls[0][3]).toMatchObject({
       itemId: 'item_1',
-      requestPayload: { values: [{ data: [{ id: UPLOAD_ID }], attribute_id: 'attr_cover_1' }] },
+      requestPayload: { values: [{ data: UPLOAD_ID, attribute_id: 'attr_cover_1' }] },
+      itemValues: [
+        { attributeId: 'attr_cover_1', attributeName: 'Cover', attributeType: 'file', data: [{ id: UPLOAD_ID }] },
+        { attributeId: 'attr_other', attributeName: 'Notes', attributeType: 'text', data: 'hello' },
+      ],
     });
+    // The view PUT still goes out, but with no editorItems — the same shape as
+    // the timeout path above, since the item PUT never produced any.
     expect(viewPuts[0].body.settings.editorItems).toBeUndefined();
   });
 

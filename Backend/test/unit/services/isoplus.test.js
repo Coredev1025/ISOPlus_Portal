@@ -707,6 +707,34 @@ describe('validateBoardAttributes', () => {
     });
   });
 
+  it('returns error when has_more is true without a usable after cursor (createPaginator guard)', async () => {
+    const workspaceId = nextId('ws');
+    const boardId = nextId('board');
+    const coverAttributeId = 'attr-cover-1';
+    const sessionAuthorization = 'Bearer user-oauth-token';
+
+    server.use(
+      http.get(`${API}/workspaces/${workspaceId}/boards/${boardId}/attributes`, () => {
+        return HttpResponse.json({
+          data: [{ id: 'attr-page-1', name: 'Title', type: 'text' }],
+          has_more: true,
+          after: null,
+        });
+      })
+    );
+
+    const result = await validateBoardAttributes(
+      workspaceId,
+      boardId,
+      'view-1',
+      coverAttributeId,
+      null,
+      sessionAuthorization,
+    );
+
+    expect(result).toEqual({ status: 'error', attribute: null });
+  });
+
   it('reuses attributes from attributesCache so the same board is fetched once per setLogo', async () => {
     const workspaceId = nextId('ws');
     const boardId = nextId('board');
