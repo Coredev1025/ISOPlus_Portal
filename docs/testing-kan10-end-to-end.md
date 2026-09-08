@@ -218,17 +218,23 @@ E2E_SCHEDULER_API_KEY=$(grep '^SCHEDULER_API_KEY=' ../Backend/.env | cut -d= -f2
 npx playwright test
 ```
 
-2026-09-08, main clone, Node 22: **40 passed, 3 skipped, 0 failed**. The three
+2026-09-08, main clone, Node 22: **39 passed, 3 skipped, 2 failed**. The three
 skips want `E2E_USER_*` (the non-admin role gate) and `E2E_WORKSPACE_ID_NO_FLAG`.
 
-**One stale assertion to know about.** `auth-boundary.spec.ts:43` pins "a
-signed-out visitor stays on /dashboard, no redirect" — and the app now
-redirects them to `/`. It fails **6 runs out of 6 in isolation** and passes
-only when the machine is loaded enough that `waitForLoadState('networkidle')`
-resolves before the client-side redirect lands, which is why a full-suite run
-shows it green. That is a stale expectation against a deliberate auth change,
-not a flake, and the fix is a call for whoever owns KAN-27 — the behaviour it
-pins is security-relevant.
+**The two failures are one pre-existing defect, and it is not a flake.**
+`auth-boundary.spec.ts:43` pins "a signed-out visitor stays on /dashboard" and
+`smoke.spec.ts:10` pins "/access-denied is reachable". The app now redirects an
+unauthenticated visitor to `/` in both cases. Each fails **6 of 6** and **3 of 4**
+runs in isolation and passes only when the machine is loaded enough that
+`waitForLoadState('networkidle')` resolves before the client-side redirect lands
+— which is why a busy full-suite run can show them green and a quiet single run
+cannot. Both spec files are byte-identical to `develop`.
+
+Deliberately not corrected here. These pin auth and routing behaviour that
+KAN-27 changed on purpose, and rewriting a security-boundary assertion to match
+whatever the code now does is how a real regression gets waved through. Whoever
+owns that change should say whether the redirect is the intended behaviour, and
+then the assertions follow.
 
 ### 2. Turn the tab on
 
