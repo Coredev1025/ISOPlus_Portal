@@ -10,10 +10,12 @@ import {
   getFolder,
   getItem,
   getItemValues,
+  iterateBoardItems,
   validateItemBelongsToTenant,
   getReferences,
   getAttribute,
   getBoardAttributes,
+  validateBoardAttributes,
   setIntegrationMessage,
   setPDFLinkAttribute,
   setGeneratedField,
@@ -363,6 +365,13 @@ describe('getItem', () => {
 });
 
 describe('getItemValues', () => {
+  const originalPat = process.env.PERSONAL_ACCESS_TOKEN;
+
+  afterEach(() => {
+    if (originalPat === undefined) delete process.env.PERSONAL_ACCESS_TOKEN;
+    else process.env.PERSONAL_ACCESS_TOKEN = originalPat;
+  });
+
   it('returns the item body on success', async () => {
     const workspaceId = nextId('ws');
     const boardId = nextId('board');
@@ -403,6 +412,98 @@ describe('getItemValues', () => {
     const result = await getItemValues(workspaceId, boardId, 'item-1');
 
     expect(result).toBeNull();
+  });
+
+  it('uses the session Authorization when provided, not PERSONAL_ACCESS_TOKEN', async () => {
+    const workspaceId = nextId('ws');
+    const boardId = nextId('board');
+    const sessionAuthorization = 'Bearer user-oauth-token';
+    process.env.PERSONAL_ACCESS_TOKEN = 'must-not-be-sent';
+
+    let seenAuthorization;
+    server.use(
+      http.get(`${API}/workspaces/${workspaceId}/boards/${boardId}/items/item-1`, ({ request }) => {
+        seenAuthorization = request.headers.get('authorization');
+        return HttpResponse.json({ id: 'item-1', values: [] });
+      })
+    );
+
+    await getItemValues(workspaceId, boardId, 'item-1', sessionAuthorization);
+
+    expect(seenAuthorization).toBe(sessionAuthorization);
+    expect(seenAuthorization).not.toContain('must-not-be-sent');
+  });
+
+  it('falls back to PERSONAL_ACCESS_TOKEN when authorization is omitted', async () => {
+    const workspaceId = nextId('ws');
+    const boardId = nextId('board');
+    process.env.PERSONAL_ACCESS_TOKEN = 'pat-for-webhooks';
+
+    let seenAuthorization;
+    server.use(
+      http.get(`${API}/workspaces/${workspaceId}/boards/${boardId}/items/item-1`, ({ request }) => {
+        seenAuthorization = request.headers.get('authorization');
+        return HttpResponse.json({ id: 'item-1', values: [] });
+      })
+    );
+
+    await getItemValues(workspaceId, boardId, 'item-1');
+
+    expect(seenAuthorization).toBe('Bearer pat-for-webhooks');
+  });
+});
+
+describe('iterateBoardItems', () => {
+  const originalPat = process.env.PERSONAL_ACCESS_TOKEN;
+
+  afterEach(() => {
+    if (originalPat === undefined) delete process.env.PERSONAL_ACCESS_TOKEN;
+    else process.env.PERSONAL_ACCESS_TOKEN = originalPat;
+  });
+
+  it('uses the session Authorization when options.authorization is set', async () => {
+    const workspaceId = nextId('ws');
+    const boardId = nextId('board');
+    const sessionAuthorization = 'Bearer user-oauth-token';
+    process.env.PERSONAL_ACCESS_TOKEN = 'must-not-be-sent';
+
+    let seenAuthorization;
+    server.use(
+      http.get(`${API}/workspaces/${workspaceId}/boards/${boardId}/items`, ({ request }) => {
+        seenAuthorization = request.headers.get('authorization');
+        return HttpResponse.json({ data: [{ id: 'item-1' }], has_more: false, after: null });
+      })
+    );
+
+    const iterator = iterateBoardItems(workspaceId, boardId, 'folder-1', {
+      limit: 50,
+      authorization: sessionAuthorization,
+      pageDelayMs: 0,
+    });
+    const { value } = await iterator.next();
+
+    expect(value).toEqual([{ id: 'item-1' }]);
+    expect(seenAuthorization).toBe(sessionAuthorization);
+    expect(seenAuthorization).not.toContain('must-not-be-sent');
+  });
+
+  it('falls back to PERSONAL_ACCESS_TOKEN when authorization is omitted', async () => {
+    const workspaceId = nextId('ws');
+    const boardId = nextId('board');
+    process.env.PERSONAL_ACCESS_TOKEN = 'pat-for-sync';
+
+    let seenAuthorization;
+    server.use(
+      http.get(`${API}/workspaces/${workspaceId}/boards/${boardId}/items`, ({ request }) => {
+        seenAuthorization = request.headers.get('authorization');
+        return HttpResponse.json({ data: [], has_more: false, after: null });
+      })
+    );
+
+    const iterator = iterateBoardItems(workspaceId, boardId, null, { pageDelayMs: 0 });
+    await iterator.next();
+
+    expect(seenAuthorization).toBe('Bearer pat-for-sync');
   });
 });
 
@@ -520,6 +621,134 @@ describe('getBoardAttributes', () => {
 
     expect(result.status).toBe(500);
     expect(result.attribute).toBeUndefined();
+  });
+});
+
+describe('validateBoardAttributes', () => {
+  const originalPat = process.env.PERSONAL_ACCESS_TOKEN;
+
+  afterEach(() => {
+    if (originalPat === undefined) delete process.env.PERSONAL_ACCESS_TOKEN;
+    else process.env.PERSONAL_ACCESS_TOKEN = originalPat;
+  });
+
+  it('calls ISO+ with the session Authorization, not PERSONAL_ACCESS_TOKEN', async () => {
+    const workspaceId = nextId('ws');
+    const boardId = nextId('board');
+    const coverAttributeId = 'attr-cover-1';
+    const sessionAuthorization = 'Bearer user-oauth-token';
+    process.env.PERSONAL_ACCESS_TOKEN = 'must-not-be-sent';
+
+    let seenAuthorization;
+    server.use(
+      http.get(`${API}/workspaces/${workspaceId}/boards/${boardId}/attributes`, ({ request }) => {
+        seenAuthorization = request.headers.get('authorization');
+        return HttpResponse.json({
+          data: [{ id: coverAttributeId, name: 'Cover', type: 'file' }],
+          has_more: false,
+          after: null,
+        });
+      })
+    );
+
+    const result = await validateBoardAttributes(
+      workspaceId,
+      boardId,
+      'view-1',
+      coverAttributeId,
+      null,
+      sessionAuthorization,
+    );
+
+    expect(seenAuthorization).toBe(sessionAuthorization);
+    expect(seenAuthorization).not.toContain('must-not-be-sent');
+    expect(result).toMatchObject({ status: 'valid', attribute: { id: coverAttributeId } });
+  });
+
+  it('pages through all attribute results so a cover attribute past the first page is found', async () => {
+    const workspaceId = nextId('ws');
+    const boardId = nextId('board');
+    const coverAttributeId = 'attr-cover-on-page-2';
+    const sessionAuthorization = 'Bearer user-oauth-token';
+    const afterCursors = [];
+
+    server.use(
+      http.get(`${API}/workspaces/${workspaceId}/boards/${boardId}/attributes`, ({ request }) => {
+        const after = new URL(request.url).searchParams.get('after');
+        afterCursors.push(after);
+        if (!after) {
+          return HttpResponse.json({
+            data: [{ id: 'attr-page-1', name: 'Title', type: 'text' }],
+            has_more: true,
+            after: 'attr-page-2-cursor',
+          });
+        }
+        return HttpResponse.json({
+          data: [{ id: coverAttributeId, name: 'Cover', type: 'file' }],
+          has_more: false,
+          after: null,
+        });
+      })
+    );
+
+    const result = await validateBoardAttributes(
+      workspaceId,
+      boardId,
+      'view-1',
+      coverAttributeId,
+      null,
+      sessionAuthorization,
+    );
+
+    expect(afterCursors).toEqual([null, 'attr-page-2-cursor']);
+    expect(result).toMatchObject({
+      status: 'valid',
+      attribute: { id: coverAttributeId, name: 'Cover', type: 'file' },
+    });
+  });
+
+  it('reuses attributes from attributesCache so the same board is fetched once per setLogo', async () => {
+    const workspaceId = nextId('ws');
+    const boardId = nextId('board');
+    const coverAttributeId = 'attr-cover-1';
+    const sessionAuthorization = 'Bearer user-oauth-token';
+    const attributesCache = new Map();
+    let attributeFetches = 0;
+
+    server.use(
+      http.get(`${API}/workspaces/${workspaceId}/boards/${boardId}/attributes`, () => {
+        attributeFetches += 1;
+        return HttpResponse.json({
+          data: [{ id: coverAttributeId, name: 'Cover', type: 'file' }],
+          has_more: false,
+          after: null,
+        });
+      })
+    );
+
+    const first = await validateBoardAttributes(
+      workspaceId,
+      boardId,
+      'view-1',
+      coverAttributeId,
+      null,
+      sessionAuthorization,
+      attributesCache,
+    );
+    const second = await validateBoardAttributes(
+      workspaceId,
+      boardId,
+      'view-2',
+      coverAttributeId,
+      null,
+      sessionAuthorization,
+      attributesCache,
+    );
+
+    expect(attributeFetches).toBe(1);
+    expect(attributesCache.get(boardId)).toHaveLength(1);
+    expect(first).toMatchObject({ status: 'valid', attribute: { id: coverAttributeId } });
+    expect(second).toMatchObject({ status: 'valid', attribute: { id: coverAttributeId } });
   });
 });
 
