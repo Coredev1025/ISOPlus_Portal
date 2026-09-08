@@ -196,32 +196,39 @@ was misdiagnosed as a Node 25 problem; it reproduced on Node 22 and is fixed.
 The Frontend unit suite's Node 25 failure (`window.localStorage.clear is not a
 function`, ~370 tests) is real and separate — use Node 22 for that.
 
-Still broken on develop: `e2e/board-sync-schedule.spec.ts` was truncated to 20
-lines, mid-function, by the Google-auth commit `249492a1`, so a bare
-`npx playwright test` aborts with *"Unexpected token (21:0)"* before running
-anything. Name the other specs on the command line until it is restored.
+`e2e/board-sync-schedule.spec.ts` was truncated to 20 lines, mid-function, by
+the same commit — a syntax error, so a bare `npx playwright test` aborted with
+*"Unexpected token (21:0)"* before running anything. Restored; the suite now
+enumerates **43 tests in 6 files**.
 
 Playwright covers this journey in `Frontend/e2e/care-management-automation.spec.ts`.
 Sign-in is the one-time Google-support ticket (see Preconditions), minted by
 the helper itself; it needs `E2E_SCHEDULER_API_KEY` for the tick test and
-`E2E_LOAD_FIXTURES=1` to make global-setup load the fixture:
+`E2E_LOAD_FIXTURES=1` to make global-setup load the fixture. `E2E_BOARD_ID`
+matters too: the board-sync spec defaults to `eNiJpH14PN3`, which has
+`workspaceId: null` locally (33 of 34 boards do), and workspace 55369's only
+real board is `g9n7vgdrXJX`.
 
 ```bash
 cd Frontend
 E2E_BACKEND_URL=http://localhost:4001 PLAYWRIGHT_BASE_URL=http://localhost:3100 \
 E2E_MONGO_DB=business-dashboard E2E_LOAD_FIXTURES=1 \
+E2E_WORKSPACE_ID=55369 E2E_BOARD_ID=g9n7vgdrXJX \
 E2E_SCHEDULER_API_KEY=$(grep '^SCHEDULER_API_KEY=' ../Backend/.env | cut -d= -f2-) \
-npx playwright test smoke auth-boundary care-management-automation \
-  invoice-statement-automation system-health
+npx playwright test
 ```
 
-Against develop as of 2026-09-08 that is 37 passed, 3 skipped (the non-admin
-and flag-off cases want `E2E_USER_*` / `E2E_WORKSPACE_ID_NO_FLAG`), and two
-failures that are develop's, not the automation's: a signed-out `/dashboard`
-now redirects to `/` (KAN-27), and the System Health drill-down loses a cold
-deep-link to the `AppContext` race — it passes on rerun. The fixture's pipeline invariants are pinned by
-`Backend/test/unit/fixtures/careManagementAutomationFixture.test.js`, which runs
-the items through the real NDIS row builders.
+2026-09-08, main clone, Node 22: **40 passed, 3 skipped, 0 failed**. The three
+skips want `E2E_USER_*` (the non-admin role gate) and `E2E_WORKSPACE_ID_NO_FLAG`.
+
+**One stale assertion to know about.** `auth-boundary.spec.ts:43` pins "a
+signed-out visitor stays on /dashboard, no redirect" — and the app now
+redirects them to `/`. It fails **6 runs out of 6 in isolation** and passes
+only when the machine is loaded enough that `waitForLoadState('networkidle')`
+resolves before the client-side redirect lands, which is why a full-suite run
+shows it green. That is a stale expectation against a deliberate auth change,
+not a flake, and the fix is a call for whoever owns KAN-27 — the behaviour it
+pins is security-relevant.
 
 ### 2. Turn the tab on
 
