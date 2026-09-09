@@ -2,244 +2,257 @@
   "schemas": [
     [
       {
-        "type": "text",
         "name": "title",
+        "type": "text",
         "content": "STATEMENT OF ACCOUNT",
         "position": {
-          "x": 20,
-          "y": 22
+          "x": 12,
+          "y": 12
         },
-        "width": 100,
-        "height": 10,
-        "fontName": "Roboto",
-        "fontSize": 19,
-        "fontColor": "#111827",
-        "alignment": "left",
-        "verticalAlignment": "top",
-        "lineHeight": 1.3,
-        "characterSpacing": 0,
-        "readOnly": true
+        "width": 110,
+        "height": 9,
+        "fontSize": 16,
+        "characterSpacing": 0.6,
+        "fontColor": "#1a1a1a",
+        "readOnly": true,
+        "fontName": "Roboto"
       },
       {
-        "type": "multiVariableText",
-        "name": "provider",
-        "content": "",
-        "position": {
-          "x": 110,
-          "y": 21
-        },
-        "width": 80,
-        "height": 26,
-        "fontName": "Roboto",
-        "fontSize": 8.5,
-        "fontColor": "#6b7280",
-        "alignment": "right",
-        "verticalAlignment": "top",
-        "lineHeight": 1.3,
-        "characterSpacing": 0,
-        "readOnly": false,
-        "text": "{providerName}\nABN {providerAbn}\n{providerAddress}",
-        "variables": [
-          "providerName",
-          "providerAbn",
-          "providerAddress"
-        ]
-      },
-      {
-        "type": "line",
-        "name": "headerRule",
-        "position": {
-          "x": 20,
-          "y": 52
-        },
-        "width": 170,
-        "height": 0.4,
-        "color": "#d1d5db",
-        "readOnly": true
-      },
-      {
+        "name": "providerBlock",
         "type": "text",
+        "content": "Sample Care Services Pty Ltd\nABN: 00 000 000 000\n12 Example Street\nSampleton\nVictoria 3000\nAustralia",
+        "position": {
+          "x": 126,
+          "y": 12
+        },
+        "width": 72,
+        "height": 26,
+        "fontSize": 8,
+        "lineHeight": 1.4,
+        "alignment": "right",
+        "fontColor": "#5c5c5c",
+        "fontName": "Roboto"
+      },
+      {
+        "name": "headerRule",
+        "type": "line",
+        "position": {
+          "x": 12,
+          "y": 41
+        },
+        "width": 186,
+        "height": 0.7,
+        "color": "#1a1a1a",
+        "readOnly": true
+      },
+      {
         "name": "statementToLabel",
+        "type": "text",
         "content": "STATEMENT TO",
         "position": {
-          "x": 20,
-          "y": 58
+          "x": 12,
+          "y": 46
         },
         "width": 60,
         "height": 4,
-        "fontName": "Roboto",
         "fontSize": 7,
-        "fontColor": "#6b7280",
-        "alignment": "left",
-        "verticalAlignment": "top",
-        "lineHeight": 1.3,
-        "characterSpacing": 0.6,
-        "readOnly": true
+        "characterSpacing": 0.8,
+        "fontColor": "#8a8a8a",
+        "readOnly": true,
+        "fontName": "Roboto"
       },
       {
-        "type": "multiVariableText",
-        "name": "recipient",
-        "content": "",
+        "name": "participantBlock",
+        "type": "text",
+        "content": "SAMPLE PARTICIPANT\n34 Placeholder Road\nExampleville VIC 3001",
         "position": {
-          "x": 20,
-          "y": 64
+          "x": 12,
+          "y": 51
         },
         "width": 85,
-        "height": 22,
-        "fontName": "Roboto",
+        "height": 16,
         "fontSize": 10,
-        "fontColor": "#111827",
-        "alignment": "left",
-        "verticalAlignment": "top",
-        "lineHeight": 1.3,
-        "characterSpacing": 0,
-        "readOnly": false,
-        "text": "{recipientName}\n{recipientAddress}",
-        "variables": [
-          "recipientName",
-          "recipientAddress"
-        ]
+        "lineHeight": 1.4,
+        "fontColor": "#1a1a1a",
+        "fontName": "Roboto"
       },
       {
-        "type": "text",
         "name": "metaLabels",
+        "type": "text",
         "content": "Statement number\nStatement date\nPeriod\nAccount number",
         "position": {
-          "x": 100,
-          "y": 58
+          "x": 112,
+          "y": 46
         },
-        "width": 45,
-        "height": 24,
-        "fontName": "Roboto",
+        "width": 42,
+        "height": 22,
         "fontSize": 8.5,
-        "fontColor": "#6b7280",
+        "lineHeight": 1.5,
         "alignment": "right",
-        "verticalAlignment": "top",
-        "lineHeight": 1.3,
-        "characterSpacing": 0,
+        "fontColor": "#5c5c5c",
+        "readOnly": true,
+        "fontName": "Roboto"
+      },
+      {
+        "name": "metaValues",
+        "type": "text",
+        "content": "STM-2026-08-0001\n31/08/2026\n01/07/2026 to 31/08/2026\nACC-00000",
+        "position": {
+          "x": 156,
+          "y": 46
+        },
+        "width": 42,
+        "height": 22,
+        "fontSize": 8.5,
+        "lineHeight": 1.5,
+        "alignment": "right",
+        "fontColor": "#1a1a1a",
+        "fontName": "Roboto"
+      },
+      {
+        "name": "summaryBox",
+        "type": "rectangle",
+        "position": {
+          "x": 12,
+          "y": 74
+        },
+        "width": 186,
+        "height": 17,
+        "borderWidth": 0.4,
+        "borderColor": "#d4d4d4",
+        "color": "#f4f4f2",
         "readOnly": true
       },
       {
-        "type": "multiVariableText",
-        "name": "metaValues",
-        "content": "",
+        "name": "openingLabel",
+        "type": "text",
+        "content": "OPENING BALANCE",
         "position": {
-          "x": 146,
-          "y": 58
+          "x": 15,
+          "y": 77
         },
         "width": 44,
-        "height": 24,
-        "fontName": "Roboto",
-        "fontSize": 8.5,
-        "fontColor": "#111827",
-        "alignment": "right",
-        "verticalAlignment": "top",
-        "lineHeight": 1.3,
-        "characterSpacing": 0,
-        "readOnly": false,
-        "text": "{statementNumber}\n{statementDate}\n{period}\n{accountNumber}",
-        "variables": [
-          "statementNumber",
-          "statementDate",
-          "period",
-          "accountNumber"
-        ]
+        "height": 4,
+        "fontSize": 6.5,
+        "characterSpacing": 0.5,
+        "fontColor": "#8a8a8a",
+        "readOnly": true,
+        "fontName": "Roboto"
       },
       {
-        "type": "table",
-        "name": "summary",
+        "name": "openingBalance",
+        "type": "text",
+        "content": "$284.20",
         "position": {
-          "x": 20,
-          "y": 92
+          "x": 15,
+          "y": 81.5
         },
-        "width": 170,
-        "height": 20,
-        "content": "[[\"\",\"\",\"\",\"\"]]",
-        "showHead": true,
-        "head": [
-          "OPENING BALANCE",
-          "CHARGES",
-          "PAYMENTS",
-          "CLOSING BALANCE"
-        ],
-        "headWidthPercentages": [
-          25,
-          25,
-          25,
-          25
-        ],
-        "fontName": "",
-        "readOnly": false,
-        "tableStyles": {
-          "borderWidth": 0,
-          "borderColor": "#d1d5db"
-        },
-        "headStyles": {
-          "fontName": "Roboto",
-          "fontSize": 8,
-          "characterSpacing": 0.4,
-          "alignment": "left",
-          "verticalAlignment": "middle",
-          "lineHeight": 1.2,
-          "fontColor": "#6b7280",
-          "borderColor": "#d1d5db",
-          "backgroundColor": "#f9fafb",
-          "borderWidth": {
-            "top": 0,
-            "right": 0,
-            "bottom": 0.4,
-            "left": 0
-          },
-          "padding": {
-            "top": 3,
-            "right": 2,
-            "bottom": 3,
-            "left": 2
-          }
-        },
-        "bodyStyles": {
-          "fontName": "Roboto",
-          "fontSize": 8.5,
-          "characterSpacing": 0,
-          "alignment": "left",
-          "verticalAlignment": "middle",
-          "lineHeight": 1.35,
-          "fontColor": "#111827",
-          "borderColor": "#d1d5db",
-          "backgroundColor": "",
-          "alternateBackgroundColor": "#fafafa",
-          "borderWidth": {
-            "top": 0,
-            "right": 0,
-            "bottom": 0.2,
-            "left": 0
-          },
-          "padding": {
-            "top": 2.6,
-            "right": 2,
-            "bottom": 2.6,
-            "left": 2
-          }
-        },
-        "columnStyles": {
-          "alignment": {
-            "0": "left",
-            "1": "left",
-            "2": "left",
-            "3": "left"
-          }
-        }
+        "width": 44,
+        "height": 7,
+        "fontSize": 12,
+        "fontColor": "#1a1a1a",
+        "fontName": "Roboto"
       },
       {
-        "type": "table",
+        "name": "chargesLabel",
+        "type": "text",
+        "content": "CHARGES",
+        "position": {
+          "x": 61.5,
+          "y": 77
+        },
+        "width": 44,
+        "height": 4,
+        "fontSize": 6.5,
+        "characterSpacing": 0.5,
+        "fontColor": "#8a8a8a",
+        "readOnly": true,
+        "fontName": "Roboto"
+      },
+      {
+        "name": "totalCharges",
+        "type": "text",
+        "content": "$3,065.93",
+        "position": {
+          "x": 61.5,
+          "y": 81.5
+        },
+        "width": 44,
+        "height": 7,
+        "fontSize": 12,
+        "fontColor": "#1a1a1a",
+        "fontName": "Roboto"
+      },
+      {
+        "name": "paymentsLabel",
+        "type": "text",
+        "content": "PAYMENTS",
+        "position": {
+          "x": 108,
+          "y": 77
+        },
+        "width": 44,
+        "height": 4,
+        "fontSize": 6.5,
+        "characterSpacing": 0.5,
+        "fontColor": "#8a8a8a",
+        "readOnly": true,
+        "fontName": "Roboto"
+      },
+      {
+        "name": "totalPayments",
+        "type": "text",
+        "content": "$1,264.60",
+        "position": {
+          "x": 108,
+          "y": 81.5
+        },
+        "width": 44,
+        "height": 7,
+        "fontSize": 12,
+        "fontColor": "#1a1a1a",
+        "fontName": "Roboto"
+      },
+      {
+        "name": "closingLabel",
+        "type": "text",
+        "content": "CLOSING BALANCE",
+        "position": {
+          "x": 154.5,
+          "y": 77
+        },
+        "width": 41,
+        "height": 4,
+        "fontSize": 6.5,
+        "characterSpacing": 0.5,
+        "fontColor": "#8a8a8a",
+        "readOnly": true,
+        "fontName": "Roboto"
+      },
+      {
+        "name": "closingBalance",
+        "type": "text",
+        "content": "$2,085.53",
+        "position": {
+          "x": 154.5,
+          "y": 81.5
+        },
+        "width": 41,
+        "height": 7,
+        "fontSize": 12,
+        "fontColor": "#1a1a1a",
+        "fontName": "Roboto"
+      },
+      {
         "name": "transactions",
+        "type": "table",
         "position": {
-          "x": 20,
-          "y": 122
+          "x": 12,
+          "y": 97
         },
-        "width": 170,
-        "height": 40,
-        "content": "[[\"\",\"\",\"\",\"\",\"\",\"\"]]",
+        "width": 186,
+        "height": 45,
+        "content": "[[\"01/07/2026\",\"INV-1188\",\"Care Management - SaH - June services\",\"$980.40\",\"\",\"$1,264.60\"],[\"14/07/2026\",\"PMT-0442\",\"Payment received - direct deposit\",\"\",\"$284.20\",\"$980.40\"],[\"01/08/2026\",\"INV-1196\",\"Care Management - SaH - July services\",\"$1,105.25\",\"\",\"$2,085.65\"],[\"11/08/2026\",\"PMT-0461\",\"Payment received - direct deposit\",\"\",\"$980.40\",\"$1,105.25\"],[\"16/08/2026\",\"CRN-0033\",\"Adjustment (Refund) - incorrect charge 22/07/2026\",\"-$62.50\",\"\",\"$1,042.75\"],[\"19/08/2026\",\"INV-1204\",\"Care Management - SaH - August services\",\"$1,042.78\",\"\",\"$2,085.53\"]]",
         "showHead": true,
         "head": [
           "Date",
@@ -251,52 +264,48 @@
         ],
         "headWidthPercentages": [
           12,
-          14,
-          40,
-          11.5,
-          11.5,
-          11
+          15,
+          39,
+          11,
+          11,
+          12
         ],
-        "fontName": "",
-        "readOnly": false,
         "tableStyles": {
           "borderWidth": 0,
-          "borderColor": "#d1d5db"
+          "borderColor": "#ffffff"
         },
         "headStyles": {
-          "fontName": "Roboto",
-          "fontSize": 8,
+          "fontSize": 7.5,
           "characterSpacing": 0.4,
           "alignment": "left",
           "verticalAlignment": "middle",
           "lineHeight": 1.2,
-          "fontColor": "#6b7280",
-          "borderColor": "#d1d5db",
-          "backgroundColor": "",
+          "fontColor": "#5c5c5c",
+          "backgroundColor": "#ffffff",
+          "borderColor": "#1a1a1a",
           "borderWidth": {
             "top": 0,
             "right": 0,
-            "bottom": 0.4,
+            "bottom": 0.6,
             "left": 0
           },
           "padding": {
-            "top": 3,
+            "top": 2,
             "right": 2,
-            "bottom": 3,
+            "bottom": 2,
             "left": 2
-          }
+          },
+          "fontName": "Roboto"
         },
         "bodyStyles": {
-          "fontName": "Roboto",
           "fontSize": 8.5,
-          "characterSpacing": 0,
           "alignment": "left",
-          "verticalAlignment": "middle",
-          "lineHeight": 1.35,
-          "fontColor": "#111827",
-          "borderColor": "#d1d5db",
+          "verticalAlignment": "top",
+          "lineHeight": 1.3,
+          "fontColor": "#1a1a1a",
           "backgroundColor": "",
-          "alternateBackgroundColor": "#fafafa",
+          "alternateBackgroundColor": "#fafaf9",
+          "borderColor": "#d4d4d4",
           "borderWidth": {
             "top": 0,
             "right": 0,
@@ -304,11 +313,13 @@
             "left": 0
           },
           "padding": {
-            "top": 2.6,
+            "top": 2,
             "right": 2,
-            "bottom": 2.6,
+            "bottom": 2,
             "left": 2
-          }
+          },
+          "characterSpacing": 0,
+          "fontName": "Roboto"
         },
         "columnStyles": {
           "alignment": {
@@ -318,268 +329,313 @@
             "3": "right",
             "4": "right",
             "5": "right"
-          },
-          "headAlignment": {
-            "0": "left",
-            "1": "left",
-            "2": "left",
-            "3": "right",
-            "4": "right",
-            "5": "right"
           }
-        }
+        },
+        "fontName": "Roboto"
       },
       {
-        "type": "text",
         "name": "ageingLabel",
+        "type": "text",
         "content": "AGEING SUMMARY",
         "position": {
-          "x": 20,
-          "y": 172
+          "x": 12,
+          "y": 150
         },
         "width": 60,
         "height": 4,
-        "fontName": "Roboto",
         "fontSize": 7,
-        "fontColor": "#6b7280",
-        "alignment": "left",
-        "verticalAlignment": "top",
-        "lineHeight": 1.3,
-        "characterSpacing": 0.6,
-        "readOnly": true
+        "characterSpacing": 0.8,
+        "fontColor": "#8a8a8a",
+        "readOnly": true,
+        "fontName": "Roboto"
       },
       {
-        "type": "table",
-        "name": "ageing",
-        "position": {
-          "x": 20,
-          "y": 178
-        },
-        "width": 170,
-        "height": 18,
-        "content": "[[\"\",\"\",\"\",\"\",\"\"]]",
-        "showHead": true,
-        "head": [
-          "Current",
-          "1-30 days",
-          "31-60 days",
-          "61-90 days",
-          "90+ days"
-        ],
-        "headWidthPercentages": [
-          20,
-          20,
-          20,
-          20,
-          20
-        ],
-        "fontName": "",
-        "readOnly": false,
-        "tableStyles": {
-          "borderWidth": 0,
-          "borderColor": "#d1d5db"
-        },
-        "headStyles": {
-          "fontName": "Roboto",
-          "fontSize": 8,
-          "characterSpacing": 0.4,
-          "alignment": "left",
-          "verticalAlignment": "middle",
-          "lineHeight": 1.2,
-          "fontColor": "#6b7280",
-          "borderColor": "#d1d5db",
-          "backgroundColor": "#f9fafb",
-          "borderWidth": {
-            "top": 0,
-            "right": 0,
-            "bottom": 0.4,
-            "left": 0
-          },
-          "padding": {
-            "top": 3,
-            "right": 2,
-            "bottom": 3,
-            "left": 2
-          }
-        },
-        "bodyStyles": {
-          "fontName": "Roboto",
-          "fontSize": 10,
-          "characterSpacing": 0,
-          "alignment": "left",
-          "verticalAlignment": "middle",
-          "lineHeight": 1.35,
-          "fontColor": "#111827",
-          "borderColor": "#d1d5db",
-          "backgroundColor": "",
-          "alternateBackgroundColor": "#fafafa",
-          "borderWidth": {
-            "top": 0,
-            "right": 0,
-            "bottom": 0.2,
-            "left": 0
-          },
-          "padding": {
-            "top": 2.6,
-            "right": 2,
-            "bottom": 2.6,
-            "left": 2
-          }
-        },
-        "columnStyles": {
-          "alignment": {
-            "0": "center",
-            "1": "center",
-            "2": "center",
-            "3": "center",
-            "4": "center"
-          },
-          "headAlignment": {
-            "0": "center",
-            "1": "center",
-            "2": "center",
-            "3": "center",
-            "4": "center"
-          }
-        }
-      },
-      {
+        "name": "ageingHeadRule",
         "type": "line",
-        "name": "payRule",
         "position": {
-          "x": 20,
-          "y": 204
+          "x": 12,
+          "y": 160
         },
-        "width": 170,
-        "height": 0.4,
-        "color": "#d1d5db",
+        "width": 186,
+        "height": 0.6,
+        "color": "#1a1a1a",
         "readOnly": true
       },
       {
+        "name": "ageingHeadCurrent",
         "type": "text",
+        "content": "Current",
+        "position": {
+          "x": 12,
+          "y": 155.5
+        },
+        "width": 37.2,
+        "height": 4.5,
+        "fontSize": 7.5,
+        "alignment": "center",
+        "fontColor": "#5c5c5c",
+        "readOnly": true,
+        "fontName": "Roboto"
+      },
+      {
+        "name": "ageingHead30",
+        "type": "text",
+        "content": "1-30 days",
+        "position": {
+          "x": 49.2,
+          "y": 155.5
+        },
+        "width": 37.2,
+        "height": 4.5,
+        "fontSize": 7.5,
+        "alignment": "center",
+        "fontColor": "#5c5c5c",
+        "readOnly": true,
+        "fontName": "Roboto"
+      },
+      {
+        "name": "ageingHead60",
+        "type": "text",
+        "content": "31-60 days",
+        "position": {
+          "x": 86.4,
+          "y": 155.5
+        },
+        "width": 37.2,
+        "height": 4.5,
+        "fontSize": 7.5,
+        "alignment": "center",
+        "fontColor": "#5c5c5c",
+        "readOnly": true,
+        "fontName": "Roboto"
+      },
+      {
+        "name": "ageingHead90",
+        "type": "text",
+        "content": "61-90 days",
+        "position": {
+          "x": 123.6,
+          "y": 155.5
+        },
+        "width": 37.2,
+        "height": 4.5,
+        "fontSize": 7.5,
+        "alignment": "center",
+        "fontColor": "#5c5c5c",
+        "readOnly": true,
+        "fontName": "Roboto"
+      },
+      {
+        "name": "ageingHead90plus",
+        "type": "text",
+        "content": "90+ days",
+        "position": {
+          "x": 160.8,
+          "y": 155.5
+        },
+        "width": 37.2,
+        "height": 4.5,
+        "fontSize": 7.5,
+        "alignment": "center",
+        "fontColor": "#5c5c5c",
+        "readOnly": true,
+        "fontName": "Roboto"
+      },
+      {
+        "name": "ageingBand",
+        "type": "rectangle",
+        "position": {
+          "x": 12,
+          "y": 161
+        },
+        "width": 186,
+        "height": 10,
+        "borderWidth": 0,
+        "borderColor": "#ffffff",
+        "color": "#f4f4f2",
+        "readOnly": true
+      },
+      {
+        "name": "ageingCurrent",
+        "type": "text",
+        "content": "$1,042.78",
+        "position": {
+          "x": 12,
+          "y": 163
+        },
+        "width": 37.2,
+        "height": 6,
+        "fontSize": 10,
+        "alignment": "center",
+        "fontColor": "#1a1a1a",
+        "fontName": "Roboto"
+      },
+      {
+        "name": "ageingDays30",
+        "type": "text",
+        "content": "$1,042.75",
+        "position": {
+          "x": 49.2,
+          "y": 163
+        },
+        "width": 37.2,
+        "height": 6,
+        "fontSize": 10,
+        "alignment": "center",
+        "fontColor": "#1a1a1a",
+        "fontName": "Roboto"
+      },
+      {
+        "name": "ageingDays60",
+        "type": "text",
+        "content": "$0.00",
+        "position": {
+          "x": 86.4,
+          "y": 163
+        },
+        "width": 37.2,
+        "height": 6,
+        "fontSize": 10,
+        "alignment": "center",
+        "fontColor": "#1a1a1a",
+        "fontName": "Roboto"
+      },
+      {
+        "name": "ageingDays90",
+        "type": "text",
+        "content": "$0.00",
+        "position": {
+          "x": 123.6,
+          "y": 163
+        },
+        "width": 37.2,
+        "height": 6,
+        "fontSize": 10,
+        "alignment": "center",
+        "fontColor": "#9a3412",
+        "fontName": "Roboto"
+      },
+      {
+        "name": "ageingDays90plus",
+        "type": "text",
+        "content": "$0.00",
+        "position": {
+          "x": 160.8,
+          "y": 163
+        },
+        "width": 37.2,
+        "height": 6,
+        "fontSize": 10,
+        "alignment": "center",
+        "fontColor": "#9a3412",
+        "fontName": "Roboto"
+      },
+      {
+        "name": "footerRule",
+        "type": "line",
+        "position": {
+          "x": 12,
+          "y": 180
+        },
+        "width": 186,
+        "height": 0.3,
+        "color": "#d4d4d4",
+        "readOnly": true
+      },
+      {
         "name": "paymentLabel",
+        "type": "text",
         "content": "PAYMENT DETAILS",
         "position": {
-          "x": 20,
-          "y": 209
+          "x": 12,
+          "y": 184
         },
         "width": 60,
         "height": 4,
-        "fontName": "Roboto",
         "fontSize": 7,
-        "fontColor": "#6b7280",
-        "alignment": "left",
-        "verticalAlignment": "top",
-        "lineHeight": 1.3,
-        "characterSpacing": 0.6,
-        "readOnly": true
+        "characterSpacing": 0.8,
+        "fontColor": "#8a8a8a",
+        "readOnly": true,
+        "fontName": "Roboto"
       },
       {
-        "type": "text",
         "name": "paymentLabels",
+        "type": "text",
         "content": "Account name\nBank\nBSB\nAccount number\nReference",
         "position": {
-          "x": 20,
-          "y": 216
+          "x": 12,
+          "y": 189
         },
         "width": 30,
         "height": 22,
-        "fontName": "Roboto",
         "fontSize": 8.5,
-        "fontColor": "#6b7280",
-        "alignment": "left",
-        "verticalAlignment": "top",
-        "lineHeight": 1.3,
-        "characterSpacing": 0,
-        "readOnly": true
+        "lineHeight": 1.5,
+        "fontColor": "#5c5c5c",
+        "readOnly": true,
+        "fontName": "Roboto"
       },
       {
-        "type": "multiVariableText",
         "name": "paymentValues",
-        "content": "",
+        "type": "text",
+        "content": "Sample Care Services Pty Ltd\nExample Bank\n000-000\n00000000\nACC-00000",
         "position": {
-          "x": 52,
-          "y": 216
+          "x": 45,
+          "y": 189
         },
-        "width": 70,
+        "width": 65,
         "height": 22,
-        "fontName": "Roboto",
         "fontSize": 8.5,
-        "fontColor": "#111827",
-        "alignment": "left",
-        "verticalAlignment": "top",
-        "lineHeight": 1.3,
-        "characterSpacing": 0,
-        "readOnly": false,
-        "text": "{bankAccountName}\n{bankName}\n{bankBsb}\n{bankAccountNumber}\n{paymentReference}",
-        "variables": [
-          "bankAccountName",
-          "bankName",
-          "bankBsb",
-          "bankAccountNumber",
-          "paymentReference"
-        ]
+        "lineHeight": 1.5,
+        "fontColor": "#1a1a1a",
+        "fontName": "Roboto"
       },
       {
+        "name": "amountDueLabel",
         "type": "text",
-        "name": "totalDueLabel",
         "content": "TOTAL AMOUNT DUE",
         "position": {
-          "x": 120,
-          "y": 209
+          "x": 138,
+          "y": 184
         },
-        "width": 70,
+        "width": 60,
         "height": 4,
-        "fontName": "Roboto",
         "fontSize": 7,
-        "fontColor": "#6b7280",
+        "characterSpacing": 0.8,
         "alignment": "right",
-        "verticalAlignment": "top",
-        "lineHeight": 1.3,
-        "characterSpacing": 0.6,
-        "readOnly": true
+        "fontColor": "#8a8a8a",
+        "readOnly": true,
+        "fontName": "Roboto"
       },
       {
-        "type": "multiVariableText",
-        "name": "totalDue",
-        "content": "",
-        "position": {
-          "x": 120,
-          "y": 215
-        },
-        "width": 70,
-        "height": 11,
-        "fontName": "Roboto",
-        "fontSize": 17,
-        "fontColor": "#111827",
-        "alignment": "right",
-        "verticalAlignment": "top",
-        "lineHeight": 1.3,
-        "characterSpacing": 0,
-        "readOnly": false,
-        "text": "{totalDue}",
-        "variables": [
-          "totalDue"
-        ]
-      },
-      {
+        "name": "amountDue",
         "type": "text",
+        "content": "$2,085.53",
+        "position": {
+          "x": 138,
+          "y": 189
+        },
+        "width": 60,
+        "height": 10,
+        "fontSize": 16,
+        "alignment": "right",
+        "fontColor": "#1a1a1a",
+        "fontName": "Roboto"
+      },
+      {
         "name": "notice",
+        "type": "text",
         "content": "This statement summarises activity on your account for the period shown. It is not a tax invoice and raises no new charges. Every amount listed here appears on a tax invoice already issued to you. When making a payment, please quote the invoice number as the reference so it is applied correctly. If any entry looks wrong, contact us before paying and we will check it.",
         "position": {
-          "x": 20,
-          "y": 244
+          "x": 12,
+          "y": 215
         },
-        "width": 170,
+        "width": 186,
         "height": 14,
-        "fontName": "Roboto",
         "fontSize": 7.5,
-        "fontColor": "#6b7280",
-        "alignment": "left",
-        "verticalAlignment": "top",
-        "lineHeight": 1.4,
-        "characterSpacing": 0,
-        "readOnly": true
+        "lineHeight": 1.5,
+        "fontColor": "#8a8a8a",
+        "readOnly": true,
+        "fontName": "Roboto"
       }
     ]
   ],
@@ -587,27 +643,27 @@
     "width": 210,
     "height": 297,
     "padding": [
+      12,
+      12,
       20,
-      20,
-      20,
-      20
+      12
     ],
     "staticSchema": [
       {
-        "name": "pageNumber",
+        "name": "footerText",
         "type": "text",
         "content": "{currentPage} / {totalPages}",
         "position": {
-          "x": 20,
+          "x": 12,
           "y": 283
         },
-        "width": 170,
+        "width": 186,
         "height": 5,
-        "fontName": "Roboto",
-        "fontSize": 8,
-        "fontColor": "#6b7280",
+        "fontSize": 7,
         "alignment": "center",
-        "readOnly": true
+        "fontColor": "#8a8a8a",
+        "readOnly": true,
+        "fontName": "Roboto"
       }
     ]
   },
