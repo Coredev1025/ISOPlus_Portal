@@ -111,6 +111,18 @@ beforeEach(async () => {
   await seed();
 });
 
+/**
+ * The summary strip, as the four separate `text` fields the template now
+ * carries. It was a one-row table until the statement adopted the supplied
+ * design; the values and their order are unchanged.
+ */
+const summaryStrip = (inputs) => [
+  inputs.openingBalance,
+  inputs.totalCharges,
+  inputs.totalPayments,
+  inputs.closingBalance,
+];
+
 describe('a scheduled statement run', () => {
   it('writes a statement of account alongside the monthly statement', async () => {
     await generateStatementsForBoard({
@@ -134,7 +146,7 @@ describe('a scheduled statement run', () => {
     expect(rows).toHaveLength(2);
     expect(rows.some((row) => row.includes('INV-1205'))).toBe(true);
     // $250 charged, $100 received, so $150 closes the period.
-    expect(JSON.parse(rendered.summary)[0]).toEqual(['$0.00', '$250.00', '$100.00', '$150.00']);
+    expect(summaryStrip(rendered)).toEqual(['$0.00', '$250.00', '$100.00', '$150.00']);
   });
 
   it('replays without producing a second statement of account', async () => {
@@ -173,7 +185,7 @@ describe('a scheduled statement run', () => {
 
     const rendered = statementRender();
     expect(rendered).toBeDefined();
-    expect(JSON.parse(rendered.summary)[0]).toEqual(['$150.00', '$0.00', '$0.00', '$150.00']);
+    expect(summaryStrip(rendered)).toEqual(['$150.00', '$0.00', '$0.00', '$150.00']);
   });
 
   // Section 4.5. Nothing invoiced, nothing owing, nothing to say.
@@ -209,7 +221,7 @@ describe('a scheduled statement run, on untidy data', () => {
     expect(rendered).toBeDefined();
     // Netted onto the invoice's row rather than given a dated one.
     expect(JSON.parse(rendered.transactions)).toHaveLength(1);
-    expect(JSON.parse(rendered.summary)[0]).toEqual(['$0.00', '$250.00', '$100.00', '$150.00']);
+    expect(summaryStrip(rendered)).toEqual(['$0.00', '$250.00', '$100.00', '$150.00']);
   });
 
   // Payments are read per board; the invoices must be too, or an invoice
@@ -231,7 +243,7 @@ describe('a scheduled statement run, on untidy data', () => {
     await run();
 
     const rendered = statementRender();
-    expect(JSON.parse(rendered.summary)[0]).toEqual(['$0.00', '$250.00', '$100.00', '$150.00']);
+    expect(summaryStrip(rendered)).toEqual(['$0.00', '$250.00', '$100.00', '$150.00']);
   });
 
   // A payment recorded against an invoice the ledger has no row for — one
@@ -308,7 +320,7 @@ describe('a scheduled statement run, on a multi-item invoice', () => {
     const rendered = statementRender();
     expect(rendered).toBeDefined();
     expect(JSON.parse(rendered.transactions)).toHaveLength(1);
-    expect(JSON.parse(rendered.summary)[0]).toEqual(['$0.00', '$250.00', '$0.00', '$250.00']);
+    expect(summaryStrip(rendered)).toEqual(['$0.00', '$250.00', '$0.00', '$250.00']);
   });
 
   it('carries a prior-period multi-item invoice into the opening balance once', async () => {
@@ -322,6 +334,6 @@ describe('a scheduled statement run, on a multi-item invoice', () => {
 
     const rendered = statementRender();
     expect(rendered).toBeDefined();
-    expect(JSON.parse(rendered.summary)[0]).toEqual(['$250.00', '$0.00', '$0.00', '$250.00']);
+    expect(summaryStrip(rendered)).toEqual(['$250.00', '$0.00', '$0.00', '$250.00']);
   });
 });

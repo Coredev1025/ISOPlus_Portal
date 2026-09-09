@@ -86,19 +86,34 @@ describe('buildStatementInputs', () => {
   it('produces a JSON object for each multiVariableText field, not a bare string', () => {
     // The plugin parses the input and throws on anything that is not JSON.
     const inputs = buildStatementInputs(statementWith(transactions, outstanding), TZ);
-    expect(JSON.parse(inputs.provider).providerName).toBe('Provider');
-    expect(JSON.parse(inputs.totalDue).totalDue).toBe('$2,427.50');
-    expect(JSON.parse(inputs.metaValues).period).toBe('01/09/2025 to 31/08/2026');
+    expect(inputs.providerBlock.split('\n')[0]).toBe('Provider');
+    expect(inputs.amountDue).toBe('$2,427.50');
+    expect(inputs.metaValues.split('\n')[2]).toBe('01/09/2025 to 31/08/2026');
   });
 
-  it('renders the ageing row in the declared bucket order', () => {
+  // The ageing summary is five separate text fields over a rectangle rather
+  // than a table: it is fixed at five columns and never grows, and a second
+  // table schema on the page risks the padding/overlap bug that shows up when
+  // the transaction table spans pages.
+  it('renders the ageing cells in the declared bucket order', () => {
     const inputs = buildStatementInputs(statementWith(transactions, outstanding), TZ);
-    expect(JSON.parse(inputs.ageing)).toEqual([['$1,232.50', '$1,195.00', '$0.00', '$0.00', '$0.00']]);
+    expect([
+      inputs.ageingCurrent,
+      inputs.ageingDays30,
+      inputs.ageingDays60,
+      inputs.ageingDays90,
+      inputs.ageingDays90plus,
+    ]).toEqual(['$1,232.50', '$1,195.00', '$0.00', '$0.00', '$0.00']);
   });
 
   it('fills the summary strip from the ledger totals', () => {
     const inputs = buildStatementInputs(statementWith(transactions, outstanding), TZ);
-    expect(JSON.parse(inputs.summary)).toEqual([['$0.00', '$2,427.50', '$0.00', '$2,427.50']]);
+    expect([
+      inputs.openingBalance,
+      inputs.totalCharges,
+      inputs.totalPayments,
+      inputs.closingBalance,
+    ]).toEqual(['$0.00', '$2,427.50', '$0.00', '$2,427.50']);
   });
 
   it('refuses to build a statement whose ageing does not match the balance', () => {
@@ -156,15 +171,16 @@ describe('renderStatementOfAccountPdf', () => {
 });
 
 /**
- * pdfme's multiVariableText refuses to render a block if ANY of its variables
- * is empty — `validateVariables` returns false and `pdfRender` returns without
- * drawing anything. Found on a local run: a participant whose profile carried
- * no address produced a statement with the whole STATEMENT TO block missing,
- * name included, so the document did not say who it was for.
+ * The blocks are plain `text` schemas carrying newline-separated lines, not
+ * `multiVariableText`.
  *
- * The same trap covers every block on this template: a business with no ABN
- * would lose its entire letterhead, and one missing bank field would take the
- * whole payment block with it.
+ * That is what retires the trap this suite was written for: multiVariableText's
+ * `validateVariables` returns false when ANY one variable of a block is empty,
+ * and `pdfRender` then draws NOTHING — a participant with no address on their
+ * profile lost the whole STATEMENT TO block, name included, so the statement
+ * did not say who it was for. A plain text field cannot fail that way, so the
+ * requirement is now the simpler one: the lines that do have values still
+ * render, and a missing one leaves an empty line rather than a placeholder.
  */
 describe('buildStatementInputs — a missing value must not blank its block', () => {
   const statement = {
@@ -188,25 +204,31 @@ describe('buildStatementInputs — a missing value must not blank its block', ()
     },
   };
 
-  const variablesOf = (field) => Object.values(JSON.parse(field));
-
-  it('keeps every variable non-empty, so the block still renders', () => {
-    const inputs = buildStatementInputs(statement);
-    for (const field of ['provider', 'recipient', 'metaValues', 'paymentValues']) {
-      expect(variablesOf(inputs[field]).every((value) => value !== ''), field).toBe(true);
-    }
-  });
-
   it('still shows the values that are there', () => {
     const inputs = buildStatementInputs(statement);
-    expect(JSON.parse(inputs.recipient).recipientName).toBe('Jane Smith');
-    expect(JSON.parse(inputs.provider).providerName).toBe('Dev-Test11');
+    expect(inputs.participantBlock.split('\n')[0]).toBe('Jane Smith');
+    expect(inputs.providerBlock.split('\n')[0]).toBe('Dev-Test11');
   });
 
-  // A space, not a dash or "N/A": the statement must not print a placeholder at
-  // a client, it must simply leave the line empty.
+  // Nothing visible, not a dash or "N/A": the statement must not print a
+  // placeholder at a client, it must simply leave the line empty.
   it('substitutes nothing visible for the missing value', () => {
     const inputs = buildStatementInputs(statement);
-    expect(JSON.parse(inputs.recipient).recipientAddress.trim()).toBe('');
+    expect(inputs.participantBlock).toBe('Jane Smith');
+    expect(inputs.providerBlock).toBe('Dev-Test11');
+  });
+
+  // An absent ABN must not leave a bare "ABN:" label stranded on the letterhead.
+  it('omits the ABN line entirely when there is no ABN', () => {
+    const inputs = buildStatementInputs(statement);
+    expect(inputs.providerBlock).not.toMatch(/ABN/);
+  });
+
+  it('labels the ABN when there is one', () => {
+    const inputs = buildStatementInputs({
+      ...statement,
+      provider: { name: 'Dev-Test11', abn: '11 222 333 444', address: '' },
+    });
+    expect(inputs.providerBlock).toBe('Dev-Test11\nABN: 11 222 333 444');
   });
 });

@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 import { generate } from '@pdfme/generator';
 import {
-  line, multiVariableText, table, text,
+  line, rectangle, table, text,
 } from '@pdfme/schemas';
 
 import { AGEING_BUCKETS, assertAgeingReconciles } from './statementAgeing.js';
@@ -51,21 +51,24 @@ export function formatStatementMoney(value) {
 const moneyCell = (value) => (Number(value || 0) === 0 ? '' : formatStatementMoney(value));
 
 /**
- * A variables object no multiVariableText will refuse.
+ * A multi-line block, with the lines that have no value left out.
  *
- * pdfme's `validateVariables` returns false — and `pdfRender` then draws
- * NOTHING — when any one variable of a block is empty. A participant with no
- * address on their profile therefore lost the entire STATEMENT TO block, name
- * included, so the statement did not say who it was for. A business with no
- * ABN would lose its whole letterhead the same way.
+ * The blocks are plain `text` schemas rather than `multiVariableText`, which
+ * is what retires the trap the previous template hit: multiVariableText's
+ * `validateVariables` returns false when any ONE variable of a block is empty
+ * and `pdfRender` then draws nothing, so a participant with no address lost
+ * the whole STATEMENT TO block, name included.
  *
- * A single space rather than a dash or 'N/A': it satisfies the plugin's
- * truthiness test and prints nothing, which is what a missing address should
- * look like on a document that goes to a client.
+ * Dropping the empty lines rather than blanking them keeps the block tight
+ * against the top of its box: a business with no ABN gets its address on the
+ * second line, not a gap where the ABN would have been.
  */
-const variables = (values) => JSON.stringify(
-  Object.fromEntries(Object.entries(values).map(([key, value]) => [key, value || ' '])),
-);
+const block = (...lines) => lines.filter((line_) => String(line_ ?? '').trim() !== '').join('\n');
+
+/** The five ageing cells, in the order the template lays them out. */
+const AGEING_FIELDS = Object.freeze([
+  'ageingCurrent', 'ageingDays30', 'ageingDays60', 'ageingDays90', 'ageingDays90plus',
+]);
 
 /**
  * The transaction rows, as the table plugin wants them.
@@ -96,44 +99,43 @@ export function buildStatementInputs(statement, timezone = DEFAULT_TIMEZONE) {
   assertRunningBalanceReconciles(ledger.rows, ledger.closingBalance);
   assertAgeingReconciles(ageing, ledger.closingBalance);
 
-  // Every multiVariableText field takes a JSON object of its variables, not a
-  // bare string — the plugin parses the input and throws on anything else.
-  // Only the table and multiVariableText schemas appear here; the label-only
-  // blocks are static text in the template and need no input.
+  // Every variable field is a plain `text` schema, so its input is a plain
+  // string — newline-separated for the multi-line blocks. The label-only
+  // fields (STATEMENT TO, the column heads, the notice) carry their own
+  // content in the template and take no input.
   return {
-    provider: variables({
-      providerName: provider.name,
-      providerAbn: provider.abn,
-      providerAddress: provider.address,
-    }),
-    recipient: variables({
-      recipientName: recipient.name,
-      recipientAddress: recipient.address,
-    }),
-    metaValues: variables({
-      statementNumber: meta.statementNumber,
-      statementDate: formatDateNumericAU(meta.statementDate, timezone),
-      period: `${formatDateNumericAU(meta.periodStart, timezone)} to ${formatDateNumericAU(meta.periodEnd, timezone)}`,
-      accountNumber: meta.accountNumber,
-    }),
+    providerBlock: block(
+      provider.name,
+      provider.abn ? `ABN: ${provider.abn}` : '',
+      provider.address,
+    ),
+    participantBlock: block(recipient.name, recipient.address),
+    metaValues: block(
+      meta.statementNumber,
+      formatDateNumericAU(meta.statementDate, timezone),
+      `${formatDateNumericAU(meta.periodStart, timezone)} to ${formatDateNumericAU(meta.periodEnd, timezone)}`,
+      meta.accountNumber,
+    ),
 
-    summary: JSON.stringify([[
-      formatStatementMoney(ledger.openingBalance),
-      formatStatementMoney(ledger.totalCharges),
-      formatStatementMoney(ledger.totalPayments),
-      formatStatementMoney(ledger.closingBalance),
-    ]]),
+    openingBalance: formatStatementMoney(ledger.openingBalance),
+    totalCharges: formatStatementMoney(ledger.totalCharges),
+    totalPayments: formatStatementMoney(ledger.totalPayments),
+    closingBalance: formatStatementMoney(ledger.closingBalance),
+
     transactions: JSON.stringify(buildTransactionRows(ledger.rows, timezone)),
-    ageing: JSON.stringify([AGEING_BUCKETS.map((b) => formatStatementMoney(ageing[b.key]))]),
 
-    paymentValues: variables({
-      bankAccountName: bank.accountName,
-      bankName: bank.bankName,
-      bankBsb: bank.bsb,
-      bankAccountNumber: bank.accountNumber,
-      paymentReference: bank.reference,
-    }),
-    totalDue: JSON.stringify({ totalDue: formatStatementMoney(ledger.closingBalance) }),
+    ...Object.fromEntries(AGEING_BUCKETS.map(
+      (bucket, i) => [AGEING_FIELDS[i], formatStatementMoney(ageing[bucket.key])],
+    )),
+
+    paymentValues: block(
+      bank.accountName,
+      bank.bankName,
+      bank.bsb,
+      bank.accountNumber,
+      bank.reference,
+    ),
+    amountDue: formatStatementMoney(ledger.closingBalance),
   };
 }
 
@@ -150,8 +152,10 @@ export async function renderStatementOfAccountPdf(statement, timezone = DEFAULT_
   const pdfBytes = await generate({
     template,
     inputs: [buildStatementInputs(statement, timezone)],
+    // `rectangle` draws the summary strip and the ageing band. The template
+    // uses no multiVariableText, so that plugin is no longer registered.
     plugins: {
-      text, line, table, multiVariableText,
+      text, line, rectangle, table,
     },
   });
   return Buffer.from(pdfBytes);
