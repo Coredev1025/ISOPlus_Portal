@@ -113,6 +113,16 @@ export const LOW_CAT_BOARD_LABEL = 'Care Management - SaH - Low Cat';
 export const PDFLINK_TYPE_NDIS_INVOICE = 'NDIS Invoice';
 export const PDFLINK_TYPE_AGE_CARE_INVOICE = 'Participant Tax Invoice';
 export const PDFLINK_TYPE_MONTHLY_STATEMENT = 'Monthly Statement';
+/**
+ * The statement of account (invoice selection spec, section 4). A separate
+ * document from the monthly statement, not a replacement: that one reports
+ * plan budget against services delivered, this one reports money invoiced,
+ * paid and owing. A statement run produces both, so the type is what keeps
+ * their PDFLink rows and their replay lookups apart.
+ * Touchpoints: services/automation/generateStatementOfAccount.js,
+ * utils/statementAccountHistory.js.
+ */
+export const PDFLINK_TYPE_STATEMENT_OF_ACCOUNT = 'Statement of Account';
 
 /**
  * Fallback due-date offset when accountsReceivableTerms has no number.

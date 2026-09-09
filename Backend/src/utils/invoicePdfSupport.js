@@ -3,12 +3,16 @@
 // webhook copy hardcoding 'Australia/Sydney' where this one reads
 // DEFAULT_TIMEZONE. Import from here; do not re-declare.
 //
-// Readers: routes/webhook.js, services/automation/ndisInvoiceGeneratorPdf.js,
-// and (via injected deps built in routes/webhook.js) utils/webhookNdisPdfHandlers.js,
-// utils/webhookParticipantTaxPdfHelpers.js, utils/webhookMonthlyStatementPdfHelpers.js.
+// Readers: routes/webhook.js, routes/xero.js,
+// services/automation/ndisInvoiceGeneratorPdf.js,
+// services/automation/pushDraftInvoicesToXero.js, and (via injected deps built
+// in routes/webhook.js and routes/xero.js) utils/webhookNdisPdfHandlers.js,
+// utils/webhookParticipantTaxPdfHelpers.js,
+// utils/webhookMonthlyStatementPdfHelpers.js, utils/xeroNdisRouteHandlers.js.
 import InvoiceNumber from '../models/InvoiceNumber.js';
 import { claimHolder, claimItemsForInvoice } from './invoicedMarker.js';
 import { getS3File } from './uploadS3.js';
+import { mongoEq } from './securityHelpers.js';
 import { info, warn } from './logger.js';
 import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
 import { PROVISIONAL_CLAIM_PREFIX } from '../constants/invoiceSelection.js';
@@ -66,6 +70,40 @@ async function warnAlreadyInvoiced({ workspaceId, boardId, itemId, invoiceNumber
 }
 
 /**
+ * Write the ledger row that records which invoice covers this item.
+ *
+ * `mongoEq` on every filter value: `itemId` reaches here straight off a webhook
+ * or Xero payload, so it is user-controlled and could be an object. The Xero
+ * router used to keep a private copy of this function purely for that guard,
+ * and folding the guard in here is what let that copy go.
+ *
+ * Split out to keep `saveInvoiceNumber` flat now that it has two ordered steps.
+ */
+async function writeInvoiceNumberRow({ workspaceId, boardId, itemId, invoiceNumber, type, pdfLink }) {
+  await InvoiceNumber.findOneAndUpdate(
+    {
+      itemId: mongoEq(itemId),
+      workspaceId: mongoEq(workspaceId),
+      boardId: mongoEq(boardId),
+      type: mongoEq(type),
+    },
+    {
+      $set: {
+        itemId: mongoEq(itemId),
+        workspaceId: mongoEq(workspaceId),
+        boardId: mongoEq(boardId),
+        invoiceNumber: mongoEq(invoiceNumber),
+        type: mongoEq(type),
+        pdfLink,
+        updatedAt: new Date(),
+      },
+      $setOnInsert: { createdAt: new Date() },
+    },
+    { upsert: true, new: true },
+  );
+}
+
+/**
  * Record an invoice number against an item, and mark the item as invoiced.
  *
  * The marking is section 3.3 of the invoice selection spec: manual invoice
@@ -87,36 +125,67 @@ async function warnAlreadyInvoiced({ workspaceId, boardId, itemId, invoiceNumber
  * the PDF run allocated, which the claim treats as idempotent and does not
  * refuse), so this only fires when the holder is a genuinely different invoice.
  *
- * The marker write is best-effort, matching what this function has always done
- * with its own write. A failure here means an item that was invoiced is not
- * marked, and the next run would bill it again — so it is warned separately and
- * explicitly rather than folded into the invoice-number warning.
+ * ## Why the claim is first and the ledger row second
+ *
+ * Section 3.4 wants both writes to succeed or fail together, and says that
+ * where the design forces a choice, prefer leaving items unbilled — an unbilled
+ * item is recoverable on the next run, a double-billed participant is not.
+ *
+ * This function used to write the ledger row first and mark second, which fails
+ * in exactly the wrong direction: the "invoice written, marking fails" row of
+ * the spec's table, whose consequence is that the next scheduled run selects the
+ * item again and bills the participant twice. The order is now the one
+ * utils/automationInvoiceClaim.js already uses — claim, then record.
+ *
+ * Neither write is retried and neither throws, because by the time this is
+ * called the document already exists and has usually been sent; failing the
+ * request would not un-send it. What the ordering buys is which guard is more
+ * likely to be standing afterwards.
+ *
+ * Both partial states are equally visible and equally repairable — an
+ * `invoicedBy` with no matching `invoicenumber` row is exactly as greppable as
+ * the inverse. What is not equal is what reads them:
+ *
+ *   `Item.invoicedBy`  is the ONLY guard the NDIS scheduled path consults
+ *                      (`isAlreadyInvoiced` in utils/invoiceItemSelection.js).
+ *                      Lose it and that path bills the item again.
+ *   the ledger row     is a second guard on the Age Care path, which drops
+ *                      listed rows carrying an `invoiceNumber`
+ *                      (`generateAgeCareGeneratorInvoices`). It protects one
+ *                      path, not both.
+ *
+ * So the claim goes first, because it is the guard that covers every path. But
+ * a failed claim does not skip the ledger write: the Age Care guard is the only
+ * one left in that case, and dropping it too would leave a sent document with
+ * no defence anywhere. Both failures are warned about separately, so which half
+ * landed is readable from the logs.
+ *
+ * A failed ledger write does NOT release the claim. Releasing it would hand the
+ * item straight back to the next run — the double bill this ordering exists to
+ * prevent. `generateUnderClaim` keeps its claim on a ledger failure for exactly
+ * this reason; see the note on `record` there.
  */
 export async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, type, pdfLink = null) {
-  try {
-    await InvoiceNumber.findOneAndUpdate(
-      { itemId, workspaceId, boardId, type },
-      {
-        $set: {
-          itemId, workspaceId, boardId, invoiceNumber, type, pdfLink, updatedAt: new Date(),
-        },
-        $setOnInsert: { createdAt: new Date() },
-      },
-      { upsert: true, new: true },
-    );
-  } catch (err) {
-    warn('Webhook-Service', 'Failed to save invoice number to database', {
-      workspaceId, boardId, itemId, invoiceNumber, type, error: err.message,
-    }, {});
-  }
-
   try {
     const { rejected } = await claimItemsForInvoice({
       workspaceId, boardId, itemIds: [itemId], invoiceNumber, periodKey: null,
     });
     if (rejected.length > 0) await warnAlreadyInvoiced({ workspaceId, boardId, itemId, invoiceNumber, type });
   } catch (err) {
-    warn('Webhook-Service', 'Failed to mark item as invoiced; it may be billed again', {
+    // The claim did not land, so the item carries no marker. The ledger write
+    // below still runs: it is the Age Care path's own re-billing guard, and it
+    // is the only guard left standing here. A refusal is different and does not
+    // come through here — the item is marked, by an earlier invoice, and the
+    // second document is still worth recording.
+    warn('Webhook-Service', 'Failed to mark item as invoiced; the invoice number is still recorded', {
+      workspaceId, boardId, itemId, invoiceNumber, type, error: err.message,
+    }, {});
+  }
+
+  try {
+    await writeInvoiceNumberRow({ workspaceId, boardId, itemId, invoiceNumber, type, pdfLink });
+  } catch (err) {
+    warn('Webhook-Service', 'Failed to save invoice number to database', {
       workspaceId, boardId, itemId, invoiceNumber, type, error: err.message,
     }, {});
   }

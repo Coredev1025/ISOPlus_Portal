@@ -75,7 +75,14 @@ export function pickProfileItem(items, boardId) {
   return items.find((item) => item.boardId === boardId) ?? items[0];
 }
 
-async function findParticipantProfile(workspaceId, boardId, name) {
+/**
+ * The participant's profile Item, or null.
+ *
+ * Exported because the statement of account addresses the same person this
+ * module emails, and resolving the name twice by two different rules is how a
+ * document and its envelope end up disagreeing about who they are for.
+ */
+export async function findParticipantProfile(workspaceId, boardId, name) {
   const items = await Item.find({
     workspaceId: mongoEq(workspaceId),
     $or: participantNameClauses(name),

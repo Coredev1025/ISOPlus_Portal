@@ -218,6 +218,32 @@ describe('isItemInvoiceable — SaH and SaH Low Cat', () => {
     });
     expect(isItemInvoiceable(item, INVOICE_TYPE_SAH_LOW_CAT, JAN_PERIOD)).toBe(true);
   });
+
+  /**
+   * SaH boards have no guarantee of spelling their status column
+   * "Transaction Status" any more than NDIS boards spell theirs "Job Status" —
+   * and unlike NDIS, STATUS_FIELD_ALIASES carried no entry at all for
+   * "Transaction Status" until now, so a board naming it "Transaction status"
+   * would resolve an empty status, fail every status check, and bill nothing
+   * for the whole board with no error. This is exactly the "listed 5, selected
+   * 0" failure already observed for Job Status (portal-dev 2026-08-26), just
+   * on the SaH field instead.
+   */
+  it('reads the status from "Transaction status" as well as "Transaction Status"', () => {
+    const item = sahItem({
+      'Transaction status': 'Delivered - To be claimed and invoiced.',
+      'Scheduled Shift Start Date & Time': '2025-01-07T11:00:00.000000+11:00',
+    });
+    expect(isItemInvoiceable(item, INVOICE_TYPE_SAH, JAN_PERIOD)).toBe(true);
+  });
+
+  it('reads the status from "TransactionStatus" as well as "Transaction Status"', () => {
+    const item = sahItem({
+      TransactionStatus: 'Delivered - To be claimed and invoiced.',
+      'Scheduled Shift Start Date & Time': '2025-01-07T11:00:00.000000+11:00',
+    });
+    expect(isItemInvoiceable(item, INVOICE_TYPE_SAH, JAN_PERIOD)).toBe(true);
+  });
 });
 
 describe('isItemInvoiceable — IMS Job Management is deliberately unconfigured', () => {

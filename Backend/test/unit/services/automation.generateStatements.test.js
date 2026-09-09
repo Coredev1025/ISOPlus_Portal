@@ -110,6 +110,48 @@ describe('generateStatementsForBoard', () => {
     expect(links.every((link) => link.periodKey === PERIOD)).toBe(true);
   });
 
+  // Section 4.1: the statement period follows the configured cadence. The
+  // budget statement is a calendar-month document — its template text, its
+  // budget query and its quarter banner all say so — so a weekly schedule
+  // produces no budget statement at all rather than restating the whole of
+  // last month every week under a fresh statement number.
+  it('writes no Monthly Statement for a period that is not a calendar month', async () => {
+    await seedWorkspace({
+      label: 'Care Management - NDIS',
+      participants: ['Alex Rivers', 'Sam Lee'],
+    });
+
+    const results = await generateStatementsForBoard({
+      workspaceId: WS,
+      boardId: BOARD,
+      slot: SLOT,
+      timezone: TZ,
+      periodKey: PERIOD,
+      schedule: { every: { n: 1, unit: 'week' } },
+    });
+
+    expect(results.filter((row) => row.pdfUrl?.includes('monthly-statements/'))).toEqual([]);
+    expect(await PDFLink.countDocuments({ workspaceId: WS, type: 'Monthly Statement' })).toBe(0);
+    // And no statement number burned on a document that was never produced.
+    const business = await Business.findOne({ workspaceId: WS }).lean();
+    expect(business.documentNumbering.statement?.nextNumber ?? 1).toBe(1);
+  });
+
+  it('still writes the Monthly Statement on an explicitly monthly cadence', async () => {
+    await seedWorkspace({ label: 'Care Management - NDIS' });
+
+    await generateStatementsForBoard({
+      workspaceId: WS,
+      boardId: BOARD,
+      slot: SLOT,
+      timezone: TZ,
+      periodKey: PERIOD,
+      schedule: { every: { n: 1, unit: 'month' } },
+    });
+
+    expect(await PDFLink.countDocuments({ workspaceId: WS, type: 'Monthly Statement' })).toBe(1);
+  });
+
   it('reuses existing participant PDFs and still generates the missing one', async () => {
     await seedWorkspace({
       label: 'Care Management',

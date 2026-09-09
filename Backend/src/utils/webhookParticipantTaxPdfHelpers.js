@@ -96,7 +96,21 @@ export function resolveParticipantTaxReceiverDetails(dbItems, refItemsMap, helpe
   return { participantName, receiverName, receiverAddress };
 }
 
-function resolveParticipantTaxRowDate(dbItem, helpers) {
+/**
+ * The service date this row PRINTS, per section 2.3 of the invoice selection
+ * spec: the actual shift end for a delivered SaH row, the scheduled shift start
+ * for anything else.
+ *
+ * Exported so the rule can be read and tested on its own rather than only
+ * through a rendered PDF. Selection (utils/invoiceItemSelection.js) does NOT
+ * consult it: membership is the OR across both date fields in section 2.1, so
+ * an item can be selected on one date and printed on the other. Making the two
+ * agree means the renderers reading a shared resolver, and closing two gaps in
+ * this function first — it compares the status string exactly, and it has no
+ * fallback to the other field when the resolved one is empty. Deferred; see
+ * the plan's "Deferred, with reasons".
+ */
+export function resolveParticipantTaxRowDate(dbItem, helpers) {
   const { getValueFromFlatData, attributeNames, dateFmt } = helpers;
   const getValue = (attributeName) => getValueFromFlatData(dbItem, attributeName);
   const transactionStatus = helpers.formatLabelValue(getValue(attributeNames.TRANSACTION_STATUS));

@@ -84,13 +84,20 @@ export const SPELLING_VARIANTS = [
  * only as the "removed listed items" warn in utils/automationItemSelection.js
  * (observed on portal-dev 2026-08-26: listed 5, selected 0).
  *
- * SPELLING_VARIANTS does not cover this: it swaps ' & ' for ' and ', which is
- * a different axis from what the column is called.
+ * SaH's status field is named 'Transaction Status' (section 2.3), and carried
+ * no alias entry at all until now — so a SaH board spelling its column
+ * differently would resolve an empty status, fail the status check for every
+ * item, and bill nothing for the whole board with no error. Same failure mode
+ * as Job Status, just on the field SaH selection actually reads.
+ *
+ * SPELLING_VARIANTS does not cover either entry: it swaps ' & ' for ' and ',
+ * which is a different axis from what the column is called.
  *
  * Read by: utils/invoiceSelectionFields.js (readStatusField).
  */
 export const STATUS_FIELD_ALIASES = Object.freeze({
   'Job Status': ['Job Status', 'Job status', 'JobStatus', 'Shift Status', 'ShiftStatus'],
+  'Transaction Status': ['Transaction Status', 'Transaction status', 'TransactionStatus'],
 });
 
 const NDIS_STATUSES = ['Completed', 'Cancelled'];

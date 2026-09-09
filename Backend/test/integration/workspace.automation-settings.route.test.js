@@ -429,18 +429,21 @@ describe('GET/PUT /api/workspaces/:workspaceId/automation-settings', () => {
     expect(res.body.recentDocuments[0]).not.toHaveProperty('deliveryMessageId');
   });
 
-  it('caps recent automation documents at ten', async () => {
-    for (let i = 0; i < 12; i++) {
-      await automationPdfLink({
-        pdfLink: `https://example.test/doc-${i}.pdf`,
-        periodKey: '20250201-0900',
-        createdAt: new Date(Date.UTC(2026, 0, i + 1)),
-      });
-    }
+  // Fifty, not ten: the panel collapses to five rows and expands, so ten was
+  // the whole history a client could ever reach — one run on a board with a
+  // handful of participants. See RECENT_DOCUMENTS_LIMIT.
+  it('caps recent automation documents at fifty', async () => {
+    // One insert, not fifty-two round trips: awaiting each in turn held the
+    // request open long enough to hang the socket on a slow machine.
+    await Promise.all(Array.from({ length: 52 }, (_, i) => automationPdfLink({
+      pdfLink: `https://example.test/doc-${i}.pdf`,
+      periodKey: '20250201-0900',
+      createdAt: new Date(Date.UTC(2026, 0, i + 1)),
+    })));
 
     const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
-    expect(res.body.recentDocuments).toHaveLength(10);
-    const newest = await PDFLink.findOne({ pdfLink: 'https://example.test/doc-11.pdf' }).lean();
+    expect(res.body.recentDocuments).toHaveLength(50);
+    const newest = await PDFLink.findOne({ pdfLink: 'https://example.test/doc-51.pdf' }).lean();
     expect(res.body.recentDocuments[0].pdfUrl).toBe(`/api/pdf-links/download/${newest._id}`);
   });
 
@@ -510,6 +513,99 @@ describe('GET/PUT /api/workspaces/:workspaceId/automation-settings', () => {
     // cannot fire.
     expect(await AutomationSettings.countDocuments({})).toBe(0);
     expect(await ScheduledJob.countDocuments({})).toBe(0);
+  });
+
+  /**
+   * Paging back through the history, which is the other half of the panel's
+   * collapse-to-five: the newest page answers "did last night's run work", and
+   * a client chasing a document from months ago has to be able to reach it.
+   * Fifty was never the whole history, only the first page of it.
+   */
+  describe('older automation documents', () => {
+    /** `count` documents, newest last, one minute apart. */
+    const seedDocuments = (count) => Promise.all(
+      Array.from({ length: count }, (_, i) => automationPdfLink({
+        pdfLink: `https://example.test/page-${i}.pdf`,
+        invoiceNumber: `INV-${1000 + i}`,
+        periodKey: '20250201-0900',
+        createdAt: new Date(Date.UTC(2026, 0, 1, 0, i)),
+      })),
+    );
+
+    it('offers a cursor with the first page when more history exists', async () => {
+      await seedDocuments(51);
+
+      const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
+      expect(res.body.recentDocuments).toHaveLength(50);
+      expect(typeof res.body.recentDocumentsCursor).toBe('string');
+    });
+
+    it('offers no cursor when the first page is the whole history', async () => {
+      await seedDocuments(3);
+
+      const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
+      expect(res.body.recentDocuments).toHaveLength(3);
+      expect(res.body.recentDocumentsCursor).toBeNull();
+    });
+
+    it('serves the older page, and every document appears exactly once', async () => {
+      await seedDocuments(51);
+
+      const first = await agent.get(`/api/workspaces/${WS}/automation-settings`);
+      const older = await agent
+        .get(`/api/workspaces/${WS}/automation-documents`)
+        .query({ cursor: first.body.recentDocumentsCursor });
+
+      expect(older.status).toBe(200);
+      expect(older.body.documents).toHaveLength(1);
+      // The oldest document, and one nobody has seen yet.
+      expect(older.body.documents[0].invoiceNumber).toBe('INV-1000');
+      const seen = [...first.body.recentDocuments, ...older.body.documents]
+        .map((d) => d.pdfUrl);
+      expect(new Set(seen).size).toBe(51);
+      // Nothing older than the last one, so nowhere further to go.
+      expect(older.body.nextCursor).toBeNull();
+    });
+
+    /**
+     * The reason the cursor carries an id as well as a timestamp. Documents
+     * raised by one run can share a millisecond, and a pair straddling the
+     * page boundary loses the second one to a createdAt-only cursor.
+     */
+    it('loses nothing when documents share a createdAt across the boundary', async () => {
+      const sameInstant = new Date(Date.UTC(2026, 0, 1, 0, 0));
+      await Promise.all(Array.from({ length: 51 }, (_, i) => automationPdfLink({
+        pdfLink: `https://example.test/tied-${i}.pdf`,
+        invoiceNumber: `INV-${2000 + i}`,
+        periodKey: '20250201-0900',
+        createdAt: sameInstant,
+      })));
+
+      const first = await agent.get(`/api/workspaces/${WS}/automation-settings`);
+      const older = await agent
+        .get(`/api/workspaces/${WS}/automation-documents`)
+        .query({ cursor: first.body.recentDocumentsCursor });
+
+      const seen = [...first.body.recentDocuments, ...older.body.documents]
+        .map((d) => d.pdfUrl);
+      expect(new Set(seen).size).toBe(51);
+    });
+
+    it('refuses a cursor it did not issue', async () => {
+      const res = await agent
+        .get(`/api/workspaces/${WS}/automation-documents`)
+        .query({ cursor: 'not-a-cursor' });
+      expect(res.status).toBe(400);
+    });
+
+    it('serves the newest page when asked for no cursor at all', async () => {
+      await seedDocuments(3);
+
+      const res = await agent.get(`/api/workspaces/${WS}/automation-documents`);
+      expect(res.status).toBe(200);
+      expect(res.body.documents).toHaveLength(3);
+      expect(res.body.documents[0].invoiceNumber).toBe('INV-1002');
+    });
   });
 
   describe('the invoiceStatementAutomation feature flag', () => {

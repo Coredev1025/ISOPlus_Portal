@@ -1,7 +1,9 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { AutomationStatusPanel } from '@/lib/automation-status-panel';
+import { mergeRecentDocuments } from '@/lib/automation-helpers';
 import {
   DEFAULT_BLOCK,
   type AutomationBlock,
@@ -251,5 +253,166 @@ describe("automation health on the client panel", () => {
 
     // Not every workspace uses Xero; "disconnected" is not a fault to nag about.
     expect(status.queryByText(/reconnect/i)).not.toBeInTheDocument();
+  });
+});
+
+/** `count` documents, newest first, each with its own link so rows are distinct. */
+function docs(count: number): AutomationRecentDocument[] {
+  return Array.from({ length: count }, (_, i) =>
+    doc({
+      invoiceNumber: `INV-${2000 + i}`,
+      pdfUrl: `https://files.test/inv-${2000 + i}.pdf`,
+    })
+  );
+}
+
+describe('AutomationStatusPanel recent-document history', () => {
+  it('shows only the five most recent to begin with', () => {
+    const status = renderPanel(docs(12));
+    expect(status.getAllByRole('listitem')).toHaveLength(5);
+    expect(status.getByRole('link', { name: /INV-2000/ })).toBeTruthy();
+    expect(status.queryByRole('link', { name: /INV-2005/ })).toBeNull();
+  });
+
+  it('reveals the rest when the history is expanded', async () => {
+    const status = renderPanel(docs(12));
+    await userEvent.click(status.getByRole('button', { name: /show \d+ more/i }));
+    expect(status.getAllByRole('listitem')).toHaveLength(12);
+  });
+
+  it('collapses back to five', async () => {
+    const status = renderPanel(docs(12));
+    await userEvent.click(status.getByRole('button', { name: /show \d+ more/i }));
+    await userEvent.click(status.getByRole('button', { name: /show fewer/i }));
+    expect(status.getAllByRole('listitem')).toHaveLength(5);
+  });
+
+  // Five or fewer is the whole history, so there is nothing to expand and a
+  // button that reveals nothing is worse than no button.
+  it('offers no expander when everything already fits', () => {
+    const status = renderPanel(docs(4));
+    expect(status.queryByRole('button', { name: /show \d+ more/i })).toBeNull();
+  });
+});
+
+/**
+ * The backend paginates the full document history behind a cursor (50 per
+ * page), so a client with more than one page's worth needs a way to reach it
+ * beyond the in-memory "show all 12" expander above — Load More asks the
+ * server for the next page.
+ *
+ * These render `AutomationStatusPanel` directly with `hasMoreDocuments` /
+ * `onLoadMoreDocuments` set explicitly, rather than going through the parent
+ * panel's fetch — the panel owns cursor state and the merge across polls;
+ * this component only owns whether the button is visible and wired up.
+ */
+function renderPanelWithLoadMore(
+  recentDocuments: AutomationRecentDocument[],
+  props: {
+    hasMoreDocuments?: boolean;
+    loadingMoreDocuments?: boolean;
+    onLoadMoreDocuments?: () => void;
+  } = {}
+) {
+  render(
+    <AutomationStatusPanel
+      invoice={block({ enabled: true })}
+      statement={block()}
+      recentDocuments={recentDocuments}
+      {...props}
+    />
+  );
+  return within(screen.getByRole('region', { name: /automation status/i }));
+}
+
+describe('AutomationStatusPanel Load more', () => {
+  it('is absent when there is no more history, even while expanded', async () => {
+    const status = renderPanelWithLoadMore(docs(12), { hasMoreDocuments: false });
+    await userEvent.click(status.getByRole('button', { name: /show \d+ more/i }));
+
+    expect(status.queryByRole('button', { name: /^load more$/i })).toBeNull();
+  });
+
+  it('is absent while the list is still collapsed', () => {
+    const status = renderPanelWithLoadMore(docs(12), { hasMoreDocuments: true });
+
+    // A button that pages back through history the reader cannot even see
+    // yet has nothing to attach to.
+    expect(status.queryByRole('button', { name: /^load more$/i })).toBeNull();
+  });
+
+  it('appears once the list is expanded and more history exists', async () => {
+    const status = renderPanelWithLoadMore(docs(12), { hasMoreDocuments: true });
+    await userEvent.click(status.getByRole('button', { name: /show \d+ more/i }));
+
+    expect(status.getByRole('button', { name: /^load more$/i })).toBeInTheDocument();
+  });
+
+  it('calls the handler when clicked', async () => {
+    const onLoadMoreDocuments = vi.fn();
+    const status = renderPanelWithLoadMore(docs(12), {
+      hasMoreDocuments: true,
+      onLoadMoreDocuments,
+    });
+    await userEvent.click(status.getByRole('button', { name: /show \d+ more/i }));
+    await userEvent.click(status.getByRole('button', { name: /^load more$/i }));
+
+    expect(onLoadMoreDocuments).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables itself and reads Loading… while a page is in flight', async () => {
+    const status = renderPanelWithLoadMore(docs(12), {
+      hasMoreDocuments: true,
+      loadingMoreDocuments: true,
+    });
+    await userEvent.click(status.getByRole('button', { name: /show \d+ more/i }));
+
+    const button = status.getByRole('button', { name: /loading/i });
+    expect(button).toBeDisabled();
+  });
+});
+
+/**
+ * `mergeRecentDocuments` is what stops the 60s poll from wiping the older
+ * pages a client already paged back through: the poll only ever refetches the
+ * newest page, so the panel keeps that page and the older pages it loaded via
+ * Load More as separate state and recombines them for display on every
+ * render — see `lib/invoice-statement-automation-panel.tsx`.
+ */
+describe('mergeRecentDocuments', () => {
+  it('de-duplicates by pdfUrl, keeping the newest-page copy and newest-first order', () => {
+    const newest = [
+      doc({ pdfUrl: 'https://files.test/a.pdf' }),
+      doc({ pdfUrl: 'https://files.test/b.pdf' }),
+    ];
+    // A document generated between two polls shifts the page boundary, so the
+    // same pdfUrl can legitimately arrive as both the tail of the newest page
+    // and the head of an already-loaded older page.
+    const older = [
+      doc({ pdfUrl: 'https://files.test/b.pdf', invoiceNumber: 'STALE' }),
+      doc({ pdfUrl: 'https://files.test/c.pdf' }),
+    ];
+
+    const merged = mergeRecentDocuments(newest, older);
+
+    expect(merged.map((d) => d.pdfUrl)).toEqual([
+      'https://files.test/a.pdf',
+      'https://files.test/b.pdf',
+      'https://files.test/c.pdf',
+    ]);
+    // The newest page's copy wins, not the stale older-page one.
+    expect(merged[1].invoiceNumber).not.toBe('STALE');
+  });
+
+  it('does not mutate either input array', () => {
+    const newest = [doc({ pdfUrl: 'https://files.test/a.pdf' })];
+    const older = [doc({ pdfUrl: 'https://files.test/b.pdf' })];
+    const newestCopy = [...newest];
+    const olderCopy = [...older];
+
+    mergeRecentDocuments(newest, older);
+
+    expect(newest).toEqual(newestCopy);
+    expect(older).toEqual(olderCopy);
   });
 });

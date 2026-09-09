@@ -46,8 +46,10 @@ async function generateDocumentResults(job) {
     });
   }
   if (kind === KIND_STATEMENT) {
+    // The schedule goes to both kinds: it is what tells a statement run
+    // whether the period it covers is a week or a calendar month.
     return generateStatementsForBoard({
-      workspaceId, boardId, slot, timezone, periodKey,
+      workspaceId, boardId, slot, timezone, periodKey, schedule,
     });
   }
   return [];

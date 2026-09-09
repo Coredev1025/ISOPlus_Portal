@@ -1,7 +1,10 @@
 "use client";
 
-import { Activity } from "lucide-react";
+import { useState } from "react";
+import { Activity, ChevronDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { COLLAPSED_RECENT_DOCUMENTS } from "@/constants/automation";
 import { cn } from "@/lib/utils";
 import {
   blockNeedsAttention,
@@ -146,6 +149,107 @@ function RecentDocumentRow({
 }
 
 /**
+ * The recent-document list, collapsed to its most recent rows until asked.
+ *
+ * The count lives in `COLLAPSED_RECENT_DOCUMENTS` rather than here, and the
+ * expander is absent — not disabled — when the whole history already fits: a
+ * button that reveals nothing teaches people the button does nothing.
+ *
+ * Expansion is local state and deliberately not persisted. The panel polls,
+ * and a remembered "expanded" that comes back on a later visit showing a
+ * different run's documents is a worse default than starting from the top.
+ */
+/**
+ * Fetches the next page of history from the server. Distinct from the
+ * expand/collapse button above it: that one reveals rows already in memory,
+ * this one asks the backend for rows that are not. It only makes sense once
+ * the in-memory list is fully shown — offering it against a collapsed list
+ * would let a client page the server for history the panel is already
+ * hiding client-side.
+ */
+function LoadMoreButton({
+  loading,
+  onLoadMore,
+}: Readonly<{ loading?: boolean; onLoadMore?: () => void }>) {
+  return (
+    <div className="mt-2 flex justify-center">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled={loading}
+        onClick={onLoadMore}
+        className="h-7 px-2.5 text-[12px] font-medium text-muted-foreground hover:text-foreground"
+      >
+        {loading ? "Loading…" : "Load more"}
+      </Button>
+    </div>
+  );
+}
+
+function RecentDocumentList({
+  documents,
+  timeZone,
+  hasMore,
+  loadingMore,
+  onLoadMore,
+}: Readonly<{
+  documents: readonly AutomationRecentDocument[];
+  timeZone?: string;
+  /** More history exists on the server beyond `documents`. */
+  hasMore?: boolean;
+  /** A Load More request is in flight. */
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
+}>) {
+  const [expanded, setExpanded] = useState(false);
+  const canExpand = documents.length > COLLAPSED_RECENT_DOCUMENTS;
+  const shown = expanded ? documents : documents.slice(0, COLLAPSED_RECENT_DOCUMENTS);
+  // Only once everything already in memory is showing does "more" mean
+  // "more than the panel has at all" rather than "more than is shown".
+  const showLoadMore = expanded && hasMore;
+
+  return (
+    <div className="mt-4 border-t pt-3">
+      <h4 className="mb-1.5 text-xs font-semibold text-muted-foreground">
+        Recent documents
+      </h4>
+      <ul className="space-y-1">
+        {shown.map((doc) => (
+          <RecentDocumentRow key={doc.pdfUrl} doc={doc} timeZone={timeZone} />
+        ))}
+      </ul>
+      {canExpand ? (
+        <div className="mt-2.5 flex justify-center">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-expanded={expanded}
+            onClick={() => setExpanded(!expanded)}
+            className="h-7 gap-1.5 px-2.5 text-[12px] font-medium text-muted-foreground hover:text-foreground"
+          >
+            <ChevronDown
+              aria-hidden
+              className={cn(
+                "h-3.5 w-3.5 transition-transform duration-200",
+                expanded && "rotate-180"
+              )}
+            />
+            {expanded
+              ? "Show fewer"
+              : `Show ${documents.length - COLLAPSED_RECENT_DOCUMENTS} more`}
+          </Button>
+        </div>
+      ) : null}
+      {showLoadMore ? (
+        <LoadMoreButton loading={loadingMore} onLoadMore={onLoadMore} />
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * The two operational signals from `GET /automation-settings`'s `health` block.
  *
  * `queueBacklogged` is a boolean rather than a depth on purpose: the queue is
@@ -164,6 +268,12 @@ type AutomationStatusPanelProps = Readonly<{
   recentDocuments: readonly AutomationRecentDocument[];
   /** Absent on a response from a backend that predates the health block. */
   health?: AutomationHealth;
+  /** More document history exists on the server beyond `recentDocuments`. */
+  hasMoreDocuments?: boolean;
+  /** A Load More request for the next page is in flight. */
+  loadingMoreDocuments?: boolean;
+  /** Fetches the next page. Only ever called while `hasMoreDocuments` is true. */
+  onLoadMoreDocuments?: () => void;
 }>;
 
 /**
@@ -191,6 +301,9 @@ export function AutomationStatusPanel({
   statement,
   recentDocuments,
   health,
+  hasMoreDocuments,
+  loadingMoreDocuments,
+  onLoadMoreDocuments,
 }: AutomationStatusPanelProps) {
   const notices = healthNotices(health);
   return (
@@ -234,20 +347,13 @@ export function AutomationStatusPanel({
         ) : null}
 
         {recentDocuments.length > 0 ? (
-          <div className="mt-4 border-t pt-3">
-            <h4 className="mb-1.5 text-xs font-semibold text-muted-foreground">
-              Recent documents
-            </h4>
-            <ul className="space-y-1">
-              {recentDocuments.map((doc) => (
-                <RecentDocumentRow
-                  key={doc.pdfUrl}
-                  doc={doc}
-                  timeZone={invoice.timezone ?? statement.timezone}
-                />
-              ))}
-            </ul>
-          </div>
+          <RecentDocumentList
+            documents={recentDocuments}
+            timeZone={invoice.timezone ?? statement.timezone}
+            hasMore={hasMoreDocuments}
+            loadingMore={loadingMoreDocuments}
+            onLoadMore={onLoadMoreDocuments}
+          />
         ) : null}
       </Card>
     </section>

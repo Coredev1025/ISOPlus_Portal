@@ -163,9 +163,13 @@ async function recordPdfLinks({
     periodStart: period?.start ? new Date(period.start) : undefined,
     periodEnd: period?.end ? new Date(period.end) : undefined,
     invoiceType: invoiceType ?? undefined,
-    // The figure the invoice billed. Recorded once, on the row that represents
-    // the document, so the statement never has to recompute it — the Age Care
-    // total in particular depends on whether the board is Low Cat.
+    // The figure the invoice billed, so the statement never has to recompute
+    // it — the Age Care total in particular depends on whether the board is
+    // Low Cat. It is the whole document's total and it is stamped on every one
+    // of the invoice's rows, because there is one row per itemId and no row
+    // that stands for the document on its own. Any reader summing these must
+    // therefore dedupe by `pdfLink` first; `participantInvoices` does.
+
     invoiceTotal: Number.isFinite(Number(invoiceTotal)) ? Number(invoiceTotal) : undefined,
     invoiceNumber,
     participant,
@@ -174,6 +178,30 @@ async function recordPdfLinks({
     isDeleted: false,
     SignatureStatus: 'Unsigned',
   })));
+}
+
+/**
+ * Section 3.5: a period with nothing to bill produces no invoice and no email,
+ * and the decision is logged. Both empty-selection exits used to return in
+ * silence while the early exits above them logged, so a period that correctly
+ * had nothing to bill read exactly like one that selected nothing because a
+ * status alias or a date field was missing — the run closes Succeeded either
+ * way, and the under-billing goes unnoticed.
+ *
+ * `listed` is the size of the list the window returned before selection ran,
+ * which is what separates the two: 0 means the period was empty, a positive
+ * number means selection rejected everything in it.
+ */
+function logEmptySelection({ workspaceId, boardId, periodKey, period, invoiceType, listed }) {
+  info('Automation', 'No billable items for the period; no invoice and no email', {
+    workspaceId,
+    boardId,
+    periodKey,
+    invoiceType,
+    periodStart: period?.start,
+    periodEnd: period?.end,
+    listed,
+  });
 }
 
 export async function generateInvoicesForBoard({
@@ -246,7 +274,12 @@ async function generateNdisGeneratorInvoices({
     idKey: 'sourceItemId',
     participantKey: 'participant',
   });
-  if (groups.length === 0) return existing;
+  if (groups.length === 0) {
+    logEmptySelection({
+      workspaceId, boardId, periodKey, period, invoiceType, listed: (listed.items || []).length,
+    });
+    return existing;
+  }
 
   const results = [...existing];
   for (const group of groups) {
@@ -378,7 +411,12 @@ async function generateAgeCareGeneratorInvoices({
     workspaceId, boardId, rows: pending, idKey: 'id', invoiceType, period,
   });
   const groups = groupItemIdsByParticipant(selected, { idKey: 'id', participantKey: 'participant' });
-  if (groups.length === 0) return existing;
+  if (groups.length === 0) {
+    logEmptySelection({
+      workspaceId, boardId, periodKey, period, invoiceType, listed: pending.length,
+    });
+    return existing;
+  }
 
   const results = [...existing];
   const isLowCatBoard = isLowCatCareManagementLabel(label);

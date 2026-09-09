@@ -18,6 +18,7 @@ vi.mock('@/lib/automation-settings', async () => {
     ...actual,
     fetchAutomationSettings: vi.fn(),
     saveAutomationSettings: vi.fn(),
+    fetchAutomationDocuments: vi.fn(),
   };
 });
 
@@ -25,6 +26,7 @@ import { InvoiceStatementAutomationPanel } from '@/lib/invoice-statement-automat
 import { AUTOMATION_PANEL_POLL_MS } from '@/constants/automation';
 import {
   DEFAULT_BLOCK,
+  fetchAutomationDocuments,
   fetchAutomationSettings,
   saveAutomationSettings,
   type AutomationBlock,
@@ -53,6 +55,7 @@ beforeAll(() => {
 
 const fetchMock = vi.mocked(fetchAutomationSettings);
 const saveMock = vi.mocked(saveAutomationSettings);
+const documentsMock = vi.mocked(fetchAutomationDocuments);
 
 /** DEFAULT_BLOCK is deep-frozen, so every fixture needs its own deep copy. */
 function block(overrides: Partial<AutomationBlock> = {}): AutomationBlock {
@@ -633,5 +636,138 @@ describe("delivery states arrive without a reload", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/**
+ * Paging back through document history has to survive the 60-second poll.
+ *
+ * The poll re-reads the whole panel, including `recentDocumentsCursor` — the
+ * boundary after page ONE. Adopting that while a client has paged back throws
+ * away where they had got to: the next Load more refetches an already-merged
+ * page, `mergeRecentDocuments` dedupes it away, and the button silently does
+ * nothing. It then happens again every minute.
+ */
+describe('Load more survives a poll', () => {
+  const doc = (id: string) => ({
+    type: 'NDIS Invoice',
+    invoiceNumber: id,
+    periodKey: '20260801-2300',
+    pdfUrl: `https://s3.example/${id}.pdf`,
+    createdAt: '2026-08-05T00:00:00.000Z',
+  });
+
+  it('keeps the client\'s paging position when a poll lands', async () => {
+    vi.useFakeTimers();
+    try {
+      // Load more only appears once the in-memory list is fully expanded, and
+      // the list only collapses above COLLAPSED_RECENT_DOCUMENTS rows.
+      fetchMock.mockResolvedValue({
+        ...settings(),
+        recentDocuments: Array.from({ length: 6 }, (_, i) => doc(`INV-${i + 1}`)),
+        recentDocumentsCursor: 'cursor-page-2',
+      });
+      documentsMock.mockResolvedValue({
+        documents: [doc('INV-7')],
+        nextCursor: 'cursor-page-3',
+      });
+
+      render(<InvoiceStatementAutomationPanel workspaceId="ws-1" />);
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+      (
+        await vi.waitFor(() => screen.getByRole('button', { name: /show 1 more/i }))
+      ).click();
+
+      const loadMore = await vi.waitFor(() =>
+        screen.getByRole('button', { name: /load more/i })
+      );
+      loadMore.click();
+      await vi.waitFor(() => expect(documentsMock).toHaveBeenCalledTimes(1));
+
+      // The poll lands while the client is on page two.
+      await vi.advanceTimersByTimeAsync(AUTOMATION_PANEL_POLL_MS);
+      await vi.waitFor(() =>
+        expect(fetchMock.mock.calls.length).toBeGreaterThan(1)
+      );
+
+      screen.getByRole('button', { name: /load more/i }).click();
+      await vi.waitFor(() => expect(documentsMock).toHaveBeenCalledTimes(2));
+
+      // Page three, not page one again.
+      expect(documentsMock.mock.calls[0][1]).toBe('cursor-page-2');
+      expect(documentsMock.mock.calls[1][1]).toBe('cursor-page-3');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+/**
+ * The `[workspaceId]` effect re-runs whenever a caller passes a different
+ * workspace — the component's own contract treats workspaceId as changeable
+ * without a remount. But `pagedBackRef`, `olderDocuments` and
+ * `documentsCursor` are only ever written by the Load More flow, never reset
+ * on that switch: workspace B inherits workspace A's paging position.
+ */
+describe('Load more resets when the workspace changes', () => {
+  const docFor = (workspace: string, id: string) => ({
+    type: 'NDIS Invoice',
+    invoiceNumber: `${workspace}-${id}`,
+    periodKey: '20260801-2300',
+    pdfUrl: `https://s3.example/${workspace}-${id}.pdf`,
+    createdAt: '2026-08-05T00:00:00.000Z',
+  });
+
+  it("does not carry workspace A's paging position into workspace B", async () => {
+    fetchMock.mockImplementation(async (workspaceId: string) => {
+      if (workspaceId === 'ws-B') {
+        return {
+          ...settings(),
+          recentDocuments: [docFor('B', '1')],
+          recentDocumentsCursor: 'cursor-B-page-2',
+        };
+      }
+      return {
+        ...settings(),
+        recentDocuments: Array.from({ length: 6 }, (_, i) => docFor('A', `${i + 1}`)),
+        recentDocumentsCursor: 'cursor-A-page-2',
+      };
+    });
+    documentsMock.mockResolvedValue({
+      documents: [docFor('A', '7')],
+      nextCursor: 'cursor-A-page-3',
+    });
+
+    const { rerender } = render(
+      <InvoiceStatementAutomationPanel workspaceId="ws-A" />
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    (
+      await screen.findByRole('button', { name: /show 1 more/i })
+    ).click();
+    const loadMore = await screen.findByRole('button', { name: /load more/i });
+    loadMore.click();
+    await waitFor(() => expect(documentsMock).toHaveBeenCalledTimes(1));
+    // The older page landed before the switch.
+    await screen.findByRole('link', { name: 'A-7' });
+
+    rerender(<InvoiceStatementAutomationPanel workspaceId="ws-B" />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    // (1) B's newest page only — none of A's older-page rows remain.
+    await screen.findByRole('link', { name: 'B-1' });
+    expect(screen.queryByRole('link', { name: /^A-/ })).not.toBeInTheDocument();
+
+    // (2) Load more on B requests B's own page-one cursor, not the cursor
+    // A's paging had advanced to.
+    documentsMock.mockResolvedValue({
+      documents: [docFor('B', '2')],
+      nextCursor: null,
+    });
+    screen.getByRole('button', { name: /load more/i }).click();
+    await waitFor(() => expect(documentsMock).toHaveBeenCalledTimes(2));
+    expect(documentsMock.mock.calls[1][1]).toBe('cursor-B-page-2');
   });
 });

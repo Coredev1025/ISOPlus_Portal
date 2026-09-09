@@ -102,3 +102,61 @@ describe('saveInvoiceNumber also sets the invoiced marker', () => {
     await expect(saveInvoiceNumber(WS, BOARD, 'missing', INVOICE, 'PDF')).resolves.toBeUndefined();
   });
 });
+
+/**
+ * Section 3.4: the invoice write and the item marking must succeed or fail
+ * together, and where the design forces a choice, prefer leaving items
+ * unbilled — an unbilled item is recoverable on the next run, a double-billed
+ * participant is not.
+ *
+ * The NDIS scheduled path reads only `Item.invoicedBy` (`isAlreadyInvoiced` in
+ * utils/invoiceItemSelection.js), so the claim goes first: it is the guard
+ * that covers every path, and it used to be written last with only a warning
+ * on failure. The Age Care path additionally drops listed rows carrying an
+ * `invoiceNumber`, which comes from the ledger, so the ledger row is a second
+ * guard there — which is why it is still attempted after a failed claim
+ * rather than skipped.
+ */
+describe('saveInvoiceNumber fails towards not billing twice', () => {
+  it('still writes the ledger row when the item could not be marked', async () => {
+    // A real failure of the claim, provoked at the driver rather than by
+    // mocking the marker module, so the whole claim path runs.
+    //
+    // This test previously asserted the opposite — that a failed claim skipped
+    // the ledger write. That expectation was wrong, not the code. The ledger
+    // row is not merely a record: `generateAgeCareGeneratorInvoices` filters
+    // the listing on `!row.invoiceNumber`, which comes from this collection, so
+    // on the Age Care path the row is a second re-billing guard. Skipping the
+    // write removed that guard in precisely the case where the first guard —
+    // the marker — had just failed to land. Both partial states are visible and
+    // repairable; only one of them leaves any guard standing on Age Care.
+    const updateMany = vi.spyOn(Item, 'updateMany').mockRejectedValue(new Error('mongo is down'));
+    try {
+      await saveInvoiceNumber(WS, BOARD, 'a', INVOICE, 'PDF', 'https://s3/x.pdf');
+    } finally {
+      updateMany.mockRestore();
+    }
+
+    const row = await InvoiceNumber.findOne({ itemId: 'a' }).lean();
+    expect(row.invoiceNumber).toBe(INVOICE);
+    const message = warnedMessages().find((m) => /Failed to mark item as invoiced/i.test(m));
+    expect(message).toBeTruthy();
+  });
+
+  it('keeps the marker when the ledger row cannot be written', async () => {
+    // Releasing the claim here would hand the item straight back to the next
+    // run, which is the double bill the ordering exists to prevent — the same
+    // reason generateUnderClaim keeps its claim when `record` throws.
+    const findOneAndUpdate = vi.spyOn(InvoiceNumber, 'findOneAndUpdate')
+      .mockRejectedValue(new Error('mongo is down'));
+    try {
+      await saveInvoiceNumber(WS, BOARD, 'a', INVOICE, 'PDF', 'https://s3/x.pdf');
+    } finally {
+      findOneAndUpdate.mockRestore();
+    }
+
+    const row = await Item.findOne({ itemId: 'a' }).lean();
+    expect(row.invoicedBy).toBe(INVOICE);
+    expect(warnedMessages().find((m) => /Failed to save invoice number/i.test(m))).toBeTruthy();
+  });
+});

@@ -111,10 +111,26 @@ npm run dev:user -- --create --email dev@local.test         # NOT the bare form 
   `docker exec -i isoplus-mongo mongosh business-dashboard --quiet --eval '…'` and
   `docker exec -i isoplus-redis redis-cli …`.
 
-- **Log in via credentials, never the ISO+ button.** Click *administrator
-  credentials* at the bottom of the login screen (it reads **Support agent
-  sign-in**) and use the account from `dev:user`, password `local-dev-only`. The
-  OAuth path cannot complete locally.
+- **Password login no longer exists.** KAN-27 replaced it: `POST /api/auth/login`
+  now answers **404** with *"Support admin password login is no longer
+  available. Use Google sign-in."* `npm run dev:user` still writes the row and
+  still prints `local-dev-only`, but nothing will accept that password. The
+  local way in is the one-time OAuth ticket the e2e helper uses —
+  `node Backend/scripts/e2e-support-ticket.mjs`, then load
+  `http://localhost:3100/?ticket=<ticket>`. **The exchange answers 503 while
+  `PERSONAL_ACCESS_TOKEN` is blank** — `applyPrivilegedSessionAuth` refuses to
+  issue a support_admin session without one, and `GET /api/auth/verify` still
+  answering 200 is what makes it look like the session exists. The local fix
+  is a placeholder token with offline mode pinned on, so nothing tries to use
+  it against ISO+:
+
+  ```
+  PERSONAL_ACCESS_TOKEN=local-offline-placeholder
+  ISOPLUS_OFFLINE=1
+  ```
+
+  then `docker compose up -d --force-recreate --no-deps backend`. With that the
+  exchange answers 200 and the e2e helper signs in.
 - **Offline mode is expected.** With `PERSONAL_ACCESS_TOKEN` blank the backend is
   in offline mode. Track A is unaffected — the handler reads boards from Mongo,
   not from ISO+. `board_sync` schedules deliberately skip; that is a success, not
@@ -156,12 +172,69 @@ npm run tick -- --once     # claimed=2 dispatched=2
 find Backend/.local-s3/outbox/55390 -type f    # one file per participant, all *-20250201-0900-*.json
 ```
 
-Playwright covers this journey in `Frontend/e2e/care-management-automation.spec.ts`
-(needs `E2E_EMAIL`/`E2E_PASSWORD` from `npm run dev:user`, plus
-`E2E_SCHEDULER_API_KEY` for the tick test; `E2E_LOAD_FIXTURES=1` makes
-global-setup load the fixture). The fixture's pipeline invariants are pinned by
-`Backend/test/unit/fixtures/careManagementAutomationFixture.test.js`, which runs
-the items through the real NDIS row builders.
+**Reloading the fixture is not enough to re-run a slot.** It resets `nextRunAt`,
+but the jobId dedupe lives in **Redis**, and a completed
+`bull:automation:stmt:<board>:<periodKey>` swallows the replay silently — the
+tick prints `claimed=2 dispatched=2` and nothing is generated. That is the
+idempotency guarantee doing its job, and it looks exactly like a broken run.
+Clear all three before re-running:
+
+```bash
+docker exec -i isoplus-redis redis-cli --scan --pattern 'bull:automation:*' \
+  | xargs -r docker exec -i isoplus-redis redis-cli DEL
+docker exec -i isoplus-mongo mongosh business-dashboard --quiet --eval '
+  db.pdflinks.deleteMany({workspaceId:"55390", type:{$in:["Monthly Statement","Statement of Account"]}});
+  db.scheduledjobs.updateMany({targetId:"55390"},{$set:{nextRunAt:new Date(Date.now()-60000)}})'
+rm -rf Backend/.local-s3/outbox/55390
+```
+
+**Playwright, and the two things that stopped it starting.** Until 2026-09-08
+`e2e/helpers/support-auth.ts` used `import.meta`, which Playwright's TS loader
+rejects on **every** Node version because it transpiles e2e files to CommonJS
+(*"Cannot use 'import.meta' outside a module"* → `Error: No tests found`). That
+was misdiagnosed as a Node 25 problem; it reproduced on Node 22 and is fixed.
+The Frontend unit suite's Node 25 failure (`window.localStorage.clear is not a
+function`, ~370 tests) is real and separate — use Node 22 for that.
+
+`e2e/board-sync-schedule.spec.ts` was truncated to 20 lines, mid-function, by
+the same commit — a syntax error, so a bare `npx playwright test` aborted with
+*"Unexpected token (21:0)"* before running anything. Restored; the suite now
+enumerates **43 tests in 6 files**.
+
+Playwright covers this journey in `Frontend/e2e/care-management-automation.spec.ts`.
+Sign-in is the one-time Google-support ticket (see Preconditions), minted by
+the helper itself; it needs `E2E_SCHEDULER_API_KEY` for the tick test and
+`E2E_LOAD_FIXTURES=1` to make global-setup load the fixture. `E2E_BOARD_ID`
+matters too: the board-sync spec defaults to `eNiJpH14PN3`, which has
+`workspaceId: null` locally (33 of 34 boards do), and workspace 55369's only
+real board is `g9n7vgdrXJX`.
+
+```bash
+cd Frontend
+E2E_BACKEND_URL=http://localhost:4001 PLAYWRIGHT_BASE_URL=http://localhost:3100 \
+E2E_MONGO_DB=business-dashboard E2E_LOAD_FIXTURES=1 \
+E2E_WORKSPACE_ID=55369 E2E_BOARD_ID=g9n7vgdrXJX \
+E2E_SCHEDULER_API_KEY=$(grep '^SCHEDULER_API_KEY=' ../Backend/.env | cut -d= -f2-) \
+npx playwright test
+```
+
+2026-09-08, main clone, Node 22: **39 passed, 3 skipped, 2 failed**. The three
+skips want `E2E_USER_*` (the non-admin role gate) and `E2E_WORKSPACE_ID_NO_FLAG`.
+
+**The two failures are one pre-existing defect, and it is not a flake.**
+`auth-boundary.spec.ts:43` pins "a signed-out visitor stays on /dashboard" and
+`smoke.spec.ts:10` pins "/access-denied is reachable". The app now redirects an
+unauthenticated visitor to `/` in both cases. Each fails **6 of 6** and **3 of 4**
+runs in isolation and passes only when the machine is loaded enough that
+`waitForLoadState('networkidle')` resolves before the client-side redirect lands
+— which is why a busy full-suite run can show them green and a quiet single run
+cannot. Both spec files are byte-identical to `develop`.
+
+Deliberately not corrected here. These pin auth and routing behaviour that
+KAN-27 changed on purpose, and rewriting a security-boundary assertion to match
+whatever the code now does is how a real regression gets waved through. Whoever
+owns that change should say whether the redirect is the intended behaviour, and
+then the assertions follow.
 
 ### 2. Turn the tab on
 
@@ -363,7 +436,68 @@ number.
 
 Statement slots carry **Monthly Statement** PDFs — one per participant for the
 **previous complete calendar month** of the claimed slot — on Care Management
-boards that are not Low Cat. NDIS-only boards no-op statements.
+boards that are not Low Cat. NDIS-only boards no-op statements. That budget
+statement is issued **only when the statement cadence is a single calendar
+month** (`every: {n: 1, unit: 'month'}`, or no schedule at all). On a weekly,
+fortnightly, quarterly or multi-month cadence it is withheld, because its
+template says "previous calendar month" in fixed text; the statement of account
+below follows the configured period and still goes out. The run logs
+`Statement period is not a calendar month; budget statement not issued` once per run
+in that case.
+
+**A statement slot now produces two documents per participant, not one.** The
+budget statement above says what was *delivered*; the **Statement of Account**
+(`PDFLINK_TYPE_STATEMENT_OF_ACCOUNT`, key `statements-of-account/`) says what is
+*owed* — opening balance, charges, payments, closing balance, ageing. They run
+alongside each other and replay on separate itemIds, and both go out in the one
+email — the worker groups a run's documents by participant, so
+`{{statement_number}}` renders as the two numbers comma-joined.
+
+Its charges come from `PDFLink.invoiceTotal` on **invoice** rows for the same
+participant, so **a participant with no invoices gets no statement of account**
+— section 4.5, logged as `No account activity; no statement of account`. On a
+fresh fixture that is every participant, because the invoice branch drops
+everything at selection (`Invoice selection removed listed items from this
+period`). To exercise it, seed invoice rows and a payment by hand. **Seed the
+shape production writes, not one row per invoice.** `recordPdfLinks` writes one
+`pdflinks` row *per item* with the whole invoice's `invoiceTotal` on every row,
+so a real two-shift invoice is two rows sharing one `pdfLink` and one
+`invoiceNumber`. The statement path dedupes those by `pdfLink`; a seed of one row
+per invoice cannot tell whether it does, and that is exactly how a statement that
+charged a multi-item invoice once per item passed every hand-seeded check on
+2026-09-08. Insert two rows for at least one invoice and confirm one charge row:
+
+```bash
+docker exec -i isoplus-mongo mongosh business-dashboard --quiet --eval '
+  db.pdflinks.insertOne({workspaceId:"55390", boardId:"jpjztrn14pJ", participant:"Jane Smith",
+    itemId:"seed-inv-1", type:"Participant Tax Invoice", invoiceNumber:"INV-9003",
+    invoiceTotal:310, periodKey:"20260801-0900", pdfLink:"https://s3.example/INV-9003.pdf",
+    createdAt:new Date("2026-08-05T00:00:00Z"), isDeleted:false, SignatureStatus:"Unsigned", createdBy:""});
+  db.items.updateOne({workspaceId:"55390",boardId:"jpjztrn14pJ","data.Full Name/Preferred Name":"Jane Smith"},
+    {$set:{invoicedBy:"INV-9003","data.Amount Received($)":"110",
+           "data.Invoice Received Date":"2026-08-18T00:00:00.000Z"}})'
+```
+
+**The document fails itself rather than going out wrong**, which is the point of
+sections 4.3 and 4.4 — so a defect here surfaces as a job failure, not a bad
+PDF:
+
+```
+error: statement: ageing does not reconcile — buckets total 423.7,
+       closing balance stated as 400.5
+```
+
+That exact line was a real bug, found this way on 2026-09-08: ageing counted
+every invoice ever raised, including ones raised *after* the period, which the
+closing balance could never see. Fixed by bounding both invoices and payments at
+the statement date (`asAtCutoff` in `utils/statementLedger.js`).
+
+**A blank block on the PDF is a pdfme trap, not missing data.**
+`multiVariableText` refuses to draw a block if **any one** of its variables is
+empty — so a participant with no address on their profile lost the entire
+STATEMENT TO block, name included. `buildStatementInputs` now substitutes a
+space for every empty value. If a whole block ever goes missing again, look for
+an empty variable before looking at the data.
 
 Confirm Invoice Generator shows those rows as invoiced, not merely that an
 `auto/` quote-line PDF exists.
@@ -555,6 +689,10 @@ an item. This was checked and was not the blocker.
 | Run `Succeeded`, recipient `—`, no PDFs | nothing fell in the period — see the section above; check **Actual Shift Start**, not Scheduled |
 | Board edit made no difference | no Resync — the portal reads synced Items, not the board |
 | PDFs generated but blank | real defect — run step 11; the source rows resolved no values |
+| A whole block missing from a statement PDF | one of its multiVariableText variables was empty — pdfme skips the block, not just the field |
+| `No account activity; no statement of account` for everyone | no invoice PDFLink rows carry `invoiceTotal` for those participants — expected on a fresh fixture |
+| `Statement of account could not be stated` for one participant, "ageing does not reconcile" | the two figures on that document disagree; the check refused to send it and the run carried on without it. Usually a payment against an invoice the ledger has no row for. Read the numbers, do not weaken the check |
+| Tick green, replay generates nothing | a completed `bull:automation:*` jobId for that periodKey is still in Redis — clear it |
 | An email lists another board's PDFs | real defect — a PDF lookup lost its `boardId` scope |
 | Online, tick green, nothing generated at all | no delivery backend resolved — `EMAIL_FROM` or an AWS variable is blank, so the worker refused before claiming invoice numbers |
 | Invoices generated, no email, no outbox file | the block chose `sendMethod: 'accounting'` — they went to Xero as DRAFTs |

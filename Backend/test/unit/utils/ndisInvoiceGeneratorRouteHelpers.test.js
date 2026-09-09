@@ -337,9 +337,9 @@ describe('filters', () => {
   });
 
   // Breaks if the two date filters stop reading different columns: the
-  // scheduled filter reads the scheduled start, the service-delivery filter the
-  // actual start.
-  it('filters service delivery dates against the actual start', async () => {
+  // scheduled filter reads the scheduled start alone, the service-delivery
+  // window reads either date (spec 2.1).
+  it('matches the service-delivery window on either date, and the scheduled range on the scheduled start alone', async () => {
     await seedServicePlan();
     await seedParticipant();
     await shift('mp-1', {
@@ -351,9 +351,106 @@ describe('filters', () => {
     expect((await run({ serviceDeliveryStart: '2026-02-01T00:00:00.000Z' })).total).toBe(1);
     expect((await run({ serviceDeliveryStart: '2026-03-01T00:00:00.000Z' })).total).toBe(0);
     expect((await run({ serviceDeliveryEnd: '2026-02-10T00:00:00.000Z' })).total).toBe(1);
-    expect((await run({ serviceDeliveryEnd: '2026-02-09T00:00:00.000Z' })).total).toBe(0);
+    // This expectation was 0 while the service-delivery window read the actual
+    // start alone. That was the defect, not the rule: the actual start
+    // (2026-02-10) is outside the bound but the scheduled start (2026-01-10) is
+    // inside it, and spec 2.1 qualifies an item on either leg. The old
+    // expectation encoded the single-field filter, which is what stopped every
+    // cancelled shift from ever being listed.
+    expect((await run({ serviceDeliveryEnd: '2026-02-09T00:00:00.000Z' })).total).toBe(1);
+    // A bound neither date is inside still excludes the item, so the OR only
+    // ever adds what the spec says belongs.
+    expect((await run({ serviceDeliveryEnd: '2026-01-09T00:00:00.000Z' })).total).toBe(0);
     // The scheduled-date filter must not see the actual date.
     expect((await run({ startDate: '2026-02-01T00:00:00.000Z' })).total).toBe(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Section 2.1 of the invoice selection spec is an OR across the type's two
+  // date fields, and 2.3 says a Cancelled shift is dated by its SCHEDULED start
+  // precisely because it has no actual start. A service-delivery window reading
+  // the actual start alone therefore never lists a cancelled shift, so
+  // selection never sees it and it is never billed.
+  //
+  // A cancelled shift only expands into rows when the catalogue allows short
+  // notice cancellations and the shift carries a fee and a billable-% type, so
+  // the fixture seeds all three — otherwise the row is absent for a reason that
+  // has nothing to do with the date filter.
+  // ---------------------------------------------------------------------------
+  const CANCELLATION_TYPE_ID = '77777777-1111-4111-8111-777777777777';
+
+  async function seedCancellableServicePlan() {
+    await createItem(SUPPORT_CAT_ID, {
+      'Support Item Number': '01_011_0107_1_1',
+      'Support Item Name': 'Assistance With Self-Care Activities',
+      'Short Notice Cancellations': 'Yes',
+    }, { boardId: CATALOGUE_BOARD, folderId: 'folder-cat' });
+    await createItem(SP_ID, {
+      'Direct Support Item Number': [{ id: SUPPORT_CAT_ID, name: 'Assistance' }],
+      'Unit (Direct Support)': 'Hour(H)',
+      'Agreed Unit Price for Direct Support ($)': '70.00',
+    }, { boardId: CATALOGUE_BOARD, folderId: 'folder-cat' });
+    await createItem(CANCELLATION_TYPE_ID, {
+      'Billable to Client %': '100',
+    }, { boardId: CATALOGUE_BOARD, folderId: 'folder-cat' });
+  }
+
+  const cancelledShift = (itemId, overrides = {}) => shift(itemId, {
+    'Job Status': 'Cancelled',
+    'Scheduled Shift Duration(Hr.)': '2.5',
+    'Cancellation Fee($)': '100',
+    'Cancellation Type': [{ id: CANCELLATION_TYPE_ID }],
+    'Actual Shift Start Date and Time': '',
+    'Actual Shift End Date and Time': '',
+    ...overrides,
+  });
+
+  const FEB = {
+    serviceDeliveryStart: '2026-02-01T00:00:00.000Z',
+    serviceDeliveryEnd: '2026-02-28T23:59:59.999Z',
+  };
+
+  // Breaks if the service-delivery window loses its scheduled leg again.
+  it('lists a cancelled shift whose scheduled start falls in the service-delivery window', async () => {
+    await seedCancellableServicePlan();
+    await seedParticipant();
+    await cancelledShift('mp-cancelled', {
+      'Scheduled Shift Start Date & Time': '2026-02-10T00:00:00.000Z',
+    });
+
+    const result = await run(FEB);
+
+    expect(result.items.map((r) => r.sourceItemId)).toEqual(['mp-cancelled']);
+  });
+
+  // The other direction of the same OR: it must only ever ADD items the spec
+  // says belong. A shift neither date puts inside the window stays out —
+  // under-billing is recoverable, billing the wrong period is not.
+  it('still excludes a shift with neither date inside the service-delivery window', async () => {
+    await seedCancellableServicePlan();
+    await seedParticipant();
+    await cancelledShift('mp-outside', {
+      'Scheduled Shift Start Date & Time': '2026-01-10T00:00:00.000Z',
+    });
+
+    const result = await run(FEB);
+
+    expect(result.items).toEqual([]);
+  });
+
+  // Spec 2.4: the same field arrives under two spellings and which one a row
+  // carries depends on when it was synced. Reading one silently misses items.
+  it('reads the scheduled start under both spellings for the service-delivery window', async () => {
+    await seedCancellableServicePlan();
+    await seedParticipant();
+    await cancelledShift('mp-and-spelling', {
+      'Scheduled Shift Start Date & Time': undefined,
+      'Scheduled Shift Start Date and Time': '2026-02-10T00:00:00.000Z',
+    });
+
+    const result = await run(FEB);
+
+    expect(result.items.map((r) => r.sourceItemId)).toEqual(['mp-and-spelling']);
   });
 
   // Breaks if an item with no date starts passing a date filter, which would
