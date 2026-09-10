@@ -99,7 +99,15 @@ async function seedWorkerNdisBoard() {
   });
   await Item.create({
     workspaceId: 'ws-1', boardId: 'cat-board', folderId: 'f-cat', itemId: WORKER_PP,
-    data: { 'Full Name/Preferred Name': 'Samuel Rivers', 'NDIS Number': '430123456' },
+    data: {
+          'Full Name/Preferred Name': 'Samuel Rivers', 'NDIS Number': '430123456',
+          'Participant Full Name': 'Samuel Rivers', 'NDIS Number': '430123456',
+          // A December shift, inside the statement period for this
+          // slot, so the participant has services to report. An
+          // all-zero budget statement is no longer issued at all.
+          'Scheduled Shift Start Date & Time': '2025-12-10T09:00:00.000Z',
+          'Actual Shift End Date & Time': '2025-12-10T11:00:00.000Z',
+        },
   });
   await Item.create({
     workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f-master', itemId: WORKER_MASTER,
@@ -476,7 +484,15 @@ describe('startAutomationWorker', () => {
       });
       await Item.create({
         workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f-p', itemId: 'p-amp',
-        data: { 'Full Name/Preferred Name': 'Tom & <b>Jerry</b>' },
+        data: {
+          'Full Name/Preferred Name': 'Tom & <b>Jerry</b>',
+          'Participant Full Name': 'Tom & <b>Jerry</b>',
+          // A December shift, inside the statement period for this
+          // slot, so the participant has services to report. An
+          // all-zero budget statement is no longer issued at all.
+          'Scheduled Shift Start Date & Time': '2025-12-10T09:00:00.000Z',
+          'Actual Shift End Date & Time': '2025-12-10T11:00:00.000Z',
+        },
       });
       startAutomationWorker();
 
@@ -523,7 +539,15 @@ describe('startAutomationWorker', () => {
       });
       await Item.create({
         workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f-p', itemId: 'p-1',
-        data: { 'Full Name/Preferred Name': 'Alex Rivers' },
+        data: {
+          'Full Name/Preferred Name': 'Alex Rivers',
+          'Participant Full Name': 'Alex Rivers',
+          // A December shift, inside the statement period for this
+          // slot, so the participant has services to report. An
+          // all-zero budget statement is no longer issued at all.
+          'Scheduled Shift Start Date & Time': '2025-12-10T09:00:00.000Z',
+          'Actual Shift End Date & Time': '2025-12-10T11:00:00.000Z',
+        },
       });
       startAutomationWorker();
 
@@ -569,11 +593,27 @@ describe('startAutomationWorker', () => {
       });
       await Item.create({
         workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f-p', itemId: 'p-1',
-        data: { 'Full Name/Preferred Name': 'Alex Rivers' },
+        data: {
+          'Full Name/Preferred Name': 'Alex Rivers',
+          'Participant Full Name': 'Alex Rivers',
+          // A December shift, inside the statement period for this
+          // slot, so the participant has services to report. An
+          // all-zero budget statement is no longer issued at all.
+          'Scheduled Shift Start Date & Time': '2025-12-10T09:00:00.000Z',
+          'Actual Shift End Date & Time': '2025-12-10T11:00:00.000Z',
+        },
       });
       await Item.create({
         workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f-p', itemId: 'p-2',
-        data: { 'Full Name/Preferred Name': 'Sam Lee' },
+        data: {
+          'Full Name/Preferred Name': 'Sam Lee',
+          'Participant Full Name': 'Sam Lee',
+          // A December shift, inside the statement period for this
+          // slot, so the participant has services to report. An
+          // all-zero budget statement is no longer issued at all.
+          'Scheduled Shift Start Date & Time': '2025-12-10T09:00:00.000Z',
+          'Actual Shift End Date & Time': '2025-12-10T11:00:00.000Z',
+        },
       });
       // Spied rather than read back off disk: outboxKeyFor() has no recipient
       // component yet, so two per-participant previews would land on one path.
@@ -635,11 +675,27 @@ describe('startAutomationWorker', () => {
       });
       await Item.create({
         workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f-p', itemId: 'p-1',
-        data: { 'Full Name/Preferred Name': 'Alex Rivers' },
+        data: {
+          'Full Name/Preferred Name': 'Alex Rivers',
+          'Participant Full Name': 'Alex Rivers',
+          // A December shift, inside the statement period for this
+          // slot, so the participant has services to report. An
+          // all-zero budget statement is no longer issued at all.
+          'Scheduled Shift Start Date & Time': '2025-12-10T09:00:00.000Z',
+          'Actual Shift End Date & Time': '2025-12-10T11:00:00.000Z',
+        },
       });
       await Item.create({
         workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f-p', itemId: 'p-2',
-        data: { 'Full Name/Preferred Name': 'Sam Lee' },
+        data: {
+          'Full Name/Preferred Name': 'Sam Lee',
+          'Participant Full Name': 'Sam Lee',
+          // A December shift, inside the statement period for this
+          // slot, so the participant has services to report. An
+          // all-zero budget statement is no longer issued at all.
+          'Scheduled Shift Start Date & Time': '2025-12-10T09:00:00.000Z',
+          'Actual Shift End Date & Time': '2025-12-10T11:00:00.000Z',
+        },
       });
       const spy = vi.spyOn(outbox, 'deliverEmail');
       startAutomationWorker();
@@ -679,7 +735,15 @@ describe('startAutomationWorker', () => {
       });
       await Item.create({
         workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f-p', itemId: 'p-1',
-        data: { 'Full Name/Preferred Name': 'Alex Rivers' },
+        data: {
+          'Full Name/Preferred Name': 'Alex Rivers',
+          'Participant Full Name': 'Alex Rivers',
+          // A December shift, inside the statement period for this
+          // slot, so the participant has services to report. An
+          // all-zero budget statement is no longer issued at all.
+          'Scheduled Shift Start Date & Time': '2025-12-10T09:00:00.000Z',
+          'Actual Shift End Date & Time': '2025-12-10T11:00:00.000Z',
+        },
       });
       startAutomationWorker();
 
@@ -1028,7 +1092,15 @@ describe('startAutomationWorker', () => {
       });
       await Item.create({
         workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f-p', itemId: 'p-1',
-        data: { 'Full Name/Preferred Name': 'Alex Rivers' },
+        data: {
+          'Full Name/Preferred Name': 'Alex Rivers',
+          'Participant Full Name': 'Alex Rivers',
+          // A December shift, inside the statement period for this
+          // slot, so the participant has services to report. An
+          // all-zero budget statement is no longer issued at all.
+          'Scheduled Shift Start Date & Time': '2025-12-10T09:00:00.000Z',
+          'Actual Shift End Date & Time': '2025-12-10T11:00:00.000Z',
+        },
       });
       const pushSpy = vi.spyOn(pushXero, 'pushDraftInvoicesToXero');
       startAutomationWorker();

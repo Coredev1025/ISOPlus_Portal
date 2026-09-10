@@ -85,8 +85,15 @@ async function seed() {
     invoicedBy: 'INV-1205',
     data: {
       'Full Name/Preferred Name': PARTICIPANT,
+      'Participant Full Name': PARTICIPANT,
       'Amount Received($)': '100',
       'Invoice Received Date': '2026-08-20T00:00:00.000Z',
+      // Shift dates inside the August period, so the participant has services
+      // to report and the budget statement is issued. Without them the run
+      // now correctly issues no budget statement at all — an all-zero document
+      // is not sent — and these cases assert that both documents appear.
+      'Scheduled Shift Start Date & Time': '2026-08-15T09:00:00.000Z',
+      'Actual Shift End Date & Time': '2026-08-15T11:00:00.000Z',
     },
   });
 
@@ -260,8 +267,11 @@ describe('a scheduled statement run, on untidy data', () => {
       invoicedBy: 'INV-GHOST',
       data: {
         'Full Name/Preferred Name': 'Aaron Test',
+        'Participant Full Name': 'Aaron Test',
         'Amount Received($)': '50',
         'Invoice Received Date': '2026-08-20T00:00:00.000Z',
+        'Scheduled Shift Start Date & Time': '2026-08-16T09:00:00.000Z',
+        'Actual Shift End Date & Time': '2026-08-16T11:00:00.000Z',
       },
     });
 

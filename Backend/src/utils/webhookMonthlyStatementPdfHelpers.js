@@ -618,7 +618,7 @@ async function uploadMonthlyStatementPdf({
 export async function renderMonthlyStatementPdf({
   workspaceId, boardId, statementData, businessDetails, chartImage,
   timezone: clientTimezone, startDate: requestStartDate, endDate: requestEndDate,
-  deps, req = null,
+  deps, req = null, skipWhenEmpty = false,
 }) {
   const {
     path, fs, getValidatedBusiness, enableRepeatHeadOnTables, ensureMonthlyStatementHeaderFromPage2,
@@ -649,6 +649,19 @@ export async function renderMonthlyStatementPdf({
   info('Webhook-Service', 'Monthly statement PDF: fetched ISO+ data', {
     budgetCount: budgetItems.length, serviceCount: services.length, queryParticipant,
   }, req ?? null);
+
+  // Nothing to report: every figure on the rendered page would be $0.00.
+  // Only the scheduled path opts in — a person who clicked Generate asked for
+  // this document and gets it whatever it says, where an automated run that
+  // emails an all-zero statement is just noise arriving at a client. Returning
+  // before the render also means no PDF is uploaded and no statement number is
+  // claimed for a document nobody will see.
+  if (skipWhenEmpty && budgetItems.length === 0 && services.length === 0) {
+    info('Webhook-Service', 'No budget and no services; monthly statement not issued', {
+      workspaceId, boardId, queryParticipant,
+    }, req ?? null);
+    return null;
+  }
 
   const budgetAggregates = calculateBudgetAggregates(budgetItems);
   enrichBudgetAggregatesFromCategories(budgetAggregates, statementData, deps);
