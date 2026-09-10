@@ -281,3 +281,103 @@ describe('buildStatementLedger — a payment with no date', () => {
     expect(ageing.d90plus).toBe(150);
   });
 });
+
+/**
+ * Three invoices on one statement, asked for by the client so the arithmetic
+ * could be checked rather than taken on trust. Every figure below is written
+ * out longhand in the assertion, so a reader can add it up by eye.
+ *
+ * The three are raised inside the period and total $3,600.00:
+ *   INV-3001  $1,000.00  raised 05/07, due 19/07
+ *   INV-3002  $1,200.00  raised 12/07, due 26/07
+ *   INV-3003  $1,400.00  raised 20/08, due 03/09
+ *
+ * The statement is read as at 31 August 2026, which is after the first two
+ * fell due and before the third does.
+ */
+describe('buildStatementLedger — three invoices on one statement', () => {
+  const AS_AT = '2026-08-31T00:00:00.000+10:00';
+  const invoices = [
+    invoice('INV-3001', '2026-07-05', 1000, '2026-07-19'),
+    invoice('INV-3002', '2026-07-12', 1200, '2026-07-26'),
+    invoice('INV-3003', '2026-08-20', 1400, '2026-09-03'),
+  ];
+  const ledgerFor = (items) => buildStatementLedger({
+    invoices, items, period: PERIOD, openingBalance: 0, timezone: TZ, asAt: AS_AT,
+  });
+  const bucketSum = (ageing) => Object.values(ageing).reduce((sum, v) => sum + v, 0);
+
+  it('charges all three, once each, and totals them', () => {
+    const { ledger } = ledgerFor([]);
+    expect(ledger.rows.map((r) => [r.reference, r.charge])).toEqual([
+      ['INV-3001', 1000],
+      ['INV-3002', 1200],
+      ['INV-3003', 1400],
+    ]);
+    expect(ledger.totalCharges).toBe(3600);
+  });
+
+  // All unpaid: nothing received, so the whole $3,600.00 is still owing.
+  it('all unpaid: closes at the full 3,600.00 and the ageing agrees', () => {
+    const { ledger, ageing } = ledgerFor([]);
+    expect(ledger.totalPayments).toBe(0);
+    expect(ledger.closingBalance).toBe(3600);
+    // 3001 is 43 days overdue, 3002 is 36, both in the 31-60 bucket; 3003 is
+    // not yet due, so it sits in Current.
+    expect(ageing.d31to60).toBe(2200);
+    expect(ageing.current).toBe(1400);
+    expect(bucketSum(ageing)).toBe(3600);
+  });
+
+  // One paid, two unpaid: 3,600.00 charged less 1,000.00 received.
+  it('one paid, two unpaid: closes at 2,600.00 and the ageing agrees', () => {
+    const { ledger, ageing } = ledgerFor([paidItem('INV-3001', 1000, '2026-07-20')]);
+    expect(ledger.totalCharges).toBe(3600);
+    expect(ledger.totalPayments).toBe(1000);
+    expect(ledger.closingBalance).toBe(2600);
+    // INV-3001 is settled and drops out of the ageing entirely.
+    expect(ageing.d31to60).toBe(1200);
+    expect(ageing.current).toBe(1400);
+    expect(bucketSum(ageing)).toBe(2600);
+  });
+
+  // All paid: every invoice settled in full, so the account closes at zero and
+  // every ageing bucket is empty.
+  it('all paid: closes at zero with nothing left to age', () => {
+    const { ledger, ageing } = ledgerFor([
+      paidItem('INV-3001', 1000, '2026-07-20'),
+      paidItem('INV-3002', 1200, '2026-07-28'),
+      paidItem('INV-3003', 1400, '2026-08-25'),
+    ]);
+    expect(ledger.totalCharges).toBe(3600);
+    expect(ledger.totalPayments).toBe(3600);
+    expect(ledger.closingBalance).toBe(0);
+    expect(bucketSum(ageing)).toBe(0);
+  });
+
+  // A part payment against one invoice: the remainder keeps ageing, and the
+  // two figures the document prints still have to agree.
+  it('part payment: only the unpaid remainder ages', () => {
+    const { ledger, ageing } = ledgerFor([paidItem('INV-3002', 500, '2026-07-28')]);
+    expect(ledger.totalPayments).toBe(500);
+    expect(ledger.closingBalance).toBe(3100);
+    // INV-3001 in full plus the $700.00 still open on INV-3002.
+    expect(ageing.d31to60).toBe(1700);
+    expect(ageing.current).toBe(1400);
+    expect(bucketSum(ageing)).toBe(3100);
+  });
+
+  // Section 4.4: the last running balance must equal the stated closing
+  // balance, whatever mix of payments the period carries.
+  it('the running balance ends on the stated closing balance', () => {
+    for (const items of [
+      [],
+      [paidItem('INV-3001', 1000, '2026-07-20')],
+      [paidItem('INV-3001', 1000, '2026-07-20'), paidItem('INV-3002', 1200, '2026-07-28')],
+      [paidItem('INV-3002', 500, '2026-07-28')],
+    ]) {
+      const { ledger } = ledgerFor(items);
+      expect(ledger.rows.at(-1).balance).toBe(ledger.closingBalance);
+    }
+  });
+});

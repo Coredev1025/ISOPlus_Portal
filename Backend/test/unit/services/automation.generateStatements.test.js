@@ -35,7 +35,7 @@ async function seedSecondBoard(participant) {
  * something to report. Without one the run now correctly issues no statement
  * at all, which is what the "no budget and no services" case asserts.
  */
-async function seedService(participant, { boardId = BOARD, itemId = `s-${participant}` } = {}) {
+async function seedService(participant, { boardId = BOARD, itemId = `s-${participant}`, amount = '250.00' } = {}) {
   await Item.create({
     workspaceId: WS,
     boardId,
@@ -45,6 +45,9 @@ async function seedService(participant, { boardId = BOARD, itemId = `s-${partici
       'Participant Full Name': participant,
       'Scheduled Shift Start Date & Time': '2026-07-15T09:00:00.000Z',
       'Actual Shift End Date & Time': '2026-07-15T11:00:00.000Z',
+      // The money. A shift row carrying no amount puts a $0.00 line on the page
+      // and is not, on its own, something to send a client a statement about.
+      'Total Amount ($)': amount,
     },
   });
 }
@@ -163,6 +166,24 @@ describe('generateStatementsForBoard', () => {
   // statement.
   it('sends no Monthly Statement when there is no budget and no services', async () => {
     await seedWorkspace({ label: 'Care Management - NDIS' });
+
+    const results = await generateStatementsForBoard({
+      workspaceId: WS, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: PERIOD,
+    });
+
+    expect(results).toEqual([]);
+    expect(await PDFLink.countDocuments({ workspaceId: WS, type: 'Monthly Statement' })).toBe(0);
+  });
+
+  // The case a client reported after the first fix shipped: an email carrying
+  // two attachments, "one the invalid statement, the other seems to be valid".
+  // The invalid one was this document, every figure $0.00, issued because the
+  // participant had a shift row — but that row carried no money, and with no
+  // budget records behind it the whole page reads zero. Counting rows is not
+  // the test; carrying money is.
+  it('sends no Monthly Statement when the only service carries no money', async () => {
+    await seedWorkspace({ label: 'Care Management - NDIS' });
+    await seedService('Alex Rivers', { amount: '0.00' });
 
     const results = await generateStatementsForBoard({
       workspaceId: WS, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: PERIOD,

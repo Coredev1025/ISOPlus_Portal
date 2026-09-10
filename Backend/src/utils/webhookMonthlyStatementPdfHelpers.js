@@ -651,14 +651,23 @@ export async function renderMonthlyStatementPdf({
   }, req ?? null);
 
   // Nothing to report: every figure on the rendered page would be $0.00.
-  // Only the scheduled path opts in — a person who clicked Generate asked for
+  //
+  // The test is money, not row count. A participant can carry a shift row that
+  // has no amount on it — a cancelled or unpriced service — and with no budget
+  // records behind it the whole document still reads $0.00, which is exactly
+  // the "invalid statement" a client reported receiving beside a correct
+  // statement of account. Counting `services.length` let that through.
+  //
+  // Only the scheduled path opts in: a person who clicked Generate asked for
   // this document and gets it whatever it says, where an automated run that
   // emails an all-zero statement is just noise arriving at a client. Returning
   // before the render also means no PDF is uploaded and no statement number is
   // claimed for a document nobody will see.
-  if (skipWhenEmpty && budgetItems.length === 0 && services.length === 0) {
-    info('Webhook-Service', 'No budget and no services; monthly statement not issued', {
-      workspaceId, boardId, queryParticipant,
+  const carriesMoney = budgetItems.length > 0
+    || services.some((service) => Number(service?.totalAmount || 0) !== 0);
+  if (skipWhenEmpty && !carriesMoney) {
+    info('Webhook-Service', 'Nothing to report; monthly statement not issued', {
+      workspaceId, boardId, queryParticipant, serviceCount: services.length,
     }, req ?? null);
     return null;
   }

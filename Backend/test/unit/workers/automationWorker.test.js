@@ -107,6 +107,7 @@ async function seedWorkerNdisBoard() {
           // all-zero budget statement is no longer issued at all.
           'Scheduled Shift Start Date & Time': '2025-12-10T09:00:00.000Z',
           'Actual Shift End Date & Time': '2025-12-10T11:00:00.000Z',
+          'Total Amount ($)': '250.00',
         },
   });
   await Item.create({
@@ -492,6 +493,7 @@ describe('startAutomationWorker', () => {
           // all-zero budget statement is no longer issued at all.
           'Scheduled Shift Start Date & Time': '2025-12-10T09:00:00.000Z',
           'Actual Shift End Date & Time': '2025-12-10T11:00:00.000Z',
+          'Total Amount ($)': '250.00',
         },
       });
       startAutomationWorker();
@@ -547,6 +549,7 @@ describe('startAutomationWorker', () => {
           // all-zero budget statement is no longer issued at all.
           'Scheduled Shift Start Date & Time': '2025-12-10T09:00:00.000Z',
           'Actual Shift End Date & Time': '2025-12-10T11:00:00.000Z',
+          'Total Amount ($)': '250.00',
         },
       });
       startAutomationWorker();
@@ -601,6 +604,7 @@ describe('startAutomationWorker', () => {
           // all-zero budget statement is no longer issued at all.
           'Scheduled Shift Start Date & Time': '2025-12-10T09:00:00.000Z',
           'Actual Shift End Date & Time': '2025-12-10T11:00:00.000Z',
+          'Total Amount ($)': '250.00',
         },
       });
       await Item.create({
@@ -613,6 +617,7 @@ describe('startAutomationWorker', () => {
           // all-zero budget statement is no longer issued at all.
           'Scheduled Shift Start Date & Time': '2025-12-10T09:00:00.000Z',
           'Actual Shift End Date & Time': '2025-12-10T11:00:00.000Z',
+          'Total Amount ($)': '250.00',
         },
       });
       // Spied rather than read back off disk: outboxKeyFor() has no recipient
@@ -683,6 +688,7 @@ describe('startAutomationWorker', () => {
           // all-zero budget statement is no longer issued at all.
           'Scheduled Shift Start Date & Time': '2025-12-10T09:00:00.000Z',
           'Actual Shift End Date & Time': '2025-12-10T11:00:00.000Z',
+          'Total Amount ($)': '250.00',
         },
       });
       await Item.create({
@@ -695,6 +701,7 @@ describe('startAutomationWorker', () => {
           // all-zero budget statement is no longer issued at all.
           'Scheduled Shift Start Date & Time': '2025-12-10T09:00:00.000Z',
           'Actual Shift End Date & Time': '2025-12-10T11:00:00.000Z',
+          'Total Amount ($)': '250.00',
         },
       });
       const spy = vi.spyOn(outbox, 'deliverEmail');
@@ -743,6 +750,7 @@ describe('startAutomationWorker', () => {
           // all-zero budget statement is no longer issued at all.
           'Scheduled Shift Start Date & Time': '2025-12-10T09:00:00.000Z',
           'Actual Shift End Date & Time': '2025-12-10T11:00:00.000Z',
+          'Total Amount ($)': '250.00',
         },
       });
       startAutomationWorker();
@@ -1100,6 +1108,7 @@ describe('startAutomationWorker', () => {
           // all-zero budget statement is no longer issued at all.
           'Scheduled Shift Start Date & Time': '2025-12-10T09:00:00.000Z',
           'Actual Shift End Date & Time': '2025-12-10T11:00:00.000Z',
+          'Total Amount ($)': '250.00',
         },
       });
       const pushSpy = vi.spyOn(pushXero, 'pushDraftInvoicesToXero');
