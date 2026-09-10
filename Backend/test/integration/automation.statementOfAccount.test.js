@@ -94,6 +94,7 @@ async function seed() {
       // is not sent — and these cases assert that both documents appear.
       'Scheduled Shift Start Date & Time': '2026-08-15T09:00:00.000Z',
       'Actual Shift End Date & Time': '2026-08-15T11:00:00.000Z',
+      'Total Amount ($)': '250.00',
     },
   });
 
@@ -272,6 +273,7 @@ describe('a scheduled statement run, on untidy data', () => {
         'Invoice Received Date': '2026-08-20T00:00:00.000Z',
         'Scheduled Shift Start Date & Time': '2026-08-16T09:00:00.000Z',
         'Actual Shift End Date & Time': '2026-08-16T11:00:00.000Z',
+        'Total Amount ($)': '250.00',
       },
     });
 
