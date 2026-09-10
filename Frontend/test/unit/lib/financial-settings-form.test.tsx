@@ -22,6 +22,7 @@ const SEQUENCES: DocumentSequences = {
   purchaseOrder: { prefix: 'PO-', nextNumber: 2000 },
   quote: { prefix: 'QT-', nextNumber: 3000 },
   statement: { prefix: 'STM-', nextNumber: 4000 },
+  statementOfAccount: { prefix: 'SOA-', nextNumber: 5000 },
 };
 
 function renderForm(

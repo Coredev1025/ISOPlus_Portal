@@ -75,10 +75,34 @@ function validateRunOn(unit, runOn) {
     : `runOn must be {month, day} with month 1-12 and day 1-31 when unit is "${unit}"`;
 }
 
+/**
+ * Every address in a comma-separated list, or false if any one of them is not
+ * an address.
+ *
+ * Only `sendCopyTo` takes a list. Three people needed the automated mail — the
+ * developer, the account manager and the reviewer — and the field held exactly
+ * one address, so a run could copy one of them. Reply-to and Email From each
+ * name a single mailbox by definition and stay single.
+ *
+ * A trailing comma leaves an empty segment, which would reach SES as a blank
+ * recipient rather than being quietly dropped, so it is rejected rather than
+ * filtered out.
+ *
+ * Mirrored by `isEmailAddressList` in `Frontend/constants/validation.ts`.
+ */
+function isEmailAddressList(value) {
+  const parts = String(value).split(',').map((part) => part.trim());
+  return parts.length > 0 && parts.every((part) => EMAIL_PATTERN.test(part));
+}
+
 function validateEmails(block) {
-  for (const field of ['sendCopyTo', 'replyTo', 'emailFrom']) {
+  for (const field of ['replyTo', 'emailFrom']) {
     const value = block[field];
     if (value && !EMAIL_PATTERN.test(value)) return `${field} must be a valid email address`;
+  }
+  const copyTo = block.sendCopyTo;
+  if (copyTo && !isEmailAddressList(copyTo)) {
+    return 'sendCopyTo must be a valid email address, or several separated by commas';
   }
   return null;
 }

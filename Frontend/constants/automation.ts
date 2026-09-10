@@ -68,10 +68,11 @@ export const READ_ONLY_BLOCK_FIELDS = [
  * Keys are `AutomationBlock` field names.
  */
 export const EMAIL_TEXT_FIELDS = [
-  { key: "sendCopyTo", id: "send-copy-to", label: "Send a Copy To", isEmail: true },
-  { key: "replyTo", id: "reply-to", label: "Reply-to Email", isEmail: true },
-  { key: "emailFrom", id: "email-from", label: "Email From", isEmail: true },
-  { key: "emailSubject", id: "email-subject", label: "Email Subject", isEmail: false },
+  // The only address field that takes several, comma separated.
+  { key: "sendCopyTo", id: "send-copy-to", label: "Send a Copy To", isEmail: true, allowsList: true },
+  { key: "replyTo", id: "reply-to", label: "Reply-to Email", isEmail: true, allowsList: false },
+  { key: "emailFrom", id: "email-from", label: "Email From", isEmail: true, allowsList: false },
+  { key: "emailSubject", id: "email-subject", label: "Email Subject", isEmail: false, allowsList: false },
 ] as const;
 
 /**

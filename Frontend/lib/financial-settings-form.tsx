@@ -26,7 +26,8 @@ export type DocumentSequenceType =
   | "invoice"
   | "purchaseOrder"
   | "quote"
-  | "statement";
+  | "statement"
+  | "statementOfAccount";
 
 export type DocumentSequences = Record<DocumentSequenceType, NumberSequence>;
 
@@ -323,6 +324,15 @@ export function FinancialSettingsForm({
               onPrefixChange={(v) => onSequencePrefixChange("statement", v)}
               onNextChange={(v) => handleNextNumberChange("statement", v)}
               hint={`Feeds Statement Automation → next: ${sequences.statement.prefix}${sequences.statement.nextNumber}`}
+            />
+            <SequenceField
+              label="Statement of Account Numbers"
+              prefixId="statement-of-account-prefix"
+              nextId="statement-of-account-next"
+              sequence={sequences.statementOfAccount}
+              onPrefixChange={(v) => onSequencePrefixChange("statementOfAccount", v)}
+              onNextChange={(v) => handleNextNumberChange("statementOfAccount", v)}
+              hint={`Its own series, so the two statements never share a number → next: ${sequences.statementOfAccount.prefix}${sequences.statementOfAccount.nextNumber}`}
             />
             <SequenceField
               label="Credit Note Numbers"

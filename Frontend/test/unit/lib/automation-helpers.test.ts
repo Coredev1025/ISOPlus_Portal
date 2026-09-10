@@ -234,6 +234,29 @@ describe('hasInvalidEmail', () => {
     ).toBe(false);
   });
 
+  // Send a Copy To is the one address field that takes several, so three people
+  // can be copied on one run. The Save gate has to agree with the API, which
+  // accepts the list.
+  it('accepts several comma-separated addresses in Send a Copy To', () => {
+    expect(
+      hasInvalidEmail(
+        settings({ enabled: true, sendCopyTo: 'a@b.com, c@d.com,e@f.com' })
+      )
+    ).toBe(false);
+  });
+
+  it('is true when one address in the copy list is malformed', () => {
+    expect(
+      hasInvalidEmail(settings({ enabled: true, sendCopyTo: 'a@b.com, nope' }))
+    ).toBe(true);
+  });
+
+  it('still rejects a list in Reply-to, which names one mailbox', () => {
+    expect(
+      hasInvalidEmail(settings({ enabled: true, replyTo: 'a@b.com, c@d.com' }))
+    ).toBe(true);
+  });
+
   it('ignores the non-address fields', () => {
     expect(
       hasInvalidEmail(settings({ enabled: true, emailSubject: 'not-an-email' }))

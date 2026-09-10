@@ -166,6 +166,21 @@ const businessSchema = new mongoose.Schema({
         type: Number,
         default: DEFAULT_DOCUMENT_NEXT_NUMBER
       }
+    },
+    // The statement of account runs its own series. It shared the budget
+    // statement's until a client asked why two documents numbered one apart
+    // were different things: a statement number should identify one series,
+    // and two document types drawing from one made STM-84 and STM-85
+    // indistinguishable in a list and in an inbox.
+    statementOfAccount: {
+      prefix: {
+        type: String,
+        default: 'SOA-'
+      },
+      nextNumber: {
+        type: Number,
+        default: DEFAULT_DOCUMENT_NEXT_NUMBER
+      }
     }
   },
   featureToggles: {

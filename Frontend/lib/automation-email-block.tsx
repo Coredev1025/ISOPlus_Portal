@@ -8,7 +8,7 @@ import {
   RECIPIENT_OPTIONS,
   SEND_METHOD_OPTIONS,
 } from "@/constants/automation";
-import { EMAIL_PATTERN } from "@/constants/validation";
+import { EMAIL_PATTERN, isEmailAddressList } from "@/constants/validation";
 import { AutomationField, OptionSelect } from "@/lib/automation-schedule-block";
 import type { AutomationBlock } from "@/lib/automation-settings";
 
@@ -32,6 +32,8 @@ type EmailTextFieldProps = Readonly<{
   label: string;
   value: string;
   isEmail: boolean;
+  /** The field takes several comma-separated addresses rather than one. */
+  allowsList?: boolean;
   onChange: (next: string) => void;
 }>;
 
@@ -40,9 +42,13 @@ function EmailTextField({
   label,
   value,
   isEmail,
+  allowsList,
   onChange,
 }: EmailTextFieldProps) {
-  const invalid = isEmail && value !== "" && !EMAIL_PATTERN.test(value);
+  // Send a Copy To takes several addresses; every other address field names
+  // one mailbox. Matches the Save gate and the API.
+  const accepts = allowsList ? isEmailAddressList(value) : EMAIL_PATTERN.test(value);
+  const invalid = isEmail && value !== "" && !accepts;
   const errorId = `${id}-error`;
 
   return (
@@ -114,6 +120,7 @@ export function AutomationEmailBlock({
           label={field.label}
           value={value[field.key]}
           isEmail={field.isEmail}
+          allowsList={field.allowsList}
           onChange={setText(field.key)}
         />
       ))}
