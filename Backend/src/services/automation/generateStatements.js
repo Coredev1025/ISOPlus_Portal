@@ -71,6 +71,19 @@ async function allocateStatementNumber(workspaceId) {
   return (await claimDocumentNumber(workspaceId, 'statement')) ?? '';
 }
 
+/**
+ * The statement of account's own sequence, separate from the budget
+ * statement's.
+ *
+ * They shared one until a client asked why an email carried two documents
+ * numbered one apart that were different things. A statement number should
+ * identify a single series; two document types drawing from one made STM-84
+ * and STM-85 read as the same kind of document wherever they were listed.
+ */
+async function allocateStatementOfAccountNumber(workspaceId) {
+  return (await claimDocumentNumber(workspaceId, 'statementOfAccount')) ?? '';
+}
+
 async function generateOneStatement({
   workspaceId, boardId, participant, period, timezone, periodKey, deps,
 }) {
@@ -151,7 +164,7 @@ async function statementOfAccountFor({
     period: accountPeriod,
     timezone,
     periodKey,
-    claimStatementNumber: () => allocateStatementNumber(workspaceId),
+    claimStatementNumber: () => allocateStatementOfAccountNumber(workspaceId),
     nameField: ATTRIBUTE_NAMES.FULL_NAME,
   });
 }

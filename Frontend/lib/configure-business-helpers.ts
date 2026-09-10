@@ -31,13 +31,16 @@ export type NumberSequence = {
 };
 
 export const DEFAULT_SEQUENCES: Record<
-  "invoice" | "purchaseOrder" | "quote" | "statement",
+  "invoice" | "purchaseOrder" | "quote" | "statement" | "statementOfAccount",
   NumberSequence
 > = {
   invoice: { prefix: "INV-", nextNumber: 1 },
   purchaseOrder: { prefix: "PO-", nextNumber: 1 },
   quote: { prefix: "QT-", nextNumber: 1 },
   statement: { prefix: "STM-", nextNumber: 1 },
+  // Its own series. The two statement types shared one until a client asked
+  // why two documents numbered one apart were different things.
+  statementOfAccount: { prefix: "SOA-", nextNumber: 1 },
 };
 
 function toSequence(
@@ -65,6 +68,10 @@ export function extractDocumentNumberingSequences(data: Record<string, any>) {
     ),
     quote: toSequence(numbering.quote, DEFAULT_SEQUENCES.quote),
     statement: toSequence(numbering.statement, DEFAULT_SEQUENCES.statement),
+    statementOfAccount: toSequence(
+      numbering.statementOfAccount,
+      DEFAULT_SEQUENCES.statementOfAccount
+    ),
   };
 }
 
@@ -79,5 +86,6 @@ export function cloneDefaultSequences() {
     purchaseOrder: { ...DEFAULT_SEQUENCES.purchaseOrder },
     quote: { ...DEFAULT_SEQUENCES.quote },
     statement: { ...DEFAULT_SEQUENCES.statement },
+    statementOfAccount: { ...DEFAULT_SEQUENCES.statementOfAccount },
   };
 }

@@ -72,6 +72,43 @@ describe('parseAutomationSettingsBody', () => {
     expect(result.error).toMatch(/sendCopyTo/);
   });
 
+  // Three people need the automated mail — the developer, the account manager
+  // and the reviewer — and one field held one address, so a run could copy
+  // exactly one of them. Only this field takes a list: Reply-to and Email From
+  // each name a single mailbox by definition.
+  it('accepts several comma-separated addresses in sendCopyTo', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, sendCopyTo: 'a@b.com, c@d.com,e@f.com' },
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.value.invoice.sendCopyTo).toBe('a@b.com, c@d.com,e@f.com');
+  });
+
+  it('rejects a list where any one address is malformed', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, sendCopyTo: 'a@b.com, not-an-email' },
+    });
+    expect(result.error).toMatch(/sendCopyTo/);
+  });
+
+  // A trailing comma leaves an empty address, which would reach SES as a blank
+  // recipient rather than being ignored.
+  it('rejects a trailing comma', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, sendCopyTo: 'a@b.com,' },
+    });
+    expect(result.error).toMatch(/sendCopyTo/);
+  });
+
+  // Reply-to names the mailbox a client's reply goes to; a list there is a
+  // mistake, not a feature.
+  it('still rejects a list in replyTo', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, replyTo: 'a@b.com, c@d.com' },
+    });
+    expect(result.error).toMatch(/replyTo/);
+  });
+
   it('applies defaults for a missing block', () => {
     const result = parseAutomationSettingsBody({ invoice: validBlock });
     expect(result.value.statement).toEqual(DEFAULT_AUTOMATION_BLOCK);

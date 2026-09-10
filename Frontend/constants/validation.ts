@@ -22,3 +22,21 @@
  * details form).
  */
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
+
+/**
+ * Every address in a comma-separated list, or false if any one of them is not
+ * an address.
+ *
+ * Only Send a Copy To takes a list, so three people can be copied on one run.
+ * Reply-to and Email From each name a single mailbox by definition. A trailing
+ * comma leaves an empty segment, which would reach the mail service as a blank
+ * recipient rather than being quietly dropped, so it is rejected.
+ *
+ * Must stay identical to `isEmailAddressList` in
+ * `Backend/src/utils/automationSettingsHelpers.js`, or a form accepts an
+ * address list the API then refuses.
+ */
+export function isEmailAddressList(value: string): boolean {
+  const parts = value.split(",").map((part) => part.trim());
+  return parts.length > 0 && parts.every((part) => EMAIL_PATTERN.test(part));
+}

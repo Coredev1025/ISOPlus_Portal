@@ -209,6 +209,38 @@ describe('generateStatementsForBoard', () => {
     expect(business.documentNumbering?.statement?.nextNumber ?? 1).toBe(1);
   });
 
+  // Two different documents sharing one sequence made STM-84 and STM-85 read as
+  // the same kind of thing in a list and in an inbox — the client asked "why
+  // are there two?" every time a pair arrived. A statement number should
+  // identify one series, so the statement of account has its own.
+  it('numbers the statement of account from its own sequence', async () => {
+    await seedWorkspace({
+      label: 'Care Management - NDIS',
+      withServices: true,
+    });
+    await PDFLink.create({
+      workspaceId: WS,
+      boardId: BOARD,
+      itemId: 'inv-1',
+      participant: 'Alex Rivers',
+      type: 'NDIS Invoice',
+      invoiceNumber: 'IN-1',
+      invoiceTotal: 400,
+      periodKey: 'prior',
+      pdfLink: 'https://example/inv-1.pdf',
+      createdAt: new Date('2026-07-10T00:00:00.000Z'),
+    });
+
+    const results = await generateStatementsForBoard({
+      workspaceId: WS, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: PERIOD,
+    });
+
+    const budget = results.find((row) => row.itemId.startsWith('statement:'));
+    const account = results.find((row) => row.itemId.startsWith('statement-of-account:'));
+    expect(budget.statementNumber).toMatch(/^STM-/);
+    expect(account.statementNumber).toMatch(/^SOA-/);
+  });
+
   // Section 4.1: the statement period follows the configured cadence. The
   // budget statement is a calendar-month document — its template text, its
   // budget query and its quarter banner all say so — so a weekly schedule

@@ -4,7 +4,7 @@ import {
   DELIVERY_STATE_BADGES,
   EMAIL_TEXT_FIELDS,
 } from "@/constants/automation";
-import { EMAIL_PATTERN } from "@/constants/validation";
+import { EMAIL_PATTERN, isEmailAddressList } from "@/constants/validation";
 import { DEFAULT_BUSINESS_TIMEZONE } from "@/constants/timezone";
 import type {
   AutomationBlock,
@@ -205,13 +205,20 @@ export function mergeRecentDocuments(
 }
 
 /** Derived from EMAIL_TEXT_FIELDS so a new address field is validated too. */
-const EMAIL_FIELD_KEYS = EMAIL_TEXT_FIELDS.filter((field) => field.isEmail).map(
-  (field) => field.key
-);
+const EMAIL_FIELDS = EMAIL_TEXT_FIELDS.filter((field) => field.isEmail);
+
+/**
+ * A field carrying `allowsList` takes several comma-separated addresses; every
+ * other address field names one mailbox. The split has to match the API's, or
+ * Save is enabled for a value the PUT then refuses.
+ */
+function fieldAccepts(field: { readonly allowsList: boolean }, value: string): boolean {
+  return field.allowsList ? isEmailAddressList(value) : EMAIL_PATTERN.test(value);
+}
 
 function blockHasInvalidEmail(block: AutomationBlock): boolean {
-  return EMAIL_FIELD_KEYS.some(
-    (key) => block[key] !== "" && !EMAIL_PATTERN.test(block[key])
+  return EMAIL_FIELDS.some(
+    (field) => block[field.key] !== "" && !fieldAccepts(field, block[field.key])
   );
 }
 

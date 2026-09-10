@@ -221,6 +221,7 @@ describe('extractDocumentNumberingSequences', () => {
       purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
       quote: { prefix: 'QT-', nextNumber: 1007 },
       statement: { prefix: 'STM-', nextNumber: 1 },
+      statementOfAccount: { prefix: 'SOA-', nextNumber: 1 },
     });
   });
 
@@ -230,6 +231,7 @@ describe('extractDocumentNumberingSequences', () => {
       purchaseOrder: { prefix: 'PO-', nextNumber: 1 },
       quote: { prefix: 'QT-', nextNumber: 1 },
       statement: { prefix: 'STM-', nextNumber: 1 },
+      statementOfAccount: { prefix: 'SOA-', nextNumber: 1 },
     });
   });
 
@@ -239,6 +241,7 @@ describe('extractDocumentNumberingSequences', () => {
       purchaseOrder: { prefix: 'PO-', nextNumber: 1 },
       quote: { prefix: 'QT-', nextNumber: 1 },
       statement: { prefix: 'STM-', nextNumber: 1 },
+      statementOfAccount: { prefix: 'SOA-', nextNumber: 1 },
     });
   });
 
@@ -252,6 +255,7 @@ describe('extractDocumentNumberingSequences', () => {
       purchaseOrder: { prefix: 'PO-', nextNumber: 1 },
       quote: { prefix: 'QT-', nextNumber: 1 },
       statement: { prefix: 'STM-', nextNumber: 1 },
+      statementOfAccount: { prefix: 'SOA-', nextNumber: 1 },
     });
   });
 
@@ -269,6 +273,7 @@ describe('extractDocumentNumberingSequences', () => {
       purchaseOrder: { prefix: 'PO-', nextNumber: 1 },
       quote: { prefix: 'QT-', nextNumber: 1 },
       statement: { prefix: 'STM-', nextNumber: 1 },
+      statementOfAccount: { prefix: 'SOA-', nextNumber: 1 },
     });
   });
 
@@ -286,6 +291,7 @@ describe('extractDocumentNumberingSequences', () => {
       purchaseOrder: { prefix: 'PO-', nextNumber: 1 },
       quote: { prefix: 'QT-', nextNumber: 1 },
       statement: { prefix: 'STM-', nextNumber: 1 },
+      statementOfAccount: { prefix: 'SOA-', nextNumber: 1 },
     });
   });
 });
