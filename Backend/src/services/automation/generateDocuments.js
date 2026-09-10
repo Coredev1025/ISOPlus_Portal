@@ -150,7 +150,7 @@ async function existingSlotResults(workspaceId, boardId, periodKey, type) {
  * this point, so a collision means something upstream is wrong and the job
  * should fail visibly.
  */
-async function recordPdfLinks({
+export async function recordPdfLinks({
   workspaceId, boardId, itemIds, periodKey, invoiceNumber, participant, pdfUrl, type,
   period, invoiceType, invoiceTotal, invoiceDate,
 }) {

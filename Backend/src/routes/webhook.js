@@ -16,6 +16,8 @@ import { paginatePdfmeTemplateTableByRows } from '../utils/webhookPdfPaginationH
 import { processWebhookNdisQuotePdfItem, processWebhookNdisInvoicePdfItem } from '../utils/webhookNdisPdfHandlers.js';
 import { handleParticipantTaxInvoiceRoute } from '../utils/webhookParticipantTaxPdfHelpers.js';
 import { generateNdisInvoiceGeneratorPdf } from '../services/automation/ndisInvoiceGeneratorPdf.js';
+import { recordPdfLinks } from '../services/automation/generateDocuments.js';
+import { PDFLINK_TYPE_NDIS_INVOICE } from '../constants/automation.js';
 import { parseInvoiceGeneratorMasterItemIds } from '../utils/xeroNdisRouteHandlers.js';
 import {
     enableRepeatHeadOnTables,
@@ -1710,6 +1712,26 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
         if (result.empty) {
             return res.status(200).json({ message: 'There is nothing to invoice!' });
         }
+        // The document ledger the statement of account reads. This screen is
+        // how invoices are actually raised on a Care Management board, and it
+        // recorded nothing at all: ISO+ marked the shifts with the new number
+        // while the portal held no document for it, so the statement went on
+        // citing an older invoice that no longer matched anything the client
+        // had been sent. One row per item carrying the whole invoice total, the
+        // same convention the scheduled run writes and `participantInvoices`
+        // dedupes by `pdfLink`. No `periodKey`: this invoice belongs to no
+        // slot, which is also what keeps it outside the double-billing index.
+        await recordPdfLinks({
+            workspaceId,
+            boardId,
+            itemIds: parseInvoiceGeneratorMasterItemIds(req.body),
+            invoiceNumber: result.invoiceNumber,
+            invoiceTotal: result.invoiceTotal,
+            invoiceDate: req.body?.invoiceDate,
+            participant: req.body?.participantName,
+            pdfUrl: result.fileUrl,
+            type: PDFLINK_TYPE_NDIS_INVOICE,
+        });
         return res.json({
             invoiceNumber: result.invoiceNumber,
             fileUrl: result.fileUrl,
