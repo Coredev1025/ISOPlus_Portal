@@ -26,16 +26,18 @@ const RETRY_JOB_PREFIX = 'retry';
  * The fan-out specs a manual dispatch would enqueue, and how many runs
  * already exist for the period they land on.
  *
- * The timezone comes from the ScheduledJob for this kind/workspace, NOT from
- * AutomationSettings — that model has no timezone field, so reading it there
- * would silently fall back to DEFAULT_TIMEZONE for every workspace not on
- * Sydney time. The period key is formatted in this zone, so the wrong one
- * produces a key that cannot match the scheduled run's, and the duplicate
- * check this function exists to support would compare against nothing.
+ * Timezone and picker both come from the ScheduledJob for this kind/workspace,
+ * not from AutomationSettings — that model has no timezone field. The period
+ * key is formatted in this zone, so the wrong one produces a key that cannot
+ * match the scheduled run's. The picker is what tells a statement run whether
+ * it covers a week, a quarter or last calendar month: omitting it made Run now
+ * fall through `coversOneCalendarMonth`'s missing-schedule default and date
+ * every manual statement as 1–31 of the previous month, with invoices from the
+ * real cadence sitting in the opening balance and an empty particulars table.
  */
 export async function buildManualDispatch({ kind, workspaceId, boards }) {
-  const schedule = await ScheduledJob.findOne({ kind, targetId: workspaceId })
-    .select('timezone')
+  const job = await ScheduledJob.findOne({ kind, targetId: workspaceId })
+    .select('timezone schedule')
     .lean();
 
   const specs = buildFanOutSpecs({
@@ -43,7 +45,8 @@ export async function buildManualDispatch({ kind, workspaceId, boards }) {
     workspaceId,
     boards,
     slot: new Date(),
-    timezone: schedule?.timezone ?? DEFAULT_TIMEZONE,
+    timezone: job?.timezone ?? DEFAULT_TIMEZONE,
+    schedule: job?.schedule,
   });
 
   const periodKey = specs[0]?.data.periodKey ?? null;

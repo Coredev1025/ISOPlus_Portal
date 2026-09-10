@@ -14,9 +14,11 @@ import AutomationSettings from '../../src/models/AutomationSettings.js';
 import Business from '../../src/models/Business.js';
 import SchedulerHealth from '../../src/models/SchedulerHealth.js';
 import Board from '../../src/models/Board.js';
+import ScheduledJob from '../../src/models/ScheduledJob.js';
 import { authenticatedAgent } from '../helpers/auth.js';
 import { RUN_FAILED, RUN_SUCCEEDED, HISTORY_PAGE_SIZE, TRIGGER_MANUAL } from '../../src/constants/systemHealth.js';
-import { recordedJobIds, resetRecordedJobs } from '../helpers/queue.js';
+import { KIND_STATEMENT } from '../../src/constants/automation.js';
+import { recordedBulkJobs, recordedJobIds, resetRecordedJobs } from '../helpers/queue.js';
 import { xeroConnectionStatus } from '../../src/utils/automationConnectionStatus.js';
 
 const WS = 'ws-health-1';
@@ -318,6 +320,7 @@ describe('POST /api/system-health/workspace/:workspaceId/run', () => {
     await AutomationRun.deleteMany({});
     await AutomationSettings.deleteMany({});
     await Board.deleteMany({});
+    await ScheduledJob.deleteMany({});
     await Board.collection.insertMany([{ boardId: 'b1', workspaceId: WS, name: 'b1' }]);
     await AutomationSettings.create({ workspaceId: WS, invoice: { enabled: true } });
     resetRecordedJobs();
@@ -375,6 +378,36 @@ describe('POST /api/system-health/workspace/:workspaceId/run', () => {
     // The forced run must not collide with the original, or BullMQ drops it.
     expect(new Set(runs.map((r) => r.jobId)).size).toBe(2);
     expect(runs.some((r) => r.jobId.startsWith('manual-'))).toBe(true);
+  });
+
+  it('puts the statement cadence on the job so particulars cover that window', async () => {
+    await AutomationSettings.updateOne(
+      { workspaceId: WS },
+      { $set: { 'statement.enabled': true } },
+    );
+    await ScheduledJob.create({
+      kind: KIND_STATEMENT,
+      targetId: WS,
+      timezone: 'Australia/Sydney',
+      schedule: {
+        every: { n: 6, unit: 'month' },
+        runOn: 10,
+        runAt: '21:32',
+        startDate: new Date('2026-03-10T00:00:00.000Z'),
+      },
+      nextRunAt: new Date('2026-09-10T10:32:00.000Z'),
+    });
+    const { agent } = await authenticatedAgent(app);
+
+    const res = await agent
+      .post(`/api/system-health/workspace/${WS}/run`)
+      .send({ kind: 'statement' });
+
+    expect(res.status).toBe(202);
+    expect(recordedBulkJobs()[0].data.schedule).toEqual({
+      every: { n: 6, unit: 'month' },
+      runOn: 10,
+    });
   });
 
   it('404s a workspace with no enabled block for that kind', async () => {
