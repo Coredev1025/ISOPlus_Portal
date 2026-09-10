@@ -27,9 +27,29 @@ async function seedSecondBoard(participant) {
     itemId: 'p2-1',
     data: { 'Full Name/Preferred Name': participant },
   });
+  await seedService(participant, { boardId: BOARD_2, itemId: 's2-1' });
 }
 
-async function seedWorkspace({ label, participants = ['Alex Rivers'] }) {
+/**
+ * A delivered shift inside the statement period, so the participant has
+ * something to report. Without one the run now correctly issues no statement
+ * at all, which is what the "no budget and no services" case asserts.
+ */
+async function seedService(participant, { boardId = BOARD, itemId = `s-${participant}` } = {}) {
+  await Item.create({
+    workspaceId: WS,
+    boardId,
+    folderId: 'f-s',
+    itemId,
+    data: {
+      'Participant Full Name': participant,
+      'Scheduled Shift Start Date & Time': '2026-07-15T09:00:00.000Z',
+      'Actual Shift End Date & Time': '2026-07-15T11:00:00.000Z',
+    },
+  });
+}
+
+async function seedWorkspace({ label, participants = ['Alex Rivers'], withServices = false }) {
   await Business.create({
     workspaceId: WS,
     name: 'Stmt Biz',
@@ -50,6 +70,7 @@ async function seedWorkspace({ label, participants = ['Alex Rivers'] }) {
     itemId: `p-${index + 1}`,
     data: { 'Full Name/Preferred Name': name },
   })));
+  if (withServices) await Promise.all(participants.map((name) => seedService(name)));
 }
 
 describe('generateStatementsForBoard', () => {
@@ -91,6 +112,7 @@ describe('generateStatementsForBoard', () => {
     await seedWorkspace({
       label: 'Care Management - NDIS',
       participants: ['Alex Rivers', 'Sam Lee'],
+      withServices: true,
     });
 
     const results = await generateStatementsForBoard({
@@ -108,6 +130,62 @@ describe('generateStatementsForBoard', () => {
     const links = await PDFLink.find({ workspaceId: WS, type: 'Monthly Statement' }).lean();
     expect(links).toHaveLength(2);
     expect(links.every((link) => link.periodKey === PERIOD)).toBe(true);
+  });
+
+  // The row has to say who the statement is for. Without it the client panel's
+  // `clientLabel` falls back to "No client recorded" on every budget statement
+  // — while the statement of account beside it reads "For <name>", because that
+  // path already stores the participant. A run over a board of twenty-six
+  // people therefore produced twenty-six anonymous rows, which is what made the
+  // two documents impossible to tell apart in the panel and in the inbox.
+  it('records the participant on the Monthly Statement row', async () => {
+    await seedWorkspace({
+      label: 'Care Management - NDIS',
+      participants: ['Alex Rivers', 'Sam Lee'],
+      withServices: true,
+    });
+
+    await generateStatementsForBoard({
+      workspaceId: WS, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: PERIOD,
+    });
+
+    const links = await PDFLink.find({ workspaceId: WS, type: 'Monthly Statement' }).lean();
+    expect(links.map((link) => link.participant).sort()).toEqual(['Alex Rivers', 'Sam Lee']);
+  });
+
+  // A client with no budget and no services delivered gets a document whose
+  // every figure is $0.00 — quarterly budget, available budget, service
+  // delivered, remaining balance. Sending that is worse than sending nothing:
+  // it reads as a broken statement, and it arrives beside a correct statement
+  // of account, which is what made a real client report the whole email as
+  // wrong. The statement of account already refuses to render for an account
+  // with nothing to state (section 4.5); this is the same rule for the budget
+  // statement.
+  it('sends no Monthly Statement when there is no budget and no services', async () => {
+    await seedWorkspace({ label: 'Care Management - NDIS' });
+
+    const results = await generateStatementsForBoard({
+      workspaceId: WS, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: PERIOD,
+    });
+
+    expect(results).toEqual([]);
+    expect(await PDFLink.countDocuments({ workspaceId: WS, type: 'Monthly Statement' })).toBe(0);
+  });
+
+  // The sequence is only consumed once there is a document to put the number
+  // on — the rule the statement of account states explicitly by taking
+  // `claimStatementNumber` as a function rather than a number. A skipped
+  // participant that burned one would leave a gap for every empty client on
+  // the board, every run.
+  it('does not consume a statement number for a skipped participant', async () => {
+    await seedWorkspace({ label: 'Care Management - NDIS' });
+
+    await generateStatementsForBoard({
+      workspaceId: WS, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: PERIOD,
+    });
+
+    const business = await Business.findOne({ workspaceId: WS }).lean();
+    expect(business.documentNumbering?.statement?.nextNumber ?? 1).toBe(1);
   });
 
   // Section 4.1: the statement period follows the configured cadence. The
@@ -138,7 +216,9 @@ describe('generateStatementsForBoard', () => {
   });
 
   it('still writes the Monthly Statement on an explicitly monthly cadence', async () => {
-    await seedWorkspace({ label: 'Care Management - NDIS' });
+    await seedWorkspace({ label: 'Care Management - NDIS',
+      withServices: true,
+    });
 
     await generateStatementsForBoard({
       workspaceId: WS,
@@ -156,6 +236,7 @@ describe('generateStatementsForBoard', () => {
     await seedWorkspace({
       label: 'Care Management',
       participants: ['Alex Rivers', 'Sam Lee'],
+      withServices: true,
     });
     await PDFLink.create({
       workspaceId: WS,
@@ -185,6 +266,7 @@ describe('generateStatementsForBoard', () => {
     await seedWorkspace({
       label: 'Care Management',
       participants: ['Alex Rivers', 'Sam Lee'],
+      withServices: true,
     });
 
     const results = await generateStatementsForBoard({
@@ -237,7 +319,9 @@ describe('generateStatementsForBoard', () => {
   // a lost update across the awaits: both runs read 1, both mint 'STM-1'
   // for different participants, and the counter ends on 2 rather than 3.
   it('never mints the same statement number for two concurrent boards', async () => {
-    await seedWorkspace({ label: 'Care Management' });
+    await seedWorkspace({ label: 'Care Management',
+      withServices: true,
+    });
     await seedSecondBoard('Sam Lee');
 
     const [first, second] = await Promise.all([

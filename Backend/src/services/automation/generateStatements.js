@@ -74,7 +74,11 @@ async function allocateStatementNumber(workspaceId) {
 async function generateOneStatement({
   workspaceId, boardId, participant, period, timezone, periodKey, deps,
 }) {
-  const statementNumber = await allocateStatementNumber(workspaceId);
+  // Render before claiming a number. `skipWhenEmpty` hands back null for a
+  // client with no budget and no services, whose statement would read $0.00 on
+  // every line, and the sequence must not advance for a document that is never
+  // issued — the same rule the statement of account states by taking
+  // `claimStatementNumber` as a function rather than a number.
   const upload = await renderMonthlyStatementPdf({
     workspaceId,
     boardId,
@@ -87,11 +91,26 @@ async function generateOneStatement({
     },
     timezone,
     deps,
+    skipWhenEmpty: true,
   });
+  if (!upload) {
+    info('Automation', 'No budget and no services; no monthly statement', {
+      workspaceId, boardId, periodKey, participant,
+    });
+    return null;
+  }
+
+  const statementNumber = await allocateStatementNumber(workspaceId);
   const itemId = statementItemId(boardId, participant);
   await PDFLink.create({
     workspaceId,
     itemId,
+    // Who the statement is for. The client panel reads this to render
+    // "For <name>" beside the document, and without it every budget statement
+    // showed "No client recorded" while the statement of account next to it
+    // named the person — the two were indistinguishable in the panel and in
+    // the inbox. The statement of account path has always stored it.
+    participant,
     type: PDFLINK_TYPE_MONTHLY_STATEMENT,
     periodKey,
     // invoiceNumber carries whichever document the row is for: the invoice
