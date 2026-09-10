@@ -64,6 +64,16 @@ const PDFLinkSchema = new Schema({
     // where it is carried.
     invoiceTotal: { type: Number },
     invoiceNumber: { type: String },
+    // The date the document itself carries — the slot a scheduled run billed,
+    // or the `Invoice Date` an operator set on the item before generating by
+    // hand. Distinct from `createdAt`, which is when this row was written; the
+    // two coincide only for a run that fires on time. The statement of account
+    // dates its charge rows by this, so a held slot, a catch-up or a
+    // deliberately backdated invoice is reported on the day the invoice
+    // claims rather than the day the record happened to be created. Absent on
+    // every row written before it existed, and `statementAccountHistory.js`
+    // falls back to `createdAt` for those.
+    invoiceDate: { type: Date },
     // The number Xero gave the DRAFT this document was pushed as, when the
     // workspace's send method is 'accounting'. It is the idempotency key for
     // that route: a replayed slot hands the worker the same documents, and

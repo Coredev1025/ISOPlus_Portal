@@ -1241,7 +1241,19 @@ function validateRequestParams(req) {
     return { workspaceId, boardId };
 }
 
-async function handlePDFSuccess(workspaceId, boardId, itemId, fileUrl, docType, req, res) {
+/**
+ * Record a generated document and answer the caller.
+ *
+ * `document` carries the fields a statement of account matches on: the board,
+ * the participant, the figure billed and the date the invoice claims. They are
+ * optional because most callers here produce quotes and purchase orders, which
+ * no statement reads — but every invoice path must pass them. Without them the
+ * row is written with `boardId`, `participant` and `invoiceTotal` all absent,
+ * and `participantInvoices` filters on exactly those three, so the invoice is
+ * invisible to the statement for ever after. `boardId` in particular was in
+ * scope here all along and simply was not stored.
+ */
+async function handlePDFSuccess(workspaceId, boardId, itemId, fileUrl, docType, req, res, document = {}) {
     await setIntegrationMessage(workspaceId, boardId, itemId, `Your ${docType} has been successfully created.\n`);
     await setPDFLinkAttribute(workspaceId, boardId, itemId, fileUrl, docType);
     logAuditTrail({
@@ -1252,9 +1264,18 @@ async function handlePDFSuccess(workspaceId, boardId, itemId, fileUrl, docType, 
     });
     await PDFLink.insertOne({
         workspaceId,
+        boardId,
         itemId,
         type: docType,
         pdfLink: fileUrl,
+        participant: document.participant || undefined,
+        invoiceNumber: document.invoiceNumber || undefined,
+        invoiceTotal: Number.isFinite(Number(document.invoiceTotal))
+            ? Number(document.invoiceTotal)
+            : undefined,
+        invoiceDate: Number.isNaN(new Date(document.invoiceDate).getTime())
+            ? undefined
+            : new Date(document.invoiceDate),
         createdBy: "",
         isDeleted: false,
         SignatureStatus: "Unsigned"

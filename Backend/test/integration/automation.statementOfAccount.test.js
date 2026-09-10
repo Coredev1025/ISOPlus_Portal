@@ -157,6 +157,44 @@ describe('a scheduled statement run', () => {
     expect(summaryStrip(rendered)).toEqual(['$0.00', '$250.00', '$100.00', '$150.00']);
   });
 
+  /**
+   * The case the whole invoice-date field exists for.
+   *
+   * An operator raises an invoice by hand and sets `Invoice Date` to a day
+   * inside the period. The row is written today, after the period closed. Dated
+   * by its write time the invoice falls outside the window and the statement
+   * omits it entirely — which is what a client sees as a statement that
+   * understates what they owe. Dated by the invoice's own date it appears where
+   * it belongs.
+   */
+  it('accounts for a backdated invoice on the date the invoice claims', async () => {
+    await PDFLink.create({
+      workspaceId: WORKSPACE,
+      boardId: BOARD,
+      itemId: 'item-backdated',
+      participant: PARTICIPANT,
+      type: PDFLINK_TYPE_NDIS_INVOICE,
+      invoiceNumber: 'INV-1301',
+      invoiceTotal: 400,
+      pdfLink: 'https://s3.example/inv-1301.pdf',
+      // Raised after the period closed, for work delivered inside it.
+      invoiceDate: new Date('2026-08-20T00:00:00.000Z'),
+      createdAt: new Date('2026-09-01T12:00:00.000Z'),
+    });
+
+    await generateStatementsForBoard({
+      workspaceId: WORKSPACE, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: PERIOD_KEY,
+    });
+
+    const rendered = statementRender();
+    const rows = JSON.parse(rendered.transactions);
+    const backdated = rows.find((row) => row.includes('INV-1301'));
+    expect(backdated).toBeDefined();
+    expect(backdated[0]).toBe('20/08/2026');
+    // $250 + $400 charged against the $100 received.
+    expect(summaryStrip(rendered)).toEqual(['$0.00', '$650.00', '$100.00', '$550.00']);
+  });
+
   it('replays without producing a second statement of account', async () => {
     const run = () => generateStatementsForBoard({
       workspaceId: WORKSPACE, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: PERIOD_KEY,

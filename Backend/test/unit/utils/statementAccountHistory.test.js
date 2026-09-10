@@ -41,6 +41,40 @@ describe('invoicesFromDocuments', () => {
     expect(invoicesFromDocuments([doc({ createdAt: undefined })])).toEqual([]);
   });
 
+  // The invoice's own date, not the moment its row was written. They agree for
+  // a scheduled run that fires on time and disagree for every other case: a
+  // held or caught-up slot, and an invoice raised by hand where the operator
+  // sets `Invoice Date` on the item. A statement that dates a charge by the
+  // write time contradicts the invoice it is reporting, and a backdated
+  // invoice lands on today rather than in the month it belongs to.
+  it('dates a charge by the invoice date when the row carries one', () => {
+    const [invoice] = invoicesFromDocuments([
+      doc({ invoiceDate: '2026-06-20T00:00:00.000Z', createdAt: '2026-09-10T11:26:27.000Z' }),
+    ]);
+    expect(new Date(invoice.createdAt).toISOString()).toBe('2026-06-20T00:00:00.000Z');
+  });
+
+  it('ages a backdated invoice from its own date, not from when it was recorded', () => {
+    const [invoice] = invoicesFromDocuments([
+      doc({ invoiceDate: '2026-06-20T00:00:00.000Z', createdAt: '2026-09-10T11:26:27.000Z' }),
+    ]);
+    expect(new Date(invoice.dueDate).toISOString()).toBe('2026-07-04T00:00:00.000Z');
+  });
+
+  // Every row written before the field existed has none, and they must keep
+  // behaving exactly as they did.
+  it('falls back to the write time when there is no invoice date', () => {
+    const [invoice] = invoicesFromDocuments([doc()]);
+    expect(new Date(invoice.createdAt).toISOString()).toBe('2026-08-01T00:00:00.000Z');
+  });
+
+  // An unusable value must not silently become the epoch, which would file the
+  // invoice in 1970 and put the whole ledger out of order.
+  it('ignores an unusable invoice date rather than filing the invoice at the epoch', () => {
+    const [invoice] = invoicesFromDocuments([doc({ invoiceDate: 'not a date' })]);
+    expect(new Date(invoice.createdAt).toISOString()).toBe('2026-08-01T00:00:00.000Z');
+  });
+
   it('carries the billed figure through unchanged', () => {
     const [invoice] = invoicesFromDocuments([doc({ invoiceTotal: 1232.5 })]);
     expect(invoice.invoiceTotal).toBe(1232.5);

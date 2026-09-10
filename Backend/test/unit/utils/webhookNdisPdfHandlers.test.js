@@ -357,8 +357,18 @@ describe('processWebhookNdisInvoicePdfItem', () => {
       604800,
       false,
     );
+    // The document details travel with the success call so the row it writes
+    // can be found by a statement. Without them the row carries no participant,
+    // no board and no total, and the statement — which matches on exactly
+    // those — can never see the invoice.
     expect(args.handlePDFSuccess).toHaveBeenCalledWith(
       'ws_1', 'bd_1', 'itm_master_1', 'https://s3.example.com/signed.pdf', 'NDIS Invoice', args.req, args.res,
+      {
+        participant: 'Jane Roe',
+        invoiceNumber: 'INV-41 (ISO+™)',
+        invoiceTotal: 139.62,
+        invoiceDate: '2025-03-15T00:00:00',
+      },
     );
     expect(isoplus.setGeneratedField).toHaveBeenCalledWith('ws_1', 'bd_1', 'itm_master_1', 'INV-41 (ISO+™)');
     expect(args.saveInvoiceNumber).toHaveBeenCalledWith(

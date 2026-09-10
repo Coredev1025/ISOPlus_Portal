@@ -22,6 +22,27 @@ const INVOICE_TYPES = new Set([PDFLINK_TYPE_NDIS_INVOICE, PDFLINK_TYPE_AGE_CARE_
 const isDated = (value) => !Number.isNaN(new Date(value).getTime());
 
 /**
+ * When the invoice says it was raised.
+ *
+ * `invoiceDate` is the document's own date — the slot a scheduled run billed,
+ * or the `Invoice Date` an operator set on the item before generating by hand.
+ * `createdAt` is when the row was written, which is a different fact and only
+ * coincides with the first for a run that fires on time. Dating a charge by
+ * the write time made a statement contradict the invoice it was reporting: a
+ * held slot, a catch-up, or a deliberately backdated invoice all landed on the
+ * day the record happened to be created rather than in the month they belong
+ * to.
+ *
+ * `createdAt` remains the fallback, because every row written before this
+ * field existed has no `invoiceDate` and must keep behaving as it did. An
+ * unusable value falls back too rather than becoming the epoch, which would
+ * file the invoice in 1970 and put the whole ledger out of order.
+ */
+function issuedAt(row) {
+  return isDated(row?.invoiceDate) ? row.invoiceDate : row.createdAt;
+}
+
+/**
  * The invoices among a participant's documents, in the shape the ledger takes.
  *
  * A row with no `invoiceTotal` is skipped rather than treated as nil: it is a
@@ -41,8 +62,8 @@ export function invoicesFromDocuments(documents) {
     .map((row) => ({
       invoiceNumber: row.invoiceNumber ?? '',
       invoiceTotal: roundMoney(row.invoiceTotal),
-      createdAt: row.createdAt,
-      dueDate: resolveDueDate(row.createdAt, null),
+      createdAt: issuedAt(row),
+      dueDate: resolveDueDate(issuedAt(row), null),
       description: 'Services invoiced',
     }));
 }
