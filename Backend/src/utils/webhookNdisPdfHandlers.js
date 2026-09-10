@@ -260,7 +260,20 @@ export async function processWebhookNdisInvoicePdfItem({
     }
 
     const fileUrl = await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
-    await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Invoice', req, res);
+    // The details the statement of account matches on. Until they travelled
+    // with the success call, an invoice raised by hand wrote a document row
+    // carrying none of them, and the statement — which looks invoices up by
+    // board and participant and charges `invoiceTotal` — could not see it. On
+    // one dev workspace that was 170 of 175 invoice rows, a year of history
+    // absent from every statement. `invoiceDate` is the operator's own
+    // `Invoice Date` on the item, so a backdated invoice is reported in the
+    // month it claims rather than on the day it happened to be generated.
+    await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Invoice', req, res, {
+      participant: clientDetails['Participant Name'] || '',
+      invoiceNumber: `${invoiceNumber} (ISO+™)`,
+      invoiceTotal: Number(total),
+      invoiceDate,
+    });
     await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
     await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);
     business.documentNumbering.invoice.nextNumber += 1;

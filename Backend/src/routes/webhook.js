@@ -16,6 +16,8 @@ import { paginatePdfmeTemplateTableByRows } from '../utils/webhookPdfPaginationH
 import { processWebhookNdisQuotePdfItem, processWebhookNdisInvoicePdfItem } from '../utils/webhookNdisPdfHandlers.js';
 import { handleParticipantTaxInvoiceRoute } from '../utils/webhookParticipantTaxPdfHelpers.js';
 import { generateNdisInvoiceGeneratorPdf } from '../services/automation/ndisInvoiceGeneratorPdf.js';
+import { recordPdfLinks } from '../services/automation/generateDocuments.js';
+import { PDFLINK_TYPE_NDIS_INVOICE } from '../constants/automation.js';
 import { parseInvoiceGeneratorMasterItemIds } from '../utils/xeroNdisRouteHandlers.js';
 import {
     enableRepeatHeadOnTables,
@@ -1241,7 +1243,19 @@ function validateRequestParams(req) {
     return { workspaceId, boardId };
 }
 
-async function handlePDFSuccess(workspaceId, boardId, itemId, fileUrl, docType, req, res) {
+/**
+ * Record a generated document and answer the caller.
+ *
+ * `document` carries the fields a statement of account matches on: the board,
+ * the participant, the figure billed and the date the invoice claims. They are
+ * optional because most callers here produce quotes and purchase orders, which
+ * no statement reads — but every invoice path must pass them. Without them the
+ * row is written with `boardId`, `participant` and `invoiceTotal` all absent,
+ * and `participantInvoices` filters on exactly those three, so the invoice is
+ * invisible to the statement for ever after. `boardId` in particular was in
+ * scope here all along and simply was not stored.
+ */
+async function handlePDFSuccess(workspaceId, boardId, itemId, fileUrl, docType, req, res, document = {}) {
     await setIntegrationMessage(workspaceId, boardId, itemId, `Your ${docType} has been successfully created.\n`);
     await setPDFLinkAttribute(workspaceId, boardId, itemId, fileUrl, docType);
     logAuditTrail({
@@ -1252,9 +1266,18 @@ async function handlePDFSuccess(workspaceId, boardId, itemId, fileUrl, docType, 
     });
     await PDFLink.insertOne({
         workspaceId,
+        boardId,
         itemId,
         type: docType,
         pdfLink: fileUrl,
+        participant: document.participant || undefined,
+        invoiceNumber: document.invoiceNumber || undefined,
+        invoiceTotal: Number.isFinite(Number(document.invoiceTotal))
+            ? Number(document.invoiceTotal)
+            : undefined,
+        invoiceDate: Number.isNaN(new Date(document.invoiceDate).getTime())
+            ? undefined
+            : new Date(document.invoiceDate),
         createdBy: "",
         isDeleted: false,
         SignatureStatus: "Unsigned"
@@ -1689,6 +1712,26 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
         if (result.empty) {
             return res.status(200).json({ message: 'There is nothing to invoice!' });
         }
+        // The document ledger the statement of account reads. This screen is
+        // how invoices are actually raised on a Care Management board, and it
+        // recorded nothing at all: ISO+ marked the shifts with the new number
+        // while the portal held no document for it, so the statement went on
+        // citing an older invoice that no longer matched anything the client
+        // had been sent. One row per item carrying the whole invoice total, the
+        // same convention the scheduled run writes and `participantInvoices`
+        // dedupes by `pdfLink`. No `periodKey`: this invoice belongs to no
+        // slot, which is also what keeps it outside the double-billing index.
+        await recordPdfLinks({
+            workspaceId,
+            boardId,
+            itemIds: parseInvoiceGeneratorMasterItemIds(req.body),
+            invoiceNumber: result.invoiceNumber,
+            invoiceTotal: result.invoiceTotal,
+            invoiceDate: req.body?.invoiceDate,
+            participant: req.body?.participantName,
+            pdfUrl: result.fileUrl,
+            type: PDFLINK_TYPE_NDIS_INVOICE,
+        });
         return res.json({
             invoiceNumber: result.invoiceNumber,
             fileUrl: result.fileUrl,

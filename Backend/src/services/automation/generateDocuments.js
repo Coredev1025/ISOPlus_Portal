@@ -150,9 +150,9 @@ async function existingSlotResults(workspaceId, boardId, periodKey, type) {
  * this point, so a collision means something upstream is wrong and the job
  * should fail visibly.
  */
-async function recordPdfLinks({
+export async function recordPdfLinks({
   workspaceId, boardId, itemIds, periodKey, invoiceNumber, participant, pdfUrl, type,
-  period, invoiceType, invoiceTotal,
+  period, invoiceType, invoiceTotal, invoiceDate,
 }) {
   await Promise.all(itemIds.map((itemId) => PDFLink.create({
     workspaceId,
@@ -172,6 +172,11 @@ async function recordPdfLinks({
 
     invoiceTotal: Number.isFinite(Number(invoiceTotal)) ? Number(invoiceTotal) : undefined,
     invoiceNumber,
+    // The date printed on the invoice, which is the slot this run billed.
+    // Stored so the statement dates the charge by the document rather than by
+    // the moment this row was written — they differ for any slot that did not
+    // fire on time.
+    invoiceDate: invoiceDate ? new Date(invoiceDate) : undefined,
     participant,
     pdfLink: pdfUrl,
     createdBy: '',
@@ -313,6 +318,7 @@ async function generateNdisGeneratorInvoices({
         invoiceType,
         invoiceNumber: document.invoiceNumber,
         invoiceTotal: document.invoiceTotal,
+        invoiceDate: dates.invoiceDate,
         participant: group.participant,
         pdfUrl: document.fileUrl,
         type: PDFLINK_TYPE_NDIS_INVOICE,
@@ -440,6 +446,7 @@ async function generateAgeCareGeneratorInvoices({
         invoiceType,
         invoiceNumber: document.invoiceNumber,
         invoiceTotal: document.invoiceTotal,
+        invoiceDate: dates.invoiceDate,
         participant: group.participant,
         pdfUrl: document.fileUrl,
         type: PDFLINK_TYPE_AGE_CARE_INVOICE,

@@ -77,7 +77,7 @@ async function participantInvoices(workspaceId, boardId, participant) {
     participant: mongoEq(String(participant)),
     type: { $in: [PDFLINK_TYPE_NDIS_INVOICE, PDFLINK_TYPE_AGE_CARE_INVOICE] },
     isDeleted: { $ne: true },
-  }).select('type invoiceNumber invoiceTotal createdAt pdfLink').lean();
+  }).select('type invoiceNumber invoiceTotal invoiceDate createdAt pdfLink').lean();
   return invoicesFromDocuments(uniqBy(rows, (row) => row.pdfLink ?? row._id));
 }
 
