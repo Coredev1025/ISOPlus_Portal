@@ -1,6 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 
-import { buildRetrySpec, withForceJobIds } from '../../../src/utils/systemHealthRunHelpers.js';
+import ScheduledJob from '../../../src/models/ScheduledJob.js';
+import { KIND_STATEMENT } from '../../../src/constants/automation.js';
+import {
+  buildManualDispatch,
+  buildRetrySpec,
+  withForceJobIds,
+} from '../../../src/utils/systemHealthRunHelpers.js';
 
 /**
  * BullMQ's rule, from Job.validateOptions:
@@ -80,5 +86,45 @@ describe('withForceJobIds', () => {
     const [first] = withForceJobIds({ specs, force: true, existing: 1 });
     const [second] = withForceJobIds({ specs, force: true, existing: 2 });
     expect(first.opts.jobId).not.toBe(second.opts.jobId);
+  });
+});
+
+describe('buildManualDispatch', () => {
+  beforeEach(async () => {
+    await ScheduledJob.deleteMany({});
+  });
+
+  /**
+   * Observed on portal-dev 2026-09-10: System Health Run now produced SOA-5
+   * for E2E Handover covering 1–31 August, with March–May invoices as the
+   * opening balance and an empty particulars table. The scheduled tick puts
+   * `schedule.every` on the job (scheduler.tick.test.js); this path selected
+   * only `timezone` and so `coversOneCalendarMonth` treated a missing picker
+   * as "last calendar month".
+   */
+  it('puts the workspace schedule on the job so a statement run covers that cadence', async () => {
+    await ScheduledJob.create({
+      kind: KIND_STATEMENT,
+      targetId: 'ws-1',
+      timezone: 'Australia/Sydney',
+      schedule: {
+        every: { n: 6, unit: 'month' },
+        runOn: 10,
+        runAt: '09:00',
+        startDate: new Date('2026-03-10T00:00:00+11:00'),
+      },
+      nextRunAt: new Date('2026-09-10T10:00:00.000Z'),
+    });
+
+    const { specs } = await buildManualDispatch({
+      kind: KIND_STATEMENT,
+      workspaceId: 'ws-1',
+      boards: [{ boardId: 'b1' }],
+    });
+
+    expect(specs[0].data.schedule).toEqual({
+      every: { n: 6, unit: 'month' },
+      runOn: 10,
+    });
   });
 });
