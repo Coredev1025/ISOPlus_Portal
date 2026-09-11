@@ -249,12 +249,37 @@ describe('a scheduled statement run', () => {
 });
 
 /**
- * The three ways a real board's data can differ from the tidy seed above.
- * Each of these took the whole board's run down, not one participant's.
+ * Ways a real board's data can differ from the tidy seed above.
+ * Each of these took the whole board's run down, not one participant's —
+ * except the name-field split, which silently printed Payments $0.00.
  */
 describe('a scheduled statement run, on untidy data', () => {
   const run = () => generateStatementsForBoard({
     workspaceId: WORKSPACE, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: PERIOD_KEY,
+  });
+
+  // ISO+ keeps the participant's name on the profile as Full Name/Preferred
+  // Name, and the payment on the shift as Participant Full Name. The tidy seed
+  // puts both on one item, which is how a $100 payment can look collected
+  // while portal-dev still prints Payments $0.00 — the lookup reads the
+  // profile field, so it never sees the shift.
+  it('reads a payment off the shift, not the participant profile', async () => {
+    await Item.updateOne({ itemId: 'item-1' }, { $unset: { 'data.Full Name/Preferred Name': '' } });
+    await Item.create({
+      itemId: 'profile-1',
+      workspaceId: WORKSPACE,
+      boardId: BOARD,
+      folderId: 'folder-profile',
+      data: { 'Full Name/Preferred Name': PARTICIPANT },
+    });
+
+    await run();
+
+    const rendered = statementRender();
+    expect(rendered).toBeDefined();
+    const rows = JSON.parse(rendered.transactions);
+    expect(rows.some((row) => row.includes('Payment received'))).toBe(true);
+    expect(summaryStrip(rendered)).toEqual(['$0.00', '$250.00', '$100.00', '$150.00']);
   });
 
   // ISO+ lets the amount and the received date be entered separately.
