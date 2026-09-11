@@ -165,7 +165,10 @@ async function statementOfAccountFor({
     timezone,
     periodKey,
     claimStatementNumber: () => allocateStatementOfAccountNumber(workspaceId),
-    nameField: ATTRIBUTE_NAMES.FULL_NAME,
+    // Shifts carry Participant Full Name. Full Name/Preferred Name is the
+    // profile field `listStatementParticipants` already used to find who to
+    // state — looking payments up by it never sees Amount Received.
+    nameField: ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME,
   });
 }
 
