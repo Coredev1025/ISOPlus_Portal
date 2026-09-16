@@ -105,6 +105,56 @@ test.describe("System Health", () => {
     await expect(page.getByRole("button", { name: /run invoices now/i })).toBeVisible();
   });
 
+  /**
+   * KAN-43. The grid labelled every row with the raw workspaceId, because the
+   * `/clients` query's `.select()` omitted the `name` already on the same
+   * Business document. Asserted end-to-end rather than only in the grid's unit
+   * test: the unit test is handed a name, so it cannot catch the half that was
+   * actually broken — the route not sending one.
+   *
+   * The name is read from the API rather than hardcoded, so this works against
+   * whatever workspace E2E_SYSTEM_HEALTH_WORKSPACE_ID points at. Only the
+   * "the name is rendered" assertion is conditional on there being one — the
+   * contract assertion below it is not, so a workspace whose Business row has
+   * no name still fails this test if the route stops sending the key.
+   */
+  test("labels a client row with its business name, not the workspace id", async ({ page }) => {
+    await signIn(page);
+
+    const response = await page.request.get(`${BACKEND}/api/system-health/clients`);
+    expect(response.ok(), `clients failed: ${response.status()}`).toBe(true);
+    const { clients } = await response.json();
+    const client = clients?.find((c: { workspaceId: string }) => c.workspaceId === WORKSPACE);
+
+    test.skip(
+      !client,
+      `workspace ${WORKSPACE} has no Invoice & Statement Automation settings — set E2E_SYSTEM_HEALTH_WORKSPACE_ID to one that does`,
+    );
+
+    // Key presence, asserted before anything is skipped: the bug was `name`
+    // missing from the payload entirely, and null is a legitimate value. Were
+    // this folded into the render assertion below it would skip rather than
+    // fail on the very defect it exists to catch — verified by reverting the
+    // `.select()` and watching this line go red.
+    expect(
+      client,
+      "GET /api/system-health/clients must carry a name key for every client",
+    ).toHaveProperty("name");
+
+    await page.goto("/dashboard");
+    await page.getByRole("tab", { name: /system health/i }).click();
+
+    const row = page.getByRole("button", { name: new RegExp(WORKSPACE) });
+    await expect(row).toBeVisible();
+    // The id is always there — it is what the drill-down URL and the logs are
+    // keyed on, so the name is added above it rather than swapped for it.
+    await expect(row).toContainText(WORKSPACE);
+
+    if (client.name) {
+      await expect(row).toContainText(client.name);
+    }
+  });
+
   test("a non-admin never sees the tab", async ({ page }) => {
     test.skip(!USER_EMAIL || !USER_PASSWORD, "set E2E_USER_EMAIL and E2E_USER_PASSWORD to a real isoplus_user account");
 

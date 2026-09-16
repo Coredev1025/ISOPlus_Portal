@@ -111,7 +111,7 @@ router.get('/clients', async (req, res) => {
     const businesses = await Business.find({
       workspaceId: { $in: settings.map((s) => s.workspaceId) },
     })
-      .select('workspaceId xeroIntegrated xeroTokens.refreshTokenExpiresAt')
+      .select('workspaceId name xeroIntegrated xeroTokens.refreshTokenExpiresAt')
       .lean();
 
     const byWorkspace = new Map(businesses.map((b) => [b.workspaceId, b]));
@@ -119,6 +119,12 @@ router.get('/clients', async (req, res) => {
     res.json({
       clients: settings.map((s) => ({
         workspaceId: s.workspaceId,
+        // Null, not the workspaceId, when there is no name: `name` is optional
+        // on Business and a configured workspace may have no Business row at
+        // all. Echoing the id back here would make a missing name look like a
+        // client genuinely called `ws-...`, and leave the frontend no way to
+        // tell the two apart. Deciding what to render instead is its job.
+        name: byWorkspace.get(s.workspaceId)?.name || null,
         invoiceEnabled: Boolean(s.invoice?.enabled),
         statementEnabled: Boolean(s.statement?.enabled),
         provider: 'xero',

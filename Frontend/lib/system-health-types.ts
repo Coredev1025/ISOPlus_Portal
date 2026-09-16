@@ -31,6 +31,12 @@ export type ScheduleRow = {
 
 export type ClientRow = {
   workspaceId: string;
+  /**
+   * The client's business name, or null when the Business document has no name
+   * or does not exist. Null rather than a defaulted workspaceId so this layer
+   * can tell "unnamed" apart from a client actually called `ws-...`.
+   */
+  name: string | null;
   invoiceEnabled: boolean;
   statementEnabled: boolean;
   provider: "xero";
