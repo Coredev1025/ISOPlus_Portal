@@ -5,6 +5,7 @@ import {
   KIND_STATEMENT,
   MAX_EVERY_N,
   RUN_AT_PATTERN,
+  STATEMENT_SEND_METHOD,
   WEEKDAYS,
 } from '../constants/automation.js';
 import { EMAIL_PATTERN } from '../constants/validation.js';
@@ -140,6 +141,12 @@ function validateBlock(name, block) {
   const contentError = validateContent(block);
   if (contentError) return `${name}: ${contentError}`;
 
+  // Checked whatever `enabled` says, like the content fields: it is stored as
+  // sent and used the moment the block is re-enabled.
+  if (name === 'statement' && block.sendMethod !== STATEMENT_SEND_METHOD) {
+    return `statement: sendMethod must be "${STATEMENT_SEND_METHOD}" — statements cannot be sent from the accounting platform`;
+  }
+
   // A disabled block's cadence is not validated: a client who turns automation
   // off should not be blocked by a field they are no longer using.
   if (!block.enabled) return null;
@@ -270,6 +277,10 @@ export function buildAutomationSettingsPayload(settings, jobs = {}) {
     return {
       ...DEFAULT_AUTOMATION_BLOCK,
       ...(block ?? {}),
+      // A statement saved as 'accounting' before the API refused it is still
+      // emailed, so report the method actually used. The client's next save
+      // then writes it back, and the stored value stops disagreeing.
+      ...(kind === KIND_STATEMENT && { sendMethod: STATEMENT_SEND_METHOD }),
       // A paused schedule keeps its row (and history), but must not advertise
       // a next run that will never fire — hence the enabled check. Jobs from
       // callers that never select `enabled` are treated as enabled.

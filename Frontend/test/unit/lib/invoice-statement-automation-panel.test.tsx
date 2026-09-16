@@ -506,6 +506,28 @@ describe('InvoiceStatementAutomationPanel', () => {
     expect(status.getByText(/failed/i)).toBeInTheDocument();
   });
 
+  /**
+   * KAN-44. Only invoices can be sent from the accounting platform; a
+   * statement saved that way was emailed anyway, silently.
+   */
+  it('offers the accounting platform as a send method for invoices only', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    fetchMock.mockResolvedValue(settings({ enabled: true }, { enabled: true }));
+    await renderPanel();
+
+    await user.click(within(invoiceSection()).getByLabelText('Send Method'));
+    expect(
+      screen.getByRole('option', { name: /accounting platform/i })
+    ).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+
+    await user.click(within(statementSection()).getByLabelText('Send Method'));
+    expect(screen.getByRole('option', { name: /send from iso\+/i })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('option', { name: /accounting platform/i })
+    ).not.toBeInTheDocument();
+  });
+
   it('hides the schedule and email fields until automatic generation is enabled', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     await renderPanel();

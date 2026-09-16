@@ -198,10 +198,10 @@ async function deliverGroup({
 /**
  * Which delivery route this job takes.
  *
- * Only invoices. Xero has no statement to create here, and the settings tab
- * renders one shared email block for both kinds, so a statement schedule can
- * carry sendMethod 'accounting' without it meaning anything — those runs email,
- * and say so once in the log rather than silently ignoring the setting.
+ * Only invoices. Xero has no statement to create here. The settings API has
+ * refused 'accounting' on a statement since KAN-44, but a row saved before
+ * that can still carry it — those runs email, and say so once in the log
+ * rather than silently ignoring the setting.
  */
 function isAccountingDelivery(kind, block) {
   return kind === KIND_INVOICE && block?.sendMethod === SEND_METHOD_ACCOUNTING;

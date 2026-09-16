@@ -34,6 +34,21 @@
 export const KIND_INVOICE = 'invoice_automation';
 export const KIND_STATEMENT = 'statement_automation';
 
+// ── Send method ─────────────────────────────────────────────────────────────
+
+/**
+ * The only send method a statement block can use. Accounting-platform delivery
+ * exists for invoices alone (workers/automationWorker.js isAccountingDelivery),
+ * so a statement saved as 'accounting' was emailed anyway, with nothing but a
+ * log line to say so (KAN-44).
+ *
+ * Touchpoints: utils/automationSettingsHelpers.js (validateBlock refuses any
+ * other value; buildAutomationSettingsPayload reports a stored one as this).
+ * The Frontend mirror is STATEMENT_SEND_METHOD_OPTIONS in
+ * Frontend/constants/automation.ts.
+ */
+export const STATEMENT_SEND_METHOD = 'isoplus';
+
 // ── Schedule shape ──────────────────────────────────────────────────────────
 
 /**
