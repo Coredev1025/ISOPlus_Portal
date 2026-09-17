@@ -201,6 +201,7 @@ describe('FinancialSettingsForm', () => {
 
     fireEvent.focus(poNext);
     fireEvent.change(poNext, { target: { value: '1' } });
+    expect(onSequenceNextChange).not.toHaveBeenCalled();
     expect(
       screen.queryByText(/reducing the next number may result in duplicate/i)
     ).not.toBeInTheDocument();
@@ -222,6 +223,73 @@ describe('FinancialSettingsForm', () => {
     ).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /cancel/i }));
     expect(poNext).toHaveValue(1081);
+  });
+
+  // Keystroke updates must not reach parent state: Save after typing "1" of a
+  // longer number would otherwise persist 1 and collide with issued documents.
+  it('does not commit a mid-edit next number to parent state before blur', () => {
+    const onSequenceNextChange = vi.fn();
+    const { container } = renderForm({ onSequenceNextChange });
+    const invoiceNext = container.querySelector('#invoice-next') as HTMLInputElement;
+
+    fireEvent.focus(invoiceNext);
+    fireEvent.change(invoiceNext, { target: { value: '1' } });
+
+    expect(onSequenceNextChange).not.toHaveBeenCalled();
+    expect(invoiceNext).toHaveValue(1);
+  });
+
+  it('does not let Save persist an unconfirmed mid-edit reduction', async () => {
+    const onSave = vi.fn();
+    const onSequenceNextChange = vi.fn();
+    const initial: DocumentSequences = {
+      ...SEQUENCES,
+      purchaseOrder: { prefix: 'PO-', nextNumber: 1001 },
+    };
+
+    function Harness() {
+      const [sequences, setSequences] = useState(initial);
+      return (
+        <FinancialSettingsForm
+          bankDetails={BANK}
+          sequences={sequences}
+          loading={false}
+          errors={[]}
+          apiError=""
+          showSuccess={false}
+          onBankChange={vi.fn()}
+          onSequencePrefixChange={vi.fn()}
+          onSequenceNextChange={(type: DocumentSequenceType, value: number) => {
+            onSequenceNextChange(type, value);
+            setSequences((prev) => ({
+              ...prev,
+              [type]: { ...prev[type], nextNumber: value },
+            }));
+          }}
+          onSave={onSave}
+        />
+      );
+    }
+
+    const { container } = render(<Harness />);
+    const poNext = container.querySelector('#po-next') as HTMLInputElement;
+
+    fireEvent.focus(poNext);
+    fireEvent.change(poNext, { target: { value: '1' } });
+    fireEvent.blur(poNext);
+
+    expect(
+      await screen.findByText(/reducing the next number may result in duplicate/i)
+    ).toBeInTheDocument();
+    expect(onSequenceNextChange).not.toHaveBeenCalled();
+
+    const saveButton = screen.getByRole('button', {
+      name: /save changes/i,
+      hidden: true,
+    });
+    expect(saveButton).toBeDisabled();
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onSequenceNextChange).not.toHaveBeenCalledWith('purchaseOrder', 1);
   });
 
   it('wires remaining bank fields and sequence prefixes', () => {
@@ -271,10 +339,13 @@ describe('FinancialSettingsForm', () => {
     expect(onSequencePrefixChange).toHaveBeenCalledWith('statement', 'ST2-');
 
     fireEvent.change(container.querySelector('#po-next')!, { target: { value: '2001' } });
+    fireEvent.blur(container.querySelector('#po-next')!);
     fireEvent.change(container.querySelector('#quote-next')!, { target: { value: '3001' } });
+    fireEvent.blur(container.querySelector('#quote-next')!);
     fireEvent.change(container.querySelector('#statement-next')!, {
       target: { value: '4001' },
     });
+    fireEvent.blur(container.querySelector('#statement-next')!);
     expect(onSequenceNextChange).toHaveBeenCalledWith('purchaseOrder', 2001);
     expect(onSequenceNextChange).toHaveBeenCalledWith('quote', 3001);
     expect(onSequenceNextChange).toHaveBeenCalledWith('statement', 4001);

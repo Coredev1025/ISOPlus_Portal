@@ -110,4 +110,18 @@ describe('Business routes', () => {
     expect(res.status).toBe(200);
     expect(res.body.documentNumbering.statementOfAccount.nextNumber).toBe(27);
   });
+
+  it('does not expose POST /api/business/xero/connect', async () => {
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.post('/api/business/xero/connect').send({
+      workspaceId: 'ws-connect',
+      tenantId: 'tenant-1',
+      tokens: {
+        access_token: 'access',
+        refresh_token: 'refresh',
+        expires_at: Date.now() + 60_000,
+      },
+    });
+    expect(res.status).toBe(404);
+  });
 });
