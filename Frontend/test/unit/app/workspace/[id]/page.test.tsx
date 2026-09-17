@@ -312,7 +312,7 @@ describe('workspace detail page', () => {
     expect(boardRequests).toHaveLength(1);
     expect(router.replace).not.toHaveBeenCalled();
     expect(
-      screen.getByRole('button', { name: 'Configure Business' }),
+      screen.getByRole('button', { name: 'Manage Business' }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole('heading', { name: 'Finance Settings & Automation' }),
@@ -336,7 +336,7 @@ describe('workspace detail page', () => {
     renderPage();
 
     await user.click(
-      await screen.findByRole('button', { name: 'Configure Business' }),
+      await screen.findByRole('button', { name: 'Manage Business' }),
     );
     expect(router.push).toHaveBeenCalledWith('/workspace/ws-1/configure-business');
 
@@ -371,7 +371,7 @@ describe('workspace detail page', () => {
     );
     expect(router.push).toHaveBeenCalledWith('/workspace/ws-1/configuration');
 
-    await user.click(screen.getByRole('button', { name: 'Configure Business' }));
+    await user.click(screen.getByRole('button', { name: 'Manage Business' }));
     expect(router.push).toHaveBeenCalledWith('/workspace/ws-1/configure-business');
 
     const careRow = await screen.findByRole('cell', { name: '901' })
