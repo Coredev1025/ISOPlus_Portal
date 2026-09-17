@@ -23,7 +23,7 @@ export const RECIPIENT_OPTIONS = [
  * the wire values of `AutomationBlock["sendMethod"]`.
  */
 export const SEND_METHOD_OPTIONS = [
-  { value: "isoplus", label: "Send from ISO+" },
+  { value: "isoplus", label: "Send from ISO+™" },
   { value: "accounting", label: "Send from Accounting Platform" },
 ] as const;
 

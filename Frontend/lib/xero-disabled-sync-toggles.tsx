@@ -12,19 +12,19 @@ type SyncToggle = Readonly<{
 const SYNC_TOGGLES: ReadonlyArray<SyncToggle> = [
   {
     title: "Invoice Sync Status",
-    description: "Sync invoices between ISO+ and Xero",
+    description: "Sync invoices between ISO+™ and Xero",
   },
   {
     title: "Customer Sync Status",
-    description: "Sync customers between ISO+ and Xero",
+    description: "Sync customers between ISO+™ and Xero",
   },
   {
     title: "Payment Sync Status",
-    description: "Sync payments between ISO+ and Xero",
+    description: "Sync payments between ISO+™ and Xero",
   },
   {
     title: "Contact Sync",
-    description: "Sync contacts between ISO+ and Xero",
+    description: "Sync contacts between ISO+™ and Xero",
     optional: true,
   },
 ];

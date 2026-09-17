@@ -181,7 +181,7 @@ export function AccountingIntegrationsPanel({
         <div>
           <h4 className="text-[14.5px] font-bold">Accounting Integrations</h4>
           <p className="text-[12.5px] text-muted-foreground">
-            Connect ISO+ with supported accounting platforms to synchronise customers,
+            Connect ISO+™ with supported accounting platforms to synchronise customers,
             invoices, payments and financial records.
           </p>
         </div>
