@@ -99,6 +99,11 @@ describe('FinancialSettingsPanel', () => {
     render(<FinancialSettingsPanel workspaceId="ws-1" />);
     await screen.findByDisplayValue('CBA');
 
+    // Statement Numbers / Credit Note are gone from the form; STM- still rides
+    // along on save because monthly budget statements claim that series.
+    expect(screen.queryByText('Statement Numbers')).not.toBeInTheDocument();
+    expect(screen.queryByText('Credit Note Numbers')).not.toBeInTheDocument();
+
     await user.click(screen.getByRole('button', { name: /save changes/i }));
 
     await waitFor(() => expect(axios.put).toHaveBeenCalled());

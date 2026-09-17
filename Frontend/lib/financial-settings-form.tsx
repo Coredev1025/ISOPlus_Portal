@@ -2,7 +2,6 @@
 
 import { useRef, useState, type ReactNode } from "react";
 import { AlertCircle, Hash, Landmark } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,10 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  CREDIT_NOTE_SEQUENCE_DISPLAY,
-  type NumberSequence,
-} from "@/lib/configure-business-helpers";
+import { type NumberSequence } from "@/lib/configure-business-helpers";
 
 export type DocumentSequenceType =
   | "invoice"
@@ -45,8 +41,6 @@ type FieldProps = Readonly<{
   label: string;
   children: ReactNode;
   hint?: string;
-  disabled?: boolean;
-  badge?: ReactNode;
 }>;
 
 function Field({
@@ -54,17 +48,14 @@ function Field({
   label,
   children,
   hint,
-  disabled = false,
-  badge,
 }: FieldProps) {
   return (
-    <div className={`space-y-1.5 ${disabled ? "opacity-60" : ""}`}>
+    <div className="space-y-1.5">
       <Label
         htmlFor={id}
         className="flex items-center gap-2 text-xs font-semibold text-muted-foreground"
       >
         {label}
-        {badge}
       </Label>
       {children}
       {hint ? (
@@ -107,8 +98,6 @@ type SequenceFieldProps = Readonly<{
   sequence: NumberSequence;
   nextDisplayValue: string | number;
   hint: string;
-  disabled?: boolean;
-  badge?: ReactNode;
   onPrefixChange?: (value: string) => void;
   onNextChange?: (value: string) => void;
   onNextFocus?: () => void;
@@ -122,22 +111,19 @@ function SequenceField({
   sequence,
   nextDisplayValue,
   hint,
-  disabled = false,
-  badge,
   onPrefixChange,
   onNextChange,
   onNextFocus,
   onNextBlur,
 }: SequenceFieldProps) {
   return (
-    <Field id={prefixId} label={label} hint={hint} disabled={disabled} badge={badge}>
+    <Field id={prefixId} label={label} hint={hint}>
       <div className="flex items-center gap-2">
         <Input
           id={prefixId}
           value={sequence.prefix}
           onChange={(e) => onPrefixChange?.(e.target.value)}
           placeholder="Prefix"
-          disabled={disabled}
           className="min-w-0 flex-1"
         />
         <span className="text-muted-foreground">/</span>
@@ -149,7 +135,6 @@ function SequenceField({
           onFocus={() => onNextFocus?.()}
           onBlur={(e) => onNextBlur?.(e.target.value)}
           min={0}
-          disabled={disabled}
           className="min-w-0 flex-1"
         />
       </div>
@@ -355,7 +340,10 @@ export function FinancialSettingsForm({
             description="Configure prefixes and next numbers for financial documents."
           />
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div
+            data-testid="document-numbering-grid"
+            className="grid grid-cols-1 gap-4 md:grid-cols-2"
+          >
             <SequenceField
               label="Invoice Numbers"
               prefixId="invoice-prefix"
@@ -394,51 +382,23 @@ export function FinancialSettingsForm({
               onNextBlur={(v) => handleNextNumberBlur("quote", v)}
               hint={`Next: ${sequences.quote.prefix}${sequences.quote.nextNumber}`}
             />
-          </div>
-
-          <div className="my-[18px] h-px bg-border" />
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <SequenceField
-              label="Statement Numbers"
-              prefixId="statement-prefix"
-              nextId="statement-next"
-              sequence={sequences.statement}
-              nextDisplayValue={nextDisplayValue("statement")}
-              onPrefixChange={(v) => onSequencePrefixChange("statement", v)}
-              onNextChange={(v) => handleNextNumberChange("statement", v)}
-              onNextFocus={() => handleNextNumberFocus("statement")}
-              onNextBlur={(v) => handleNextNumberBlur("statement", v)}
-              hint={`Feeds Statement Automation → next: ${sequences.statement.prefix}${sequences.statement.nextNumber}`}
-            />
             <SequenceField
               label="Statement of Account Numbers"
               prefixId="statement-of-account-prefix"
               nextId="statement-of-account-next"
               sequence={sequences.statementOfAccount}
               nextDisplayValue={nextDisplayValue("statementOfAccount")}
-              onPrefixChange={(v) => onSequencePrefixChange("statementOfAccount", v)}
-              onNextChange={(v) => handleNextNumberChange("statementOfAccount", v)}
-              onNextFocus={() => handleNextNumberFocus("statementOfAccount")}
-              onNextBlur={(v) => handleNextNumberBlur("statementOfAccount", v)}
-              hint={`Its own series, so the two statements never share a number → next: ${sequences.statementOfAccount.prefix}${sequences.statementOfAccount.nextNumber}`}
-            />
-            <SequenceField
-              label="Credit Note Numbers"
-              prefixId="credit-note-prefix"
-              nextId="credit-note-next"
-              sequence={CREDIT_NOTE_SEQUENCE_DISPLAY}
-              nextDisplayValue={CREDIT_NOTE_SEQUENCE_DISPLAY.nextNumber}
-              disabled
-              hint="Shown for completeness — no Credit Note feature yet"
-              badge={
-                <Badge
-                  variant="outline"
-                  className="text-[10px] uppercase tracking-wide text-muted-foreground"
-                >
-                  later phase
-                </Badge>
+              onPrefixChange={(v) =>
+                onSequencePrefixChange("statementOfAccount", v)
               }
+              onNextChange={(v) =>
+                handleNextNumberChange("statementOfAccount", v)
+              }
+              onNextFocus={() => handleNextNumberFocus("statementOfAccount")}
+              onNextBlur={(v) =>
+                handleNextNumberBlur("statementOfAccount", v)
+              }
+              hint={`Next: ${sequences.statementOfAccount.prefix}${sequences.statementOfAccount.nextNumber}`}
             />
           </div>
 

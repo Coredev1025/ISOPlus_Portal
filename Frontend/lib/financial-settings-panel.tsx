@@ -176,6 +176,9 @@ export function FinancialSettingsPanel({
             : "";
         formDataToSend.append(key, text);
       }
+      // `statement` (STM-) is hidden from Document Number Configuration but
+      // Statement Automation still claims it for monthly budget statements —
+      // re-send the loaded value so a Finance save does not reset the series.
       formDataToSend.append(
         "documentNumbering",
         JSON.stringify({
