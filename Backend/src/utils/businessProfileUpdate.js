@@ -78,6 +78,18 @@ export function mergeDocumentNumbering(existing, incoming = {}) {
   return { ...plain, ...incoming };
 }
 
+/** Drop undefined entries so findByIdAndUpdate does not persist empty nests as {}. */
+function omitUndefined(object) {
+  return Object.fromEntries(
+    Object.entries(object).filter(([, value]) => value !== undefined)
+  );
+}
+
+function nestedUpdate(fields) {
+  const defined = omitUndefined(fields);
+  return Object.keys(defined).length > 0 ? defined : undefined;
+}
+
 export function buildBusinessUpdateData(body) {
   const {
     name,
@@ -103,16 +115,16 @@ export function buildBusinessUpdateData(body) {
     documentNumbering,
   } = body;
 
-  return {
+  return omitUndefined({
     name,
-    address: { street, country, suburb, state, postcode },
+    address: nestedUpdate({ street, country, suburb, state, postcode }),
     phone,
     email,
     abn,
     acn,
     companyRegistrationId,
     workspaceId,
-    bankDetails: {
+    bankDetails: nestedUpdate({
       accountName: bankAccountName,
       bankName,
       bsb,
@@ -120,10 +132,10 @@ export function buildBusinessUpdateData(body) {
       paymentReference,
       accountsReceivableTerms,
       accountsPayableTerms,
-    },
+    }),
     documentNumbering,
     headOfficeTimezone: headOfficeTimezone || 'Australia/Sydney',
-  };
+  });
 }
 
 export function parseLogoRemovals(body) {

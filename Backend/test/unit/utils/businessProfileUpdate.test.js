@@ -92,6 +92,32 @@ describe('mergeDocumentNumbering', () => {
 });
 
 describe('buildBusinessUpdateData', () => {
+  // findByIdAndUpdate treats nested objects of undefined as {} and wipes
+  // stored bankDetails / address. Omit those nests when the body did not
+  // send any of their fields.
+  it('omits address and bankDetails when those fields are absent from the body', () => {
+    const update = buildBusinessUpdateData({
+      name: 'Wipe Co',
+      workspaceId: 'ws-wipe',
+      documentNumbering: {
+        invoice: { prefix: 'INV-', nextNumber: 11 },
+      },
+    });
+
+    expect(update).toEqual({
+      name: 'Wipe Co',
+      workspaceId: 'ws-wipe',
+      documentNumbering: {
+        invoice: { prefix: 'INV-', nextNumber: 11 },
+      },
+      headOfficeTimezone: 'Australia/Sydney',
+    });
+    expect(update).not.toHaveProperty('address');
+    expect(update).not.toHaveProperty('bankDetails');
+    expect(update).not.toHaveProperty('phone');
+    expect(update).not.toHaveProperty('email');
+  });
+
   it('maps a full multipart body onto the Business document shape', () => {
     const body = {
       name: 'Hillsgrade Care Services',
@@ -169,17 +195,11 @@ describe('buildBusinessUpdateData', () => {
     expect(result).not.toHaveProperty('_id');
   });
 
-  it('leaves absent nested fields undefined rather than inventing values', () => {
+  it('keeps only defined nested address fields and omits empty bankDetails', () => {
     const result = buildBusinessUpdateData({ name: 'Acme', street: '1 High St' });
 
-    expect(result.address).toEqual({
-      street: '1 High St',
-      country: undefined,
-      suburb: undefined,
-      state: undefined,
-      postcode: undefined,
-    });
-    expect(result.bankDetails.accountName).toBeUndefined();
+    expect(result.address).toEqual({ street: '1 High St' });
+    expect(result).not.toHaveProperty('bankDetails');
   });
 });
 

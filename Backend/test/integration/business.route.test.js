@@ -49,6 +49,14 @@ describe('Business routes', () => {
     await Business.create({
       workspaceId: 'ws-soa',
       name: 'SOA Co',
+      phone: '+61 2 5550 1111',
+      address: { street: '1 Main', suburb: 'Sydney', state: 'NSW', postcode: '2000' },
+      bankDetails: {
+        accountName: 'SOA Co',
+        bankName: 'CBA',
+        bsb: '062000',
+        accountNumber: '12345678',
+      },
       documentNumbering: {
         invoice: { prefix: 'INV-', nextNumber: 10 },
         purchaseOrder: { prefix: 'PO-', nextNumber: 20 },
@@ -78,9 +86,24 @@ describe('Business routes', () => {
       prefix: 'SOA-',
       nextNumber: 27,
     });
+    // Numbering-only PUTs must not wipe the rest of the stored profile.
+    expect(res.body.phone).toBe('+61 2 5550 1111');
+    expect(res.body.bankDetails).toMatchObject({
+      accountName: 'SOA Co',
+      bankName: 'CBA',
+      bsb: '062000',
+      accountNumber: '12345678',
+    });
+    expect(res.body.address).toMatchObject({
+      street: '1 Main',
+      suburb: 'Sydney',
+      state: 'NSW',
+      postcode: '2000',
+    });
 
     const stored = await Business.findOne({ workspaceId: 'ws-soa' }).lean();
     expect(stored.documentNumbering.statementOfAccount.nextNumber).toBe(27);
+    expect(stored.bankDetails.bsb).toBe('062000');
   });
 
   it('persists statementOfAccount when it is included in documentNumbering', async () => {
