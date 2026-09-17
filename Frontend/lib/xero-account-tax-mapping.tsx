@@ -383,7 +383,7 @@ export function XeroAccountTaxMapping({
           <h5 className="text-[13px] font-bold">Default account &amp; tax mapping</h5>
         </div>
         <p className="text-[12.5px] text-muted-foreground">
-          Sets the Xero account code and tax rate ISO+ uses when creating each synced
+          Sets the Xero account code and tax rate ISO+™ uses when creating each synced
           document type.
         </p>
         {!isConnected ? (
