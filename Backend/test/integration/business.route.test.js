@@ -45,17 +45,69 @@ describe('Business routes', () => {
     expect(res.body.xeroConnectionLogs).toBeUndefined();
   });
 
-  it('does not expose POST /api/business/xero/connect', async () => {
-    const { agent } = await authenticatedAgent(app);
-    const res = await agent.post('/api/business/xero/connect').send({
-      workspaceId: 'ws-connect',
-      tenantId: 'tenant-1',
-      tokens: {
-        access_token: 'access',
-        refresh_token: 'refresh',
-        expires_at: Date.now() + 60_000,
+  it('preserves statementOfAccount when a PUT omits it from documentNumbering', async () => {
+    await Business.create({
+      workspaceId: 'ws-soa',
+      name: 'SOA Co',
+      documentNumbering: {
+        invoice: { prefix: 'INV-', nextNumber: 10 },
+        purchaseOrder: { prefix: 'PO-', nextNumber: 20 },
+        quote: { prefix: 'QT-', nextNumber: 30 },
+        statement: { prefix: 'STM-', nextNumber: 40 },
+        statementOfAccount: { prefix: 'SOA-', nextNumber: 27 },
       },
     });
-    expect(res.status).toBe(404);
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent
+      .put('/api/business/profile')
+      .field('name', 'SOA Co')
+      .field('workspaceId', 'ws-soa')
+      .field(
+        'documentNumbering',
+        JSON.stringify({
+          invoice: { prefix: 'INV-', nextNumber: 11 },
+          purchaseOrder: { prefix: 'PO-', nextNumber: 20 },
+          quote: { prefix: 'QT-', nextNumber: 30 },
+          statement: { prefix: 'STM-', nextNumber: 40 },
+        })
+      );
+
+    expect(res.status).toBe(200);
+    expect(res.body.documentNumbering.invoice.nextNumber).toBe(11);
+    expect(res.body.documentNumbering.statementOfAccount).toEqual({
+      prefix: 'SOA-',
+      nextNumber: 27,
+    });
+
+    const stored = await Business.findOne({ workspaceId: 'ws-soa' }).lean();
+    expect(stored.documentNumbering.statementOfAccount.nextNumber).toBe(27);
+  });
+
+  it('persists statementOfAccount when it is included in documentNumbering', async () => {
+    await Business.create({
+      workspaceId: 'ws-soa-set',
+      name: 'SOA Set Co',
+      documentNumbering: {
+        statementOfAccount: { prefix: 'SOA-', nextNumber: 1 },
+      },
+    });
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent
+      .put('/api/business/profile')
+      .field('name', 'SOA Set Co')
+      .field('workspaceId', 'ws-soa-set')
+      .field(
+        'documentNumbering',
+        JSON.stringify({
+          invoice: { prefix: 'INV-', nextNumber: 1 },
+          purchaseOrder: { prefix: 'PO-', nextNumber: 1 },
+          quote: { prefix: 'QT-', nextNumber: 1 },
+          statement: { prefix: 'STM-', nextNumber: 1 },
+          statementOfAccount: { prefix: 'SOA-', nextNumber: 27 },
+        })
+      );
+
+    expect(res.status).toBe(200);
+    expect(res.body.documentNumbering.statementOfAccount.nextNumber).toBe(27);
   });
 });

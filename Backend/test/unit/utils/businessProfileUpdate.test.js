@@ -15,6 +15,7 @@ import { setLogo } from '../../../src/services/isoplus.js';
 import {
   applyBusinessLogoUpdates,
   buildBusinessUpdateData,
+  mergeDocumentNumbering,
   parseLogoRemovals,
 } from '../../../src/utils/businessProfileUpdate.js';
 
@@ -57,6 +58,36 @@ describe('parseLogoRemovals', () => {
       squareLogo: false,
       wideLogo: false,
     });
+  });
+});
+
+describe('mergeDocumentNumbering', () => {
+  it('keeps an existing statementOfAccount series when the PUT omits it', () => {
+    expect(
+      mergeDocumentNumbering(
+        {
+          invoice: { prefix: 'INV-', nextNumber: 10 },
+          statementOfAccount: { prefix: 'SOA-', nextNumber: 27 },
+        },
+        {
+          invoice: { prefix: 'INV-', nextNumber: 11 },
+          statement: { prefix: 'STM-', nextNumber: 1 },
+        },
+      ),
+    ).toEqual({
+      invoice: { prefix: 'INV-', nextNumber: 11 },
+      statement: { prefix: 'STM-', nextNumber: 1 },
+      statementOfAccount: { prefix: 'SOA-', nextNumber: 27 },
+    });
+  });
+
+  it('applies an explicit statementOfAccount update', () => {
+    expect(
+      mergeDocumentNumbering(
+        { statementOfAccount: { prefix: 'SOA-', nextNumber: 1 } },
+        { statementOfAccount: { prefix: 'SOA-', nextNumber: 27 } },
+      ),
+    ).toEqual({ statementOfAccount: { prefix: 'SOA-', nextNumber: 27 } });
   });
 });
 

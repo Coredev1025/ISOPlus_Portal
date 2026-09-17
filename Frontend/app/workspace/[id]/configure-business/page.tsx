@@ -55,6 +55,8 @@ export default function ConfigureBusinessPage() {
   const [statementSequence, setStatementSequence] = useState<NumberSequence>(
     () => cloneDefaultSequences().statement
   );
+  const [statementOfAccountSequence, setStatementOfAccountSequence] =
+    useState<NumberSequence>(() => cloneDefaultSequences().statementOfAccount);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [apiError, setApiError] = useState<string>('');
@@ -351,6 +353,7 @@ export default function ConfigureBusinessPage() {
           setPurchaseOrderSequence(sequences.purchaseOrder);
           setQuoteSequence(sequences.quote);
           setStatementSequence(sequences.statement);
+          setStatementOfAccountSequence(sequences.statementOfAccount);
 
           // Load logo previews via authenticated API (no expiring presigned URLs in UI)
           await applyLogoPreviews({
@@ -416,6 +419,7 @@ export default function ConfigureBusinessPage() {
         purchaseOrder: purchaseOrderSequence,
         quote: quoteSequence,
         statement: statementSequence,
+        statementOfAccount: statementOfAccountSequence,
       }));
 
       if (logoFile) {

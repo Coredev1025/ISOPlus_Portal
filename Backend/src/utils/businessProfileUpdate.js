@@ -64,6 +64,20 @@ export async function applyBusinessLogoUpdates({
   return updateData;
 }
 
+/**
+ * Shallow-merge numbering series so a PUT that omits a series (e.g. older
+ * Configure Business / Financial Settings clients without statementOfAccount)
+ * cannot reset that series to the schema default of 1.
+ */
+export function mergeDocumentNumbering(existing, incoming = {}) {
+  if (!existing || typeof existing !== 'object') {
+    return { ...incoming };
+  }
+  const plain =
+    typeof existing.toObject === 'function' ? existing.toObject() : existing;
+  return { ...plain, ...incoming };
+}
+
 export function buildBusinessUpdateData(body) {
   const {
     name,

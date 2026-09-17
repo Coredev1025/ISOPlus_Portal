@@ -1,10 +1,11 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ComponentProps } from 'react';
+import { useState, type ComponentProps } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   FinancialSettingsForm,
   type BankDetailsForm,
+  type DocumentSequenceType,
   type DocumentSequences,
 } from '@/lib/financial-settings-form';
 
@@ -105,16 +106,45 @@ describe('FinancialSettingsForm', () => {
 
   it('confirms before reducing a document next number', async () => {
     const user = userEvent.setup();
-    const { container, onSequenceNextChange } = renderForm();
+    const onSequenceNextChange = vi.fn();
+
+    function Harness() {
+      const [sequences, setSequences] = useState(SEQUENCES);
+      return (
+        <FinancialSettingsForm
+          bankDetails={BANK}
+          sequences={sequences}
+          loading={false}
+          errors={[]}
+          apiError=""
+          showSuccess={false}
+          onBankChange={vi.fn()}
+          onSequencePrefixChange={vi.fn()}
+          onSequenceNextChange={(type: DocumentSequenceType, value: number) => {
+            onSequenceNextChange(type, value);
+            setSequences((prev) => ({
+              ...prev,
+              [type]: { ...prev[type], nextNumber: value },
+            }));
+          }}
+          onSave={vi.fn()}
+        />
+      );
+    }
+
+    const { container } = render(<Harness />);
     const invoiceNext = container.querySelector('#invoice-next') as HTMLInputElement;
 
+    fireEvent.focus(invoiceNext);
     fireEvent.change(invoiceNext, { target: { value: '999' } });
+    fireEvent.blur(invoiceNext);
 
     expect(
       await screen.findByText(/reducing the next number may result in duplicate/i)
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /continue/i }));
+    expect(invoiceNext).toHaveValue(999);
     expect(onSequenceNextChange).toHaveBeenCalledWith('invoice', 999);
   });
 
@@ -122,12 +152,76 @@ describe('FinancialSettingsForm', () => {
     const { container, onSequenceNextChange } = renderForm();
     const invoiceNext = container.querySelector('#invoice-next') as HTMLInputElement;
 
+    fireEvent.focus(invoiceNext);
     fireEvent.change(invoiceNext, { target: { value: '1001' } });
+    fireEvent.blur(invoiceNext);
 
     expect(onSequenceNextChange).toHaveBeenCalledWith('invoice', 1001);
     expect(
       screen.queryByText(/reducing the next number may result in duplicate/i)
     ).not.toBeInTheDocument();
+  });
+
+  // Typing "1081" over "1001" fires onChange("1") first. Confirming on that
+  // intermediate value silently commits 1 after Continue — a billing collision.
+  it('does not treat the first digit of a larger typed number as a reduction', async () => {
+    const user = userEvent.setup();
+    const onSequenceNextChange = vi.fn();
+    const initial: DocumentSequences = {
+      ...SEQUENCES,
+      purchaseOrder: { prefix: 'PO-', nextNumber: 1001 },
+    };
+
+    function Harness() {
+      const [sequences, setSequences] = useState(initial);
+      return (
+        <FinancialSettingsForm
+          bankDetails={BANK}
+          sequences={sequences}
+          loading={false}
+          errors={[]}
+          apiError=""
+          showSuccess={false}
+          onBankChange={vi.fn()}
+          onSequencePrefixChange={vi.fn()}
+          onSequenceNextChange={(type: DocumentSequenceType, value: number) => {
+            onSequenceNextChange(type, value);
+            setSequences((prev) => ({
+              ...prev,
+              [type]: { ...prev[type], nextNumber: value },
+            }));
+          }}
+          onSave={vi.fn()}
+        />
+      );
+    }
+
+    const { container } = render(<Harness />);
+    const poNext = container.querySelector('#po-next') as HTMLInputElement;
+
+    fireEvent.focus(poNext);
+    fireEvent.change(poNext, { target: { value: '1' } });
+    expect(
+      screen.queryByText(/reducing the next number may result in duplicate/i)
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(poNext, { target: { value: '1081' } });
+    fireEvent.blur(poNext);
+
+    expect(
+      screen.queryByText(/reducing the next number may result in duplicate/i)
+    ).not.toBeInTheDocument();
+    expect(onSequenceNextChange).toHaveBeenLastCalledWith('purchaseOrder', 1081);
+    expect(poNext).toHaveValue(1081);
+
+    fireEvent.focus(poNext);
+    fireEvent.change(poNext, { target: { value: '500' } });
+    fireEvent.blur(poNext);
+    expect(
+      await screen.findByText(/reducing the next number may result in duplicate/i)
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(poNext).toHaveValue(1081);
   });
 
   it('wires remaining bank fields and sequence prefixes', () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { AlertCircle, Hash, Landmark } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -110,6 +110,8 @@ type SequenceFieldProps = Readonly<{
   badge?: ReactNode;
   onPrefixChange?: (value: string) => void;
   onNextChange?: (value: string) => void;
+  onNextFocus?: () => void;
+  onNextBlur?: (value: string) => void;
 }>;
 
 function SequenceField({
@@ -122,6 +124,8 @@ function SequenceField({
   badge,
   onPrefixChange,
   onNextChange,
+  onNextFocus,
+  onNextBlur,
 }: SequenceFieldProps) {
   return (
     <Field id={prefixId} label={label} hint={hint} disabled={disabled} badge={badge}>
@@ -140,6 +144,8 @@ function SequenceField({
           type="number"
           value={sequence.nextNumber}
           onChange={(e) => onNextChange?.(e.target.value)}
+          onFocus={() => onNextFocus?.()}
+          onBlur={(e) => onNextBlur?.(e.target.value)}
           min={0}
           disabled={disabled}
           className="min-w-0 flex-1"
@@ -177,12 +183,22 @@ export function FinancialSettingsForm({
   const [alertDialog, setAlertDialog] = useState<{
     isOpen: boolean;
     type: DocumentSequenceType;
-    newValue: number;
+    previousValue: number;
   }>({
     isOpen: false,
     type: "invoice",
-    newValue: 0,
+    previousValue: 0,
   });
+  // Focus-time baseline so mid-keystroke values (typing 1081 over 1001 → "1")
+  // are not treated as intentional reductions.
+  const nextNumberBaseline = useRef<Partial<Record<DocumentSequenceType, number>>>(
+    {}
+  );
+  const keepReducedValueRef = useRef(false);
+
+  const handleNextNumberFocus = (type: DocumentSequenceType) => {
+    nextNumberBaseline.current[type] = sequences[type].nextNumber;
+  };
 
   const handleNextNumberChange = (
     type: DocumentSequenceType,
@@ -190,12 +206,29 @@ export function FinancialSettingsForm({
   ) => {
     const newValue = Number.parseInt(value, 10);
     if (!Number.isFinite(newValue)) return;
-
-    if (newValue < sequences[type].nextNumber) {
-      setAlertDialog({ isOpen: true, type, newValue });
-      return;
-    }
     onSequenceNextChange(type, newValue);
+  };
+
+  const handleNextNumberBlur = (type: DocumentSequenceType, value: string) => {
+    const newValue = Number.parseInt(value, 10);
+    if (!Number.isFinite(newValue)) return;
+    const previousValue =
+      nextNumberBaseline.current[type] ?? sequences[type].nextNumber;
+    if (newValue < previousValue) {
+      setAlertDialog({
+        isOpen: true,
+        type,
+        previousValue,
+      });
+    }
+  };
+
+  const closeReduceDialog = (keepReducedValue: boolean) => {
+    if (!keepReducedValue && alertDialog.isOpen) {
+      onSequenceNextChange(alertDialog.type, alertDialog.previousValue);
+    }
+    keepReducedValueRef.current = false;
+    setAlertDialog((prev) => ({ ...prev, isOpen: false }));
   };
 
   return (
@@ -289,6 +322,8 @@ export function FinancialSettingsForm({
               sequence={sequences.invoice}
               onPrefixChange={(v) => onSequencePrefixChange("invoice", v)}
               onNextChange={(v) => handleNextNumberChange("invoice", v)}
+              onNextFocus={() => handleNextNumberFocus("invoice")}
+              onNextBlur={(v) => handleNextNumberBlur("invoice", v)}
               hint={`Next: ${sequences.invoice.prefix}${sequences.invoice.nextNumber}`}
             />
             <SequenceField
@@ -300,6 +335,8 @@ export function FinancialSettingsForm({
                 onSequencePrefixChange("purchaseOrder", v)
               }
               onNextChange={(v) => handleNextNumberChange("purchaseOrder", v)}
+              onNextFocus={() => handleNextNumberFocus("purchaseOrder")}
+              onNextBlur={(v) => handleNextNumberBlur("purchaseOrder", v)}
               hint={`Next: ${sequences.purchaseOrder.prefix}${sequences.purchaseOrder.nextNumber}`}
             />
             <SequenceField
@@ -309,6 +346,8 @@ export function FinancialSettingsForm({
               sequence={sequences.quote}
               onPrefixChange={(v) => onSequencePrefixChange("quote", v)}
               onNextChange={(v) => handleNextNumberChange("quote", v)}
+              onNextFocus={() => handleNextNumberFocus("quote")}
+              onNextBlur={(v) => handleNextNumberBlur("quote", v)}
               hint={`Next: ${sequences.quote.prefix}${sequences.quote.nextNumber}`}
             />
           </div>
@@ -323,6 +362,8 @@ export function FinancialSettingsForm({
               sequence={sequences.statement}
               onPrefixChange={(v) => onSequencePrefixChange("statement", v)}
               onNextChange={(v) => handleNextNumberChange("statement", v)}
+              onNextFocus={() => handleNextNumberFocus("statement")}
+              onNextBlur={(v) => handleNextNumberBlur("statement", v)}
               hint={`Feeds Statement Automation → next: ${sequences.statement.prefix}${sequences.statement.nextNumber}`}
             />
             <SequenceField
@@ -332,6 +373,8 @@ export function FinancialSettingsForm({
               sequence={sequences.statementOfAccount}
               onPrefixChange={(v) => onSequencePrefixChange("statementOfAccount", v)}
               onNextChange={(v) => handleNextNumberChange("statementOfAccount", v)}
+              onNextFocus={() => handleNextNumberFocus("statementOfAccount")}
+              onNextBlur={(v) => handleNextNumberBlur("statementOfAccount", v)}
               hint={`Its own series, so the two statements never share a number → next: ${sequences.statementOfAccount.prefix}${sequences.statementOfAccount.nextNumber}`}
             />
             <SequenceField
@@ -391,9 +434,11 @@ export function FinancialSettingsForm({
 
       <AlertDialog
         open={alertDialog.isOpen}
-        onOpenChange={(open) =>
-          setAlertDialog((prev) => ({ ...prev, isOpen: open }))
-        }
+        onOpenChange={(open) => {
+          if (!open) {
+            closeReduceDialog(keepReducedValueRef.current);
+          }
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -411,8 +456,7 @@ export function FinancialSettingsForm({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                onSequenceNextChange(alertDialog.type, alertDialog.newValue);
-                setAlertDialog((prev) => ({ ...prev, isOpen: false }));
+                keepReducedValueRef.current = true;
               }}
             >
               Continue

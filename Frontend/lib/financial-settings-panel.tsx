@@ -183,6 +183,7 @@ export function FinancialSettingsPanel({
           purchaseOrder: sequences.purchaseOrder,
           quote: sequences.quote,
           statement: sequences.statement,
+          statementOfAccount: sequences.statementOfAccount,
         })
       );
 

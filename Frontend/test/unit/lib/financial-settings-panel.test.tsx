@@ -46,6 +46,7 @@ const PROFILE = {
     purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
     quote: { prefix: 'QT-', nextNumber: 1007 },
     statement: { prefix: 'STM-', nextNumber: 1000 },
+    statementOfAccount: { prefix: 'SOA-', nextNumber: 27 },
   },
 };
 
@@ -108,6 +109,8 @@ describe('FinancialSettingsPanel', () => {
       purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
       quote: { prefix: 'QT-', nextNumber: 1007 },
       statement: { prefix: 'STM-', nextNumber: 1000 },
+      // Omitting this resets the stored series to schema default 1 on PUT.
+      statementOfAccount: { prefix: 'SOA-', nextNumber: 27 },
     });
     expect(showSaveSuccessToast).toHaveBeenCalledWith('Financial settings');
   });
