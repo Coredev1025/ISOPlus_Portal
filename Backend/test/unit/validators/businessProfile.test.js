@@ -70,7 +70,7 @@ describe('collectBusinessProfileErrors', () => {
     expect(errors.some((e) => /statement number/i.test(e))).toBe(true);
   });
 
-  it('accepts a nextNumber of 0 for invoice, PO, quote and statement', () => {
+  it('accepts a nextNumber of 0 for invoice, PO, quote, statement and statementOfAccount', () => {
     const errors = collectBusinessProfileErrors({
       name: 'Acme',
       documentNumbering: JSON.stringify({
@@ -78,9 +78,21 @@ describe('collectBusinessProfileErrors', () => {
         purchaseOrder: { prefix: 'PO-', nextNumber: 0 },
         quote: { prefix: 'QT-', nextNumber: 0 },
         statement: { prefix: 'STM-', nextNumber: 0 },
+        statementOfAccount: { prefix: 'SOA-', nextNumber: 0 },
       }),
     });
     expect(errors).toEqual([]);
+  });
+
+  it('validates statementOfAccount sequence fields in document numbering', () => {
+    const errors = collectBusinessProfileErrors({
+      name: 'Acme',
+      documentNumbering: JSON.stringify({
+        statementOfAccount: { prefix: 'STATEMENT-OF-ACCOUNT', nextNumber: -1 },
+      }),
+    });
+    expect(errors.some((e) => /statementOfAccount prefix/i.test(e))).toBe(true);
+    expect(errors.some((e) => /statementOfAccount number/i.test(e))).toBe(true);
   });
 
   it('accepts a valid statement numbering sequence', () => {

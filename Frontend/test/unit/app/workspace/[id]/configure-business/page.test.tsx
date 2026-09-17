@@ -348,6 +348,7 @@ describe('configure business page', () => {
       quote: { prefix: 'HG-QT-', nextNumber: 12 },
       // Loaded default when the profile had no statement series yet.
       statement: { prefix: 'STM-', nextNumber: 1 },
+      statementOfAccount: { prefix: 'SOA-', nextNumber: 1 },
     });
     // Nothing was uploaded or removed, so no logo keys ride along.
     expect(Object.keys(savedForms[0])).not.toContain('defaultLogo');

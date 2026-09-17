@@ -1,6 +1,12 @@
 import { EMAIL_PATTERN } from '../constants/validation.js';
 
-const DOC_NUMBERING_TYPES = ['invoice', 'purchaseOrder', 'quote', 'statement'];
+const DOC_NUMBERING_TYPES = [
+  'invoice',
+  'purchaseOrder',
+  'quote',
+  'statement',
+  'statementOfAccount',
+];
 
 function validateSequenceFields(type, sequence, errors) {
   const prefix = sequence.prefix;

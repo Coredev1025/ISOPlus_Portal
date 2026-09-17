@@ -22,6 +22,7 @@ import { toRequiredQueryString } from '../utils/securityHelpers.js';
 import {
   applyBusinessLogoUpdates,
   buildBusinessUpdateData,
+  mergeDocumentNumbering,
   parseLogoRemovals,
 } from '../utils/businessProfileUpdate.js';
 import { sanitizeLogValue } from '../utils/sanitizeLog.js';
@@ -193,12 +194,16 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
     const workspaceId = toRequiredQueryString(req.body.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
 
-    let documentNumbering = {};
+    let incomingNumbering = {};
     if (req.body.documentNumbering) {
-      documentNumbering = JSON.parse(req.body.documentNumbering);
+      incomingNumbering = JSON.parse(req.body.documentNumbering);
     }
 
     let business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
+    const documentNumbering = mergeDocumentNumbering(
+      business?.documentNumbering,
+      incomingNumbering
+    );
     const updateData = buildBusinessUpdateData({
       ...req.body,
       workspaceId,
