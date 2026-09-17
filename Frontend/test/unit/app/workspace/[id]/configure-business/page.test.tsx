@@ -172,7 +172,7 @@ async function expectNoAdditionalSettingsTab() {
  * a double submit. fireEvent hits the same onClick without the extra work. */
 function clickSave() {
   fireEvent.click(
-    screen.getByRole('button', { name: 'Save Business Configuration' }),
+    screen.getByRole('button', { name: 'Save Changes' }),
   );
 }
 
@@ -320,14 +320,61 @@ describe('configure business page', () => {
     expect(logoRequests).toHaveLength(0);
   });
 
-  it('renders company logo tabs full width with equal columns', async () => {
+  it('shows all three logo upload sections side-by-side (no tabs)', async () => {
     stubBusiness();
     renderPage();
 
-    const tablist = await screen.findByRole('tablist');
-    expect(tablist.className).toMatch(/\bw-full\b/);
-    expect(tablist.className).toMatch(/\bgrid-cols-3\b/);
-    expect(tablist.className).toMatch(/\bgap-/);
+    await waitFor(() => {
+      expect(screen.getByLabelText('Company Name')).toHaveValue('Hillsgrade Care');
+    });
+
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+
+    // All three labels visible at once — not hidden behind tabs.
+    expect(screen.getByRole('heading', { name: 'Default Logo' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Square Logo' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Wide Logo' })).toBeInTheDocument();
+
+    const logoGrid = screen.getByTestId('company-logos-grid');
+    expect(logoGrid.className).toMatch(/\bgrid\b/);
+    expect(logoGrid.className).toMatch(/\bmd:grid-cols-3\b/);
+    expect(logoGrid.className).toMatch(/\bitems-stretch\b/);
+
+    // File picker button + "No file chosen" must stay on one line in each column.
+    const fileInputs = logoGrid.querySelectorAll('input[type="file"]');
+    expect(fileInputs).toHaveLength(3);
+    fileInputs.forEach((input) => {
+      expect(input.className).toMatch(/\bblock\b/);
+      expect(input.className).toMatch(/\bwhitespace-nowrap\b/);
+      expect(input.className).toMatch(/\bw-full\b/);
+    });
+
+    // Equal-height columns so Choose File rows share one horizontal baseline.
+    const columns = Array.from(logoGrid.children);
+    expect(columns).toHaveLength(3);
+    columns.forEach((column) => {
+      expect(column.className).toMatch(/\bh-full\b/);
+      expect(column.className).toMatch(/\bflex-col\b/);
+    });
+  });
+
+  it('uses the full-width finance-settings page chrome and Save Changes label', async () => {
+    stubBusiness();
+    renderPage();
+
+    expect(
+      await screen.findByRole('heading', { name: 'Business Settings' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Manage your business details, address, and branding.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Save Changes' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Save Business Configuration' }),
+    ).not.toBeInTheDocument();
   });
 
   it('saves every field as one multipart body carrying the workspace id and the numbering', async () => {
@@ -423,7 +470,7 @@ describe('configure business page', () => {
       screen.queryByText('Please correct the following errors:'),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'Save Business Configuration' }),
+      screen.getByRole('button', { name: 'Save Changes' }),
     ).toBeEnabled();
   });
 

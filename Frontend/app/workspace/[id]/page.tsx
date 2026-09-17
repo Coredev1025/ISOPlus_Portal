@@ -247,13 +247,13 @@ export default function WorkspaceDetail() {
                   </div>
                   <h2 className="text-xl font-semibold">Business Configuration</h2>
                   <p className="mb-4 flex-1 text-sm text-muted-foreground">
-                    Manage your business details, address, and tax information
+                    Manage your business details, address, and branding.
                   </p>
                   <Button
                     onClick={() => router.push(`/workspace/${workspace?.id}/configure-business`)}
                     className="mt-auto w-full"
                   >
-                    <span>Configure Business</span>
+                    <span>Manage Business</span>
                   </Button>
                 </Card>
 
