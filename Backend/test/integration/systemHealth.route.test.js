@@ -227,6 +227,42 @@ describe('GET /api/system-health/clients', () => {
 
     expect(res.body.clients[0].connection).toBe('disconnected');
   });
+
+  /**
+   * KAN-43. The row is the only place an operator picks a client from, and it
+   * was labelled with the raw workspaceId because `.select()` omitted `name` —
+   * a field already on the same Business document. No join is involved; the
+   * query was simply not asking for it.
+   */
+  it('names each client, so the row is not labelled with a raw workspace id', async () => {
+    await AutomationSettings.create({ workspaceId: WS, invoice: { enabled: true } });
+    await Business.create({ workspaceId: WS, name: 'Acme Disability Services', xeroIntegrated: true });
+
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.get('/api/system-health/clients');
+
+    expect(res.body.clients[0].name).toBe('Acme Disability Services');
+  });
+
+  /**
+   * `name` is optional on the Business schema, and a configured workspace may
+   * have no Business row at all (the disconnected case above). Null rather than
+   * undefined or the workspaceId: the API says "there is no name", and the
+   * frontend decides what to show instead. Echoing the id back here would make
+   * a missing name indistinguishable from a client genuinely called `ws-...`.
+   */
+  it('returns a null name rather than inventing one when the Business row has none', async () => {
+    await AutomationSettings.create({ workspaceId: WS, invoice: { enabled: true } });
+    await Business.create({ workspaceId: WS, xeroIntegrated: true });
+    await AutomationSettings.create({ workspaceId: 'ws-no-business', invoice: { enabled: true } });
+
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.get('/api/system-health/clients');
+
+    const byId = new Map(res.body.clients.map((c) => [c.workspaceId, c]));
+    expect(byId.get(WS).name).toBeNull();
+    expect(byId.get('ws-no-business').name).toBeNull();
+  });
 });
 
 describe('GET /api/system-health/workspace/:workspaceId', () => {
