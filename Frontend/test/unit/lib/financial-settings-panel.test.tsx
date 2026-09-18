@@ -99,8 +99,8 @@ describe('FinancialSettingsPanel', () => {
     render(<FinancialSettingsPanel workspaceId="ws-1" />);
     await screen.findByDisplayValue('CBA');
 
-    // Statement Numbers / Credit Note are gone from the form; STM- still rides
-    // along on save because monthly budget statements claim that series.
+    // Statement Numbers is hidden; omit STM- on PUT so merge keeps the live
+    // automation counter (sending clone defaults would overwrite it).
     expect(screen.queryByText('Statement Numbers')).not.toBeInTheDocument();
     expect(screen.queryByText('Credit Note Numbers')).not.toBeInTheDocument();
 
@@ -113,10 +113,11 @@ describe('FinancialSettingsPanel', () => {
       invoice: { prefix: 'INV-', nextNumber: 1042 },
       purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
       quote: { prefix: 'QT-', nextNumber: 1007 },
-      statement: { prefix: 'STM-', nextNumber: 1000 },
-      // Omitting this resets the stored series to schema default 1 on PUT.
       statementOfAccount: { prefix: 'SOA-', nextNumber: 27 },
     });
+    expect(
+      Object.keys(JSON.parse(String(body.get('documentNumbering'))))
+    ).not.toContain('statement');
     expect(showSaveSuccessToast).toHaveBeenCalledWith('Financial settings');
   });
 

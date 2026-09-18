@@ -99,7 +99,7 @@ describe('XeroAccountTaxMapping', () => {
     expect(
       screen.getByText(/connect to xero to load accounts and tax rates/i)
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /save mapping/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save Mapping' })).toBeDisabled();
   });
 
   it('loads options when connected and saves mapping', async () => {

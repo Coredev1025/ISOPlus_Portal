@@ -469,7 +469,7 @@ export function XeroAccountTaxMapping({
       <div className="flex justify-end">
         <Button onClick={handleSave} disabled={!isConnected || isSaving}>
           {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          Save mapping
+          Save Mapping
         </Button>
       </div>
     </div>

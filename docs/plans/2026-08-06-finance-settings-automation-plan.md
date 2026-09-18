@@ -598,7 +598,7 @@ Each task below is a candidate for its own expanded plan when picked up. Track A
 - [x] Add Statement Numbers — real, required (same validation as Invoice/PO/Quote), feeds Task 13 (3.3).
 - [x] Add Credit Note Numbers **disabled/greyed**, not hidden (3.4).
 - [x] Data migration (3.5): **no-op**. Bank details and Invoice/PO/Quote numbering already live on `Business.bankDetails` / `Business.documentNumbering`; clients keep those values. No second storage location and no empty migration file. Statement is additive (`STM-` / `1000` via schema default for new docs; existing docs gain it on next profile save or when Mongoose applies defaults on create paths).
-- [x] Regression (3.6): Configure Business no longer exposes Additional Settings; Financial Settings form/panel unit tests cover Bank Details + Document Numbering (+ statement / disabled credit note); Xero accounting routes and signed-out finance-settings auth boundary remain covered separately.
+- [x] Regression (3.6): Configure Business no longer exposes Additional Settings; Financial Settings form/panel unit tests cover Bank Details + Document Numbering (invoice / PO / quote / SOA; Statement Numbers and credit-note placeholders removed — STM- omitted on PUT and preserved by merge). Xero accounting routes and signed-out finance-settings auth boundary remain covered separately.
 
 **Covers:** 3.1–3.6. Status: done on `feature/KAN-8-epic-3-financial-settings-tab-relocation-one`.
 
@@ -606,7 +606,7 @@ Each task below is a candidate for its own expanded plan when picked up. Track A
 
 ### Task 11: Epic 4 — Accounting Integrations tab (Track A)
 
-**Files (as built):** `Frontend/lib/accounting-integrations-panel.tsx`, `Frontend/lib/xero-connect-section.tsx`, `Frontend/lib/xero-disabled-sync-toggles.tsx`, `Frontend/lib/xero-account-tax-mapping.tsx`, `Frontend/lib/xero-account-tax-mapping-options.ts`; Backend persists on `Business.xeroLineItemMapping` (not a renamed `accountingMapping`). Old `/xero-integration` redirects to finance-settings accounting tab.
+**Files (as built):** `Frontend/lib/accounting-integrations-panel.tsx`, `Frontend/lib/xero-connect-section.tsx`, `Frontend/lib/xero-account-tax-mapping.tsx`, `Frontend/lib/xero-account-tax-mapping-options.ts`; Backend persists on `Business.xeroLineItemMapping` (not a renamed `accountingMapping`). Old `/xero-integration` redirects to finance-settings accounting tab. Coming-soon sync toggle placeholders (`xero-disabled-sync-toggles.tsx`: Invoice / Customer / Payment / Contact Sync) were removed later — not wired, client asked them off the tab.
 
 **Interfaces produced:** `Business.xeroLineItemMapping: { quote, purchaseOrder, invoice, quoteOverrides: { quoteService, material } }` each `{ accountCode, taxType, taxRatePercent }`.
 

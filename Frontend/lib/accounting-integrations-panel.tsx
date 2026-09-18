@@ -15,7 +15,6 @@ import {
   XeroAccountTaxMapping,
 } from "@/lib/xero-account-tax-mapping";
 import type { XeroLineItemMapping } from "@/lib/xero-account-tax-mapping-options";
-import { XeroDisabledSyncToggles } from "@/lib/xero-disabled-sync-toggles";
 import { XeroConnectionAuditLogs } from "@/lib/xero-connection-audit-logs";
 import { DEFAULT_BUSINESS_TIMEZONE } from "@/constants/timezone";
 import { showFetchErrorToast } from "@/lib/toast-utils";
@@ -233,8 +232,6 @@ export function AccountingIntegrationsPanel({
                 onMappingSaved={setMapping}
                 onOptionsLoadFailed={handleOptionsLoadFailed}
               />
-              <div className="border-t" />
-              <XeroDisabledSyncToggles />
             </div>
           </div>
         </>
