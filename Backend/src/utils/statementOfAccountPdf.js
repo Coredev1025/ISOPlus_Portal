@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 import { generate } from '@pdfme/generator';
 import {
-  line, rectangle, table, text,
+  image, line, rectangle, table, text,
 } from '@pdfme/schemas';
 
 import { AGEING_BUCKETS, assertAgeingReconciles } from './statementAgeing.js';
@@ -104,6 +104,12 @@ export function buildStatementInputs(statement, timezone = DEFAULT_TIMEZONE) {
   // fields (STATEMENT TO, the column heads, the notice) carry their own
   // content in the template and take no input.
   return {
+    // KAN-229. Already a data URI by the time it gets here — this module does
+    // no I/O. Empty rather than absent when the business has no Default Logo:
+    // the image plugin returns without drawing on a falsy value, which is the
+    // text-only header every statement had before.
+    logo: provider.logo ?? '',
+
     providerBlock: block(
       provider.name,
       provider.abn ? `ABN: ${provider.abn}` : '',
@@ -154,8 +160,12 @@ export async function renderStatementOfAccountPdf(statement, timezone = DEFAULT_
     inputs: [buildStatementInputs(statement, timezone)],
     // `rectangle` draws the summary strip and the ageing band. The template
     // uses no multiVariableText, so that plugin is no longer registered.
+    // `image` draws the letterhead logo, and must stay registered as long as
+    // the template carries the field — pdfme throws on a schema type it has
+    // no renderer for, so dropping it fails every statement, not just the
+    // ones with a logo.
     plugins: {
-      text, line, rectangle, table,
+      text, line, rectangle, table, image,
     },
   });
   return Buffer.from(pdfBytes);

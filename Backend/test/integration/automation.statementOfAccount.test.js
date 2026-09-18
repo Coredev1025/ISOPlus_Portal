@@ -36,6 +36,7 @@ vi.mock('../../src/utils/uploadS3.js', () => ({
   getS3File: vi.fn(async () => Buffer.from('logo')),
 }));
 
+const { getS3File } = await import('../../src/utils/uploadS3.js');
 const { default: Board } = await import('../../src/models/Board.js');
 const { default: Business } = await import('../../src/models/Business.js');
 const { default: Item } = await import('../../src/models/Item.js');
@@ -46,6 +47,7 @@ const {
   PDFLINK_TYPE_STATEMENT_OF_ACCOUNT,
 } = await import('../../src/constants/automation.js');
 const { generateStatementsForBoard } = await import('../../src/services/automation/generateStatements.js');
+const { generateStatementOfAccount } = await import('../../src/services/automation/generateStatementOfAccount.js');
 
 const WORKSPACE = '55369';
 const BOARD = 'eNiJpH14PN3';
@@ -54,6 +56,9 @@ const TZ = 'Australia/Sydney';
 // A slot in September makes previousCalendarMonth resolve to August 2026.
 const SLOT = '2026-09-01T13:00:00.000Z';
 const PERIOD_KEY = '20260901-2300';
+const LOGO_KEY = 'logos/55369/logo.png';
+// What the mocked store returns for that key, as getLogoData renders it.
+const LOGO_DATA_URI = `data:image/png;base64,${Buffer.from('logo').toString('base64')}`;
 
 /** The statement-of-account render, identified by the block only it produces. */
 const statementRender = () => renderedInputs.find((input) => input?.transactions !== undefined);
@@ -71,6 +76,7 @@ async function seed() {
     workspaceId: WORKSPACE,
     name: 'Dev-Test11',
     abn: '12 345 678 901',
+    defaultLogo: LOGO_KEY,
     bankDetails: {
       accountName: 'Dev-Test11 Pty Ltd', bankName: 'CBA', bsb: '062-000', accountNumber: '12345678',
     },
@@ -116,6 +122,10 @@ async function seed() {
 beforeEach(async () => {
   uploadedKeys.length = 0;
   renderedInputs.length = 0;
+  // The store is read for the letterhead on both documents, so the call log
+  // and any one-shot override have to start clean for each case.
+  getS3File.mockReset();
+  getS3File.mockResolvedValue(Buffer.from('logo'));
   await seed();
 });
 
@@ -410,5 +420,70 @@ describe('a scheduled statement run, on a multi-item invoice', () => {
     const rendered = statementRender();
     expect(rendered).toBeDefined();
     expect(summaryStrip(rendered)).toEqual(['$250.00', '$0.00', '$0.00', '$250.00']);
+  });
+});
+
+/**
+ * KAN-229: the statement of account never showed the business logo.
+ *
+ * The header fell back to text on every statement, while a Tax Invoice raised
+ * from the same business rendered its logo correctly — the template had no
+ * `logo` field and the generator never called `getLogoData`. Asserted here,
+ * where the whole scheduled run is exercised, because the emailed attachment
+ * and the downloadable PDF are the same bytes from the same path.
+ */
+describe('the statement of account letterhead', () => {
+  it('embeds the business default logo, read from the store', async () => {
+    await generateStatementsForBoard({
+      workspaceId: WORKSPACE, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: PERIOD_KEY,
+    });
+
+    expect(getS3File).toHaveBeenCalledWith(LOGO_KEY, false);
+    expect(statementRender().logo).toBe(LOGO_DATA_URI);
+  });
+
+  it('falls back to the text-only header when the business has no logo', async () => {
+    await Business.updateOne({ workspaceId: WORKSPACE }, { $unset: { defaultLogo: '' } });
+
+    await generateStatementsForBoard({
+      workspaceId: WORKSPACE, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: PERIOD_KEY,
+    });
+
+    expect(statementRender().logo).toBe('');
+  });
+
+  /**
+   * A logo the store cannot return must not stop the statement.
+   *
+   * `getLogoData` throws when S3 gives nothing back, and the invoice path
+   * lets that throw. A statement cannot afford to: `settledStatementOfAccount`
+   * catches whatever the statement throws and carries on with the board, so
+   * an unreadable logo object would not fail loudly — it would silently
+   * produce no statement of account at all, for every participant, while the
+   * budget statement beside it still went out.
+   *
+   * Driven through `generateStatementOfAccount` rather than the whole run
+   * because the budget statement reads the same key first and would consume
+   * the override.
+   */
+  it('still issues the statement when the logo cannot be read', async () => {
+    getS3File.mockResolvedValue(null);
+
+    const result = await generateStatementOfAccount({
+      workspaceId: WORKSPACE,
+      boardId: BOARD,
+      participant: PARTICIPANT,
+      period: { start: '2026-08-01T00:00:00.000Z', end: '2026-08-31T23:59:59.999Z' },
+      timezone: TZ,
+      periodKey: PERIOD_KEY,
+      claimStatementNumber: async () => 'SOA-99',
+      nameField: 'Participant Full Name',
+    });
+
+    expect(result).not.toBeNull();
+    expect(statementRender().logo).toBe('');
+    expect(await PDFLink.countDocuments({
+      periodKey: PERIOD_KEY, type: PDFLINK_TYPE_STATEMENT_OF_ACCOUNT,
+    })).toBe(1);
   });
 });

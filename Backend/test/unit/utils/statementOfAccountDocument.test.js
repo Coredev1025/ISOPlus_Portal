@@ -76,3 +76,26 @@ describe('buildStatementDocument', () => {
     expect(doc.provider.abn).toBe('');
   });
 });
+
+/**
+ * KAN-229. The logo arrives already resolved — a data URI, not an S3 key.
+ *
+ * This module is pure and does no I/O by design, so reading the image out of
+ * the store stays with the service that already loads the business.
+ */
+describe('buildStatementDocument — the business logo', () => {
+  const LOGO = 'data:image/png;base64,AAAA';
+
+  it('carries the resolved logo onto the provider block', () => {
+    expect(buildStatementDocument({ ...base, logo: LOGO }).provider.logo).toBe(LOGO);
+  });
+
+  // A business with no Default Logo, and a logo the store could not return,
+  // reach here the same way: as nothing. The statement still states the
+  // account — the header simply falls back to text, which is what it does
+  // today for every business.
+  it('is an empty string when there is no logo', () => {
+    expect(buildStatementDocument(base).provider.logo).toBe('');
+    expect(buildStatementDocument({ ...base, logo: null }).provider.logo).toBe('');
+  });
+});

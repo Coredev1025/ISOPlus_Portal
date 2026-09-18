@@ -50,9 +50,13 @@ function profileAddress(profile) {
  * what the client recognises, and it is the same handle the invoice and the
  * email already use. The payment reference is the statement number, so a
  * transfer can be matched back to the document that prompted it.
+ *
+ * `logo` arrives already resolved — a data URI, not the S3 key stored on the
+ * business — because this module is pure by design and reading the image is
+ * I/O. The service that already loads the business does that read.
  */
 export function buildStatementDocument({
-  business, profile, participant, statementNumber, period, ledger, ageing,
+  business, profile, participant, statementNumber, period, ledger, ageing, logo,
 }) {
   const bank = business?.bankDetails ?? {};
   return {
@@ -60,6 +64,7 @@ export function buildStatementDocument({
       name: str(business?.name),
       abn: str(business?.abn),
       address: businessAddress(business),
+      logo: str(logo),
     },
     recipient: {
       name: str(participant),
