@@ -594,3 +594,86 @@ test.describe("Invoice & Statement Automation", () => {
     });
   });
 });
+
+/**
+ * KAN-262 — the client's own reproduction, as a journey.
+ *
+ * Changing Head Office Timezone in Configure Business left the automation
+ * schedule on the zone it was last saved with. The Next Run caption went on
+ * naming the old zone — truthfully, because the schedule really was still on
+ * it — and only an unrelated re-save of the automation form brought the two
+ * back into line. Underneath, the run was still firing on the old wall clock.
+ *
+ * Serial and self-restoring: it writes the business profile, which every other
+ * test in this file reads.
+ */
+test.describe.serial("Head Office Timezone reaches the automation schedule", () => {
+  const CONFIGURE_URL = `/workspace/${WORKSPACE}/configure-business`;
+
+  /** Pick a zone on Configure Business and save, the way a client does. */
+  async function setHeadOfficeTimezone(page: Page, zone: string) {
+    await page.goto(CONFIGURE_URL);
+    await page.getByLabel(/head office timezone/i).click();
+    await page.getByRole("option", { name: new RegExp(`^${zone}`) }).click();
+    await page.getByRole("button", { name: /save changes/i }).click();
+    await expect(page.getByText(/success/i).first()).toBeVisible();
+  }
+
+  test.beforeEach(async ({ page }) => {
+    await signIn(page);
+    await resetAutomationSettings(page);
+  });
+
+  test.afterAll(async ({ browser }) => {
+    // Shared local fixture: leave the workspace on the zone the other specs
+    // and the Care Management fixture expect.
+    const page = await browser.newPage();
+    await signIn(page);
+    await setHeadOfficeTimezone(page, "Australia/Sydney");
+    await page.close();
+  });
+
+  test("the Next Run caption follows the business, with no re-save of the automation form", async ({
+    page,
+  }) => {
+    test.slow();
+
+    // A live schedule to go stale. Enabling it is what creates the ScheduledJob
+    // and snapshots the zone onto it.
+    await setHeadOfficeTimezone(page, "Australia/Melbourne");
+    await page.goto(AUTOMATION_URL);
+    const invoice = invoiceBlock(page);
+    await invoice.getByRole("switch").click();
+    await page.getByRole("button", { name: /save changes/i }).click();
+    await expect(page.getByText(/saved successfully/i)).toBeVisible();
+    await expect(invoice.getByText(/times shown in australia\/melbourne/i)).toBeVisible();
+
+    // The client's step 2 and 3: change the business, come back, touch nothing.
+    await setHeadOfficeTimezone(page, "Australia/Perth");
+    await page.goto(AUTOMATION_URL);
+
+    await expect(
+      invoiceBlock(page).getByText(/times shown in australia\/perth/i),
+    ).toBeVisible();
+  });
+
+  // The client checked both directions, because a one-way fix would look
+  // correct from Melbourne and still be broken from Perth.
+  test("and follows it back again", async ({ page }) => {
+    test.slow();
+
+    await setHeadOfficeTimezone(page, "Australia/Perth");
+    await page.goto(AUTOMATION_URL);
+    const invoice = invoiceBlock(page);
+    await invoice.getByRole("switch").click();
+    await page.getByRole("button", { name: /save changes/i }).click();
+    await expect(page.getByText(/saved successfully/i)).toBeVisible();
+
+    await setHeadOfficeTimezone(page, "Australia/Melbourne");
+    await page.goto(AUTOMATION_URL);
+
+    await expect(
+      invoiceBlock(page).getByText(/times shown in australia\/melbourne/i),
+    ).toBeVisible();
+  });
+});

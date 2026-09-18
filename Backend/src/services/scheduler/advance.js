@@ -14,8 +14,13 @@ import {
  * Deliberately NOT `toISOString()`: the arithmetic is wall-clock in the job's
  * own timezone, and UTC formatting rolls the calendar day backwards for any
  * zone west of Greenwich. 'en-CA' gives YYYY-MM-DD directly.
+ *
+ * Exported for `repointWorkspaceSchedules` (schedules.js), which has to read a
+ * stored startDate back as the calendar date it was *written* in before
+ * re-anchoring it in a new zone. A string passes through untouched, which is
+ * what makes it safe to feed the result straight back to canonicalStartDate.
  */
-function normaliseStartDate(startDate, timezone) {
+export function normaliseStartDate(startDate, timezone) {
   if (!(startDate instanceof Date)) return startDate;
   return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(startDate);
 }

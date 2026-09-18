@@ -25,6 +25,7 @@ import {
   mergeDocumentNumbering,
   parseLogoRemovals,
 } from '../utils/businessProfileUpdate.js';
+import { repointWorkspaceSchedules } from '../services/scheduler/schedules.js';
 import { sanitizeLogValue } from '../utils/sanitizeLog.js';
 import { normalizeLineItemMapping, enrichMappingWithTaxRatePercents } from '../utils/xeroLineItemMapping.js';
 import { loadXeroChartOptions } from '../utils/xeroAccountTaxHelpers.js';
@@ -254,6 +255,24 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
         entityId: business?._id?.toString(),
         success: true
       });
+    }
+
+    // KAN-262. A schedule's timezone is a snapshot taken from
+    // headOfficeTimezone when the automation form was last saved, and nothing
+    // re-took it when the business moved — so the run kept firing on the old
+    // wall clock, and the "Next Run" caption kept naming a zone the client had
+    // already changed. A no-op unless the zone actually moved.
+    //
+    // Failure here does not fail the request: the profile is already saved, and
+    // a schedule row that no longer validates must not stop a client saving
+    // their address. It is logged as the error it is, and the next save of the
+    // automation form still corrects the schedule the way it always did.
+    try {
+      await repointWorkspaceSchedules({ workspaceId });
+    } catch (err) {
+      error('Business-Service', 'Could not re-point automation schedules after a timezone change', {
+        workspaceId, message: err.message,
+      }, req ?? null);
     }
 
     const response = await formatBusinessProfileResponse(business);

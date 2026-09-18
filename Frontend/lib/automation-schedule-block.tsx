@@ -257,11 +257,17 @@ export function AutomationScheduleBlock({
         {/* The zone is named because this row is deliberately NOT in the
             reader's local time: it is the same clock as Run At above, which
             is the schedule's. Without saying so, a reader abroad reads their
-            own morning into it. */}
+            own morning into it.
+
+            KAN-262 cut the rest. "Calculated by the scheduler — read-only."
+            is what the read-only input already says by being one, and the
+            client asked for the caption to be reduced to the part that
+            carries information. The zone itself now always tracks the
+            business's Head Office Timezone — see repointWorkspaceSchedules. */}
         <AutomationField
           id={`${idPrefix}-next-run`}
           label="Next Run"
-          hint={`Calculated by the scheduler — read-only. Times shown in ${value.timezone ?? DEFAULT_BUSINESS_TIMEZONE}.`}
+          hint={`Times shown in ${value.timezone ?? DEFAULT_BUSINESS_TIMEZONE}.`}
         >
           <Input
             id={`${idPrefix}-next-run`}

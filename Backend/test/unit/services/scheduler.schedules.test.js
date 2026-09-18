@@ -4,8 +4,9 @@ import Business from '../../../src/models/Business.js';
 import {
   upsertSchedule,
   disableSchedule,
+  repointWorkspaceSchedules,
 } from '../../../src/services/scheduler/schedules.js';
-import { advanceSchedule } from '../../../src/services/scheduler/advance.js';
+import { advanceSchedule, normaliseStartDate } from '../../../src/services/scheduler/advance.js';
 import { getSchedulerAuthorization } from '../../../src/services/scheduler/auth.js';
 import { register, clearRegistry } from '../../../src/services/scheduler/registry.js';
 import {
@@ -721,6 +722,170 @@ describe('upsertSchedule — minimum-interval floor', () => {
   it('exports the two floor constants for reuse', () => {
     expect(AT_MOST_ONCE_MIN_INTERVAL_MINUTES).toBe(60);
     expect(AT_LEAST_ONCE_MIN_INTERVAL_MINUTES).toBe(5);
+  });
+});
+
+/**
+ * KAN-262. A schedule's timezone is a snapshot, taken by `upsertSchedule` from
+ * `Business.headOfficeTimezone` at save time. Nothing re-took it when the
+ * business moved, so the job went on computing `nextRunAt` — and handing its
+ * zone to the handler — in a timezone the business no longer used. It only
+ * corrected itself when someone re-saved the automation form for an unrelated
+ * reason.
+ *
+ * The stale caption the client reported was a true report of that: the display
+ * reads the job, deliberately, because the job is what fires.
+ */
+describe('repointWorkspaceSchedules', () => {
+  const picker = (startDate = '2026-09-01') => ({
+    every: { n: 2, unit: 'week' },
+    runOn: 'tuesday',
+    runAt: '09:00',
+    startDate,
+  });
+
+  beforeEach(async () => {
+    process.env.PERSONAL_ACCESS_TOKEN = 'pat-123';
+    vi.clearAllMocks();
+  });
+
+  it('moves an enabled schedule to the timezone the business now uses', async () => {
+    await Business.create({ workspaceId: 'ws-move', headOfficeTimezone: 'Australia/Melbourne' });
+    await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-move',
+      workspaceId: 'ws-move',
+      schedule: picker(),
+      now: NOW,
+    });
+
+    await Business.updateOne(
+      { workspaceId: 'ws-move' },
+      { $set: { headOfficeTimezone: 'Australia/Perth' } },
+    );
+    await repointWorkspaceSchedules({ workspaceId: 'ws-move', now: NOW });
+
+    const job = await ScheduledJob.findOne({ kind: 'invoice_automation', targetId: 'ws-move' }).lean();
+    expect(job.timezone).toBe('Australia/Perth');
+  });
+
+  // The zone is not a label on the row: it is what advanceSchedule computes
+  // with. A 09:00 schedule that moves from Melbourne to Perth has to fire two
+  // hours later in absolute terms, or the business has silently kept the old
+  // clock.
+  it('recomputes the next run so it lands at the same wall clock in the new zone', async () => {
+    await Business.create({ workspaceId: 'ws-when', headOfficeTimezone: 'Australia/Melbourne' });
+    const before = await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-when',
+      workspaceId: 'ws-when',
+      schedule: picker(),
+      now: NOW,
+    });
+
+    await Business.updateOne(
+      { workspaceId: 'ws-when' },
+      { $set: { headOfficeTimezone: 'Australia/Perth' } },
+    );
+    await repointWorkspaceSchedules({ workspaceId: 'ws-when', now: NOW });
+
+    const after = await ScheduledJob.findOne({ kind: 'invoice_automation', targetId: 'ws-when' }).lean();
+    expect(after.nextRunAt.getTime()).not.toBe(before.nextRunAt.getTime());
+    const wallClock = (instant, zone) => new Intl.DateTimeFormat('en-GB', {
+      timeZone: zone, hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(instant);
+    expect(wallClock(before.nextRunAt, 'Australia/Melbourne')).toBe('09:00');
+    expect(wallClock(after.nextRunAt, 'Australia/Perth')).toBe('09:00');
+  });
+
+  /**
+   * The trap this fix has to step around.
+   *
+   * `startDate` is stored as the instant of local midnight in the job's zone.
+   * Re-anchoring that instant in a zone further west reads it as the previous
+   * calendar day — so a fortnightly schedule anchored on Tuesday 1 September
+   * would come back anchored on Monday 31 August, half a phase out, and every
+   * run after it lands on the wrong day.
+   */
+  it('keeps the schedule anchored on the same calendar date moving west', async () => {
+    await Business.create({ workspaceId: 'ws-anchor', headOfficeTimezone: 'Australia/Melbourne' });
+    await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-anchor',
+      workspaceId: 'ws-anchor',
+      schedule: picker('2026-09-01'),
+      now: NOW,
+    });
+
+    await Business.updateOne(
+      { workspaceId: 'ws-anchor' },
+      { $set: { headOfficeTimezone: 'Australia/Perth' } },
+    );
+    await repointWorkspaceSchedules({ workspaceId: 'ws-anchor', now: NOW });
+
+    const job = await ScheduledJob.findOne({ kind: 'invoice_automation', targetId: 'ws-anchor' }).lean();
+    expect(normaliseStartDate(job.schedule.startDate, 'Australia/Perth')).toBe('2026-09-01');
+  });
+
+  // `upsertSchedule` sets `enabled: true` unconditionally, so re-pointing a
+  // paused block through it would switch the automation back on — billing a
+  // client who had deliberately turned it off. A paused block has no future
+  // run to move, and its stored zone is the one its history was produced in.
+  it('leaves a paused schedule alone, and does not switch it back on', async () => {
+    await Business.create({ workspaceId: 'ws-paused', headOfficeTimezone: 'Australia/Melbourne' });
+    await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-paused',
+      workspaceId: 'ws-paused',
+      schedule: picker(),
+      now: NOW,
+    });
+    await disableSchedule({ kind: 'invoice_automation', targetId: 'ws-paused' });
+
+    await Business.updateOne(
+      { workspaceId: 'ws-paused' },
+      { $set: { headOfficeTimezone: 'Australia/Perth' } },
+    );
+    await repointWorkspaceSchedules({ workspaceId: 'ws-paused', now: NOW });
+
+    const job = await ScheduledJob.findOne({ kind: 'invoice_automation', targetId: 'ws-paused' }).lean();
+    expect(job.enabled).toBe(false);
+    expect(job.timezone).toBe('Australia/Melbourne');
+  });
+
+  // Saving the profile with the timezone unchanged must not move the next run.
+  // A client who saves their address must not have their billing slot walk.
+  it('is a no-op when the timezone has not changed', async () => {
+    await Business.create({ workspaceId: 'ws-same', headOfficeTimezone: 'Australia/Melbourne' });
+    const before = await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-same',
+      workspaceId: 'ws-same',
+      schedule: picker(),
+      now: NOW,
+    });
+
+    await repointWorkspaceSchedules({ workspaceId: 'ws-same', now: new Date(NOW.getTime() + 60_000) });
+
+    const after = await ScheduledJob.findOne({ kind: 'invoice_automation', targetId: 'ws-same' }).lean();
+    expect(after.nextRunAt.getTime()).toBe(before.nextRunAt.getTime());
+  });
+
+  it('does not touch another workspace\'s schedules', async () => {
+    await Business.create({ workspaceId: 'ws-mine', headOfficeTimezone: 'Australia/Melbourne' });
+    await Business.create({ workspaceId: 'ws-theirs', headOfficeTimezone: 'Australia/Brisbane' });
+    await upsertSchedule({
+      kind: 'invoice_automation', targetId: 'ws-mine', workspaceId: 'ws-mine', schedule: picker(), now: NOW,
+    });
+    await upsertSchedule({
+      kind: 'invoice_automation', targetId: 'ws-theirs', workspaceId: 'ws-theirs', schedule: picker(), now: NOW,
+    });
+
+    await Business.updateOne({ workspaceId: 'ws-mine' }, { $set: { headOfficeTimezone: 'Australia/Perth' } });
+    await repointWorkspaceSchedules({ workspaceId: 'ws-mine', now: NOW });
+
+    const theirs = await ScheduledJob.findOne({ targetId: 'ws-theirs' }).lean();
+    expect(theirs.timezone).toBe('Australia/Brisbane');
   });
 });
 

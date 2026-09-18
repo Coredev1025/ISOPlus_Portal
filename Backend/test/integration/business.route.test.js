@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createApp } from '../../src/app.js';
 import Business from '../../src/models/Business.js';
+import ScheduledJob from '../../src/models/ScheduledJob.js';
+import { upsertSchedule, disableSchedule } from '../../src/services/scheduler/schedules.js';
 import { authenticatedAgent } from '../helpers/auth.js';
 
 const app = createApp();
@@ -146,5 +148,133 @@ describe('Business routes', () => {
       },
     });
     expect(res.status).toBe(404);
+  });
+});
+
+/**
+ * KAN-262, the client's own reproduction.
+ *
+ * Changing Head Office Timezone in Configure Business left the workspace's
+ * automation schedules on the zone they were last saved with. The "Next Run"
+ * caption kept naming the old zone — correctly, because the schedule really
+ * was still on it — and only a manual, unrelated re-save of the automation
+ * form brought the two back into line. Meanwhile the run fired on the old
+ * wall clock and handed the old zone to its handler.
+ */
+describe('Business profile — Head Office Timezone and the automation schedules', () => {
+  const PICKER = {
+    every: { n: 1, unit: 'month' },
+    runOn: 1,
+    runAt: '09:00',
+    startDate: '2026-09-01',
+  };
+
+  const saveTimezone = async (agent, workspaceId, timezone) => agent
+    .put('/api/business/profile')
+    .field('name', 'TZ Co')
+    .field('workspaceId', workspaceId)
+    .field('headOfficeTimezone', timezone);
+
+  beforeEach(() => {
+    process.env.JWT_SECRET = 'test-jwt-secret';
+    process.env.PERSONAL_ACCESS_TOKEN = 'test-pat';
+  });
+
+  it('moves the enabled schedules onto the new timezone', async () => {
+    await Business.create({
+      workspaceId: 'ws-tz-route', name: 'TZ Co', headOfficeTimezone: 'Australia/Melbourne',
+    });
+    await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-tz-route',
+      workspaceId: 'ws-tz-route',
+      schedule: PICKER,
+    });
+
+    const { agent } = await authenticatedAgent(app);
+    const res = await saveTimezone(agent, 'ws-tz-route', 'Australia/Perth');
+    expect(res.status).toBe(200);
+
+    const job = await ScheduledJob.findOne({ targetId: 'ws-tz-route' }).lean();
+    expect(job.timezone).toBe('Australia/Perth');
+  });
+
+  // The other direction, because the client checked it too and it is the case
+  // a one-way fix would pass.
+  it('moves them back when the timezone is changed back', async () => {
+    await Business.create({
+      workspaceId: 'ws-tz-back', name: 'TZ Co', headOfficeTimezone: 'Australia/Melbourne',
+    });
+    await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-tz-back',
+      workspaceId: 'ws-tz-back',
+      schedule: PICKER,
+    });
+
+    const { agent } = await authenticatedAgent(app);
+    await saveTimezone(agent, 'ws-tz-back', 'Australia/Perth');
+    // Asserted on the way out as well as on the way back: without it this case
+    // passes against the bug, because a schedule that never moved is already
+    // sitting on the zone the second save asks for.
+    const midway = await ScheduledJob.findOne({ targetId: 'ws-tz-back' }).lean();
+    expect(midway.timezone).toBe('Australia/Perth');
+
+    await saveTimezone(agent, 'ws-tz-back', 'Australia/Melbourne');
+
+    const job = await ScheduledJob.findOne({ targetId: 'ws-tz-back' }).lean();
+    expect(job.timezone).toBe('Australia/Melbourne');
+  });
+
+  // The blast radius that would make this fix worse than the bug.
+  it('does not switch a paused automation back on', async () => {
+    await Business.create({
+      workspaceId: 'ws-tz-paused', name: 'TZ Co', headOfficeTimezone: 'Australia/Melbourne',
+    });
+    await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-tz-paused',
+      workspaceId: 'ws-tz-paused',
+      schedule: PICKER,
+    });
+    await disableSchedule({ kind: 'invoice_automation', targetId: 'ws-tz-paused' });
+
+    const { agent } = await authenticatedAgent(app);
+    await saveTimezone(agent, 'ws-tz-paused', 'Australia/Perth');
+
+    const job = await ScheduledJob.findOne({ targetId: 'ws-tz-paused' }).lean();
+    expect(job.enabled).toBe(false);
+  });
+
+  // Saving an address must not move a billing slot.
+  it('leaves the next run alone when the profile is saved without changing the zone', async () => {
+    await Business.create({
+      workspaceId: 'ws-tz-noop', name: 'TZ Co', headOfficeTimezone: 'Australia/Melbourne',
+    });
+    const before = await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-tz-noop',
+      workspaceId: 'ws-tz-noop',
+      schedule: PICKER,
+    });
+
+    const { agent } = await authenticatedAgent(app);
+    await saveTimezone(agent, 'ws-tz-noop', 'Australia/Melbourne');
+
+    const job = await ScheduledJob.findOne({ targetId: 'ws-tz-noop' }).lean();
+    expect(job.nextRunAt.getTime()).toBe(before.nextRunAt.getTime());
+  });
+
+  // A profile save must still succeed for a workspace that has no automation.
+  it('saves normally when the workspace has no schedules at all', async () => {
+    await Business.create({
+      workspaceId: 'ws-tz-none', name: 'TZ Co', headOfficeTimezone: 'Australia/Melbourne',
+    });
+
+    const { agent } = await authenticatedAgent(app);
+    const res = await saveTimezone(agent, 'ws-tz-none', 'Australia/Perth');
+
+    expect(res.status).toBe(200);
+    expect(res.body.headOfficeTimezone).toBe('Australia/Perth');
   });
 });
