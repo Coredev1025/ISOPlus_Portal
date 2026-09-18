@@ -37,6 +37,7 @@ import {
   hasStatementActivity,
 } from '../../utils/statementLedger.js';
 import { invoicesFromDocuments, openingBalanceBefore } from '../../utils/statementAccountHistory.js';
+import { getLogoData } from '../../utils/invoicePdfSupport.js';
 import { renderStatementOfAccountPdf } from '../../utils/statementOfAccountPdf.js';
 import { findParticipantProfile } from '../email/recipients.js';
 import { getS3FileUrl, uploadFileToS3 } from '../../utils/uploadS3.js';
@@ -96,6 +97,32 @@ async function participantPaymentItems(workspaceId, boardId, participant, nameFi
   }).select('data invoicedBy').lean();
 }
 
+/**
+ * The business letterhead image, or nothing.
+ *
+ * KAN-229: the statement of account was the only document type that never
+ * showed the logo, because nothing on this path ever called `getLogoData`.
+ *
+ * The invoice path lets a failed read throw. A statement must not: it is
+ * generated per participant inside a scheduled run, and
+ * `settledStatementOfAccount` catches whatever a statement throws and carries
+ * on with the board — so an unreadable logo object would not fail loudly, it
+ * would silently produce no statement of account at all, for every
+ * participant, while the budget statement beside it still went out. A
+ * letterhead image is cosmetic; the account it states is not.
+ */
+async function providerLogo(business) {
+  if (!business?.defaultLogo) return '';
+  try {
+    return await getLogoData(business);
+  } catch (err) {
+    warn('Automation', 'Default logo could not be read; statement of account header falls back to text', {
+      workspaceId: business.workspaceId, defaultLogo: business.defaultLogo, reason: err?.message,
+    });
+    return '';
+  }
+}
+
 async function uploadStatement(pdfBytes, { workspaceId, boardId, participant, periodKey }) {
   const slug = String(participant).replace(/[^a-zA-Z0-9]/g, '-');
   const key = buildOutputKey({
@@ -153,6 +180,7 @@ export async function generateStatementOfAccount({
 
   const document = buildStatementDocument({
     business, profile, participant, statementNumber, period, ledger, ageing,
+    logo: await providerLogo(business),
   });
   const pdfBytes = await renderStatementOfAccountPdf(document, timezone);
   const pdfUrl = await uploadStatement(pdfBytes, {

@@ -18,6 +18,21 @@
         "fontName": "Roboto"
       },
       {
+        "name": "logo",
+        "type": "image",
+        "content": "",
+        "position": {
+          "x": 12,
+          "y": 22
+        },
+        "width": 18,
+        "height": 18,
+        "rotate": 0,
+        "opacity": 1,
+        "readOnly": false,
+        "required": false
+      },
+      {
         "name": "providerBlock",
         "type": "text",
         "content": "Sample Care Services Pty Ltd\nABN: 00 000 000 000\n12 Example Street\nSampleton\nVictoria 3000\nAustralia",

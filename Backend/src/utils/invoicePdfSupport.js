@@ -5,6 +5,7 @@
 //
 // Readers: routes/webhook.js, routes/xero.js,
 // services/automation/ndisInvoiceGeneratorPdf.js,
+// services/automation/generateStatementOfAccount.js,
 // services/automation/pushDraftInvoicesToXero.js, and (via injected deps built
 // in routes/webhook.js and routes/xero.js) utils/webhookNdisPdfHandlers.js,
 // utils/webhookParticipantTaxPdfHelpers.js,
