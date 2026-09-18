@@ -51,7 +51,7 @@ describe('FinancialSettingsForm', () => {
     cleanup();
   });
 
-  it('relocates bank details and document numbering with statement + disabled credit note (Epic 3)', () => {
+  it('shows invoice, PO, quote and SOA in a 2-per-row grid; hides Statement Numbers and Credit Note', () => {
     const { container } = renderForm();
 
     expect(screen.getByRole('heading', { name: 'Bank Details' })).toBeInTheDocument();
@@ -60,18 +60,20 @@ describe('FinancialSettingsForm', () => {
     ).toBeInTheDocument();
     expect(screen.queryByLabelText(/payment reference/i)).not.toBeInTheDocument();
 
-    expect(screen.getByText('Statement Numbers')).toBeInTheDocument();
-    expect(screen.queryByText(/^new$/i)).not.toBeInTheDocument();
-    expect(container.querySelector('#statement-prefix')).not.toBeDisabled();
-    expect(container.querySelector('#statement-next')).not.toBeDisabled();
-    expect(
-      screen.getByText(/feeds statement automation/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText('Invoice Numbers')).toBeInTheDocument();
+    expect(screen.getByText('Purchase Order Numbers')).toBeInTheDocument();
+    expect(screen.getByText('Quote Numbers')).toBeInTheDocument();
+    expect(screen.getByText('Statement of Account Numbers')).toBeInTheDocument();
 
-    expect(screen.getByText('Credit Note Numbers')).toBeInTheDocument();
-    expect(screen.getByText(/later phase/i)).toBeInTheDocument();
-    expect(container.querySelector('#credit-note-prefix')).toBeDisabled();
-    expect(container.querySelector('#credit-note-next')).toBeDisabled();
+    expect(screen.queryByText('Statement Numbers')).not.toBeInTheDocument();
+    expect(screen.queryByText('Credit Note Numbers')).not.toBeInTheDocument();
+    expect(screen.queryByText(/later phase/i)).not.toBeInTheDocument();
+    expect(container.querySelector('#statement-prefix')).not.toBeInTheDocument();
+    expect(container.querySelector('#credit-note-prefix')).not.toBeInTheDocument();
+
+    const numberingGrid = screen.getByTestId('document-numbering-grid');
+    expect(numberingGrid.className).toMatch(/\bmd:grid-cols-2\b/);
+    expect(numberingGrid.className).not.toMatch(/\bmd:grid-cols-3\b/);
   });
 
   it('wires bank field changes', async () => {
@@ -329,33 +331,39 @@ describe('FinancialSettingsForm', () => {
     fireEvent.change(container.querySelector('#quote-prefix')!, {
       target: { value: 'QT2-' },
     });
-    fireEvent.change(container.querySelector('#statement-prefix')!, {
-      target: { value: 'ST2-' },
+    fireEvent.change(container.querySelector('#statement-of-account-prefix')!, {
+      target: { value: 'SOA2-' },
     });
 
     expect(onSequencePrefixChange).toHaveBeenCalledWith('invoice', 'INV2-');
     expect(onSequencePrefixChange).toHaveBeenCalledWith('purchaseOrder', 'PO2-');
     expect(onSequencePrefixChange).toHaveBeenCalledWith('quote', 'QT2-');
-    expect(onSequencePrefixChange).toHaveBeenCalledWith('statement', 'ST2-');
+    expect(onSequencePrefixChange).toHaveBeenCalledWith(
+      'statementOfAccount',
+      'SOA2-'
+    );
 
     fireEvent.change(container.querySelector('#po-next')!, { target: { value: '2001' } });
     fireEvent.blur(container.querySelector('#po-next')!);
     fireEvent.change(container.querySelector('#quote-next')!, { target: { value: '3001' } });
     fireEvent.blur(container.querySelector('#quote-next')!);
-    fireEvent.change(container.querySelector('#statement-next')!, {
-      target: { value: '4001' },
+    fireEvent.change(container.querySelector('#statement-of-account-next')!, {
+      target: { value: '5001' },
     });
-    fireEvent.blur(container.querySelector('#statement-next')!);
+    fireEvent.blur(container.querySelector('#statement-of-account-next')!);
     expect(onSequenceNextChange).toHaveBeenCalledWith('purchaseOrder', 2001);
     expect(onSequenceNextChange).toHaveBeenCalledWith('quote', 3001);
-    expect(onSequenceNextChange).toHaveBeenCalledWith('statement', 4001);
+    expect(onSequenceNextChange).toHaveBeenCalledWith('statementOfAccount', 5001);
   });
 
-  it('allows a next number of 0 on invoice, PO, quote and statement inputs', () => {
+  it('allows a next number of 0 on invoice, PO, quote and SOA inputs', () => {
     const { container } = renderForm();
     expect(container.querySelector('#invoice-next')).toHaveAttribute('min', '0');
     expect(container.querySelector('#po-next')).toHaveAttribute('min', '0');
     expect(container.querySelector('#quote-next')).toHaveAttribute('min', '0');
-    expect(container.querySelector('#statement-next')).toHaveAttribute('min', '0');
+    expect(container.querySelector('#statement-of-account-next')).toHaveAttribute(
+      'min',
+      '0'
+    );
   });
 });

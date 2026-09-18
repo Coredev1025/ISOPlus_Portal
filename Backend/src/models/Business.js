@@ -157,6 +157,9 @@ const businessSchema = new mongoose.Schema({
         default: DEFAULT_DOCUMENT_NEXT_NUMBER
       }
     },
+    // Monthly budget statements claim this series (STM-). Hidden from Finance
+    // Settings Document Number Configuration; saves must still pass it through
+    // so a PUT does not reset nextNumber. SOA uses statementOfAccount below.
     statement: {
       prefix: {
         type: String,
