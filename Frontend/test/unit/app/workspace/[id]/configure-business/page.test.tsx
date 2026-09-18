@@ -384,19 +384,23 @@ describe('configure business page', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('Company Name')).toHaveValue('Hillsgrade Care');
     });
+    expect(screen.getByRole('button', { name: 'Save Changes' })).toBeEnabled();
     clickSave();
 
     await waitFor(() => expect(savedForms).toHaveLength(1));
     const { documentNumbering, ...fields } = savedForms[0];
     expect(fields).toEqual(EXPECTED_FIELDS);
+    // Omit statement (STM-): mergeDocumentNumbering keeps the live automation
+    // counter. Sending clone defaults before/without a load would overwrite it.
     expect(JSON.parse(String(documentNumbering))).toEqual({
       invoice: { prefix: 'HG-INV-', nextNumber: 2400 },
       purchaseOrder: { prefix: 'HG-PO-', nextNumber: 300 },
       quote: { prefix: 'HG-QT-', nextNumber: 12 },
-      // Loaded default when the profile had no statement series yet.
-      statement: { prefix: 'STM-', nextNumber: 1 },
       statementOfAccount: { prefix: 'SOA-', nextNumber: 1 },
     });
+    expect(
+      Object.keys(JSON.parse(String(documentNumbering))),
+    ).not.toContain('statement');
     // Nothing was uploaded or removed, so no logo keys ride along.
     expect(Object.keys(savedForms[0])).not.toContain('defaultLogo');
     expect(Object.keys(savedForms[0])).not.toContain('defaultLogoRemoved');
@@ -404,6 +408,18 @@ describe('configure business page', () => {
     expect(
       await screen.findByText('Business profile saved successfully!'),
     ).toBeInTheDocument();
+  });
+
+  it('keeps Save disabled until the business profile has finished loading', async () => {
+    stubBusiness();
+    renderPage();
+
+    expect(screen.getByRole('button', { name: 'Save Changes' })).toBeDisabled();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Company Name')).toHaveValue('Hillsgrade Care');
+    });
+    expect(screen.getByRole('button', { name: 'Save Changes' })).toBeEnabled();
   });
 
   it('submits an obviously invalid email unchanged — the form validates nothing client-side', async () => {

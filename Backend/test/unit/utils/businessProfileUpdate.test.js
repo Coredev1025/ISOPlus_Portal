@@ -81,6 +81,30 @@ describe('mergeDocumentNumbering', () => {
     });
   });
 
+  it('keeps an existing statement (STM-) series when the PUT omits it', () => {
+    expect(
+      mergeDocumentNumbering(
+        {
+          invoice: { prefix: 'INV-', nextNumber: 10 },
+          statement: { prefix: 'STM-', nextNumber: 1000 },
+          statementOfAccount: { prefix: 'SOA-', nextNumber: 27 },
+        },
+        {
+          invoice: { prefix: 'INV-', nextNumber: 11 },
+          purchaseOrder: { prefix: 'PO-', nextNumber: 3 },
+          quote: { prefix: 'QT-', nextNumber: 4 },
+          statementOfAccount: { prefix: 'SOA-', nextNumber: 28 },
+        },
+      ),
+    ).toEqual({
+      invoice: { prefix: 'INV-', nextNumber: 11 },
+      purchaseOrder: { prefix: 'PO-', nextNumber: 3 },
+      quote: { prefix: 'QT-', nextNumber: 4 },
+      statement: { prefix: 'STM-', nextNumber: 1000 },
+      statementOfAccount: { prefix: 'SOA-', nextNumber: 28 },
+    });
+  });
+
   it('applies an explicit statementOfAccount update', () => {
     expect(
       mergeDocumentNumbering(

@@ -102,25 +102,23 @@ describe('AccountingIntegrationsPanel', () => {
     ).toBeInTheDocument();
   });
 
-  // Epic 4.3 — sync toggles visible but disabled.
-  it('shows the four sync toggles disabled after profile load', async () => {
+  // Coming-soon sync placeholders removed (client feedback) — not wired yet.
+  it('does not show Invoice / Customer / Payment / Contact sync placeholders', async () => {
     (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       data: { xeroIntegrated: false },
     });
 
     render(<AccountingIntegrationsPanel workspaceId="ws-1" />);
 
-    expect(await screen.findByText('Invoice Sync Status')).toBeInTheDocument();
-    expect(screen.getByText('Customer Sync Status')).toBeInTheDocument();
-    expect(screen.getByText('Payment Sync Status')).toBeInTheDocument();
-    expect(screen.getByText('Contact Sync')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: /connect xero/i })
+    ).toBeInTheDocument();
 
-    const switches = screen.getAllByRole('switch');
-    expect(switches).toHaveLength(4);
-    for (const toggle of switches) {
-      expect(toggle).toBeDisabled();
-      expect(toggle).not.toBeChecked();
-    }
+    expect(screen.queryByText('Invoice Sync Status')).not.toBeInTheDocument();
+    expect(screen.queryByText('Customer Sync Status')).not.toBeInTheDocument();
+    expect(screen.queryByText('Payment Sync Status')).not.toBeInTheDocument();
+    expect(screen.queryByText('Contact Sync')).not.toBeInTheDocument();
+    expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
   });
 
   // Epic 4.4 — MYOB / QuickBooks stay inactive.

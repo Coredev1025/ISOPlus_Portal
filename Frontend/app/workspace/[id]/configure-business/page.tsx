@@ -150,12 +150,10 @@ export default function ConfigureBusinessPage() {
   const [quoteSequence, setQuoteSequence] = useState<NumberSequence>(
     () => cloneDefaultSequences().quote
   );
-  const [statementSequence, setStatementSequence] = useState<NumberSequence>(
-    () => cloneDefaultSequences().statement
-  );
   const [statementOfAccountSequence, setStatementOfAccountSequence] =
     useState<NumberSequence>(() => cloneDefaultSequences().statementOfAccount);
   const [loading, setLoading] = useState(false);
+  const [profileReady, setProfileReady] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [apiError, setApiError] = useState<string>('');
   const [defaultLogoRemoved, setDefaultLogoRemoved] = useState(false);
@@ -450,7 +448,6 @@ export default function ConfigureBusinessPage() {
           setInvoiceSequence(sequences.invoice);
           setPurchaseOrderSequence(sequences.purchaseOrder);
           setQuoteSequence(sequences.quote);
-          setStatementSequence(sequences.statement);
           setStatementOfAccountSequence(sequences.statementOfAccount);
 
           // Load logo previews via authenticated API (no expiring presigned URLs in UI)
@@ -460,6 +457,7 @@ export default function ConfigureBusinessPage() {
             wideLogo: data.wideLogo,
           });
           showFetchSuccessToast("Business profile");
+          setProfileReady(true);
         }
       } catch (error: any) {
         if (error.name == "CanceledError" || error.name == "AbortError") {
@@ -467,10 +465,14 @@ export default function ConfigureBusinessPage() {
         }
         // New workspaces have no profile yet — empty form is expected, not an error toast.
         if (error.response?.status === 404) {
+          setProfileReady(true);
           return;
         }
         console.error("Failed to fetch business profile:", error);
         showFetchErrorToast("business profile", error.response?.data?.message || "Failed to load business profile");
+        // Allow save after a failed load so operators are not stuck; numbering
+        // omit of STM- still protects the automation counter on existing rows.
+        setProfileReady(true);
       }
     };
 
@@ -516,7 +518,9 @@ export default function ConfigureBusinessPage() {
         invoice: invoiceSequence,
         purchaseOrder: purchaseOrderSequence,
         quote: quoteSequence,
-        statement: statementSequence,
+        // Omit statement (STM-): this page does not edit it. mergeDocumentNumbering
+        // keeps the live monthly-statement automation counter. Sending clone
+        // defaults would overwrite nextNumber (e.g. 1000 → 1).
         statementOfAccount: statementOfAccountSequence,
       }));
 
@@ -930,7 +934,10 @@ export default function ConfigureBusinessPage() {
             ) : null}
 
             <div className="mt-4 flex justify-end gap-2.5">
-              <Button onClick={handleSave} disabled={loading}>
+              <Button
+                onClick={handleSave}
+                disabled={loading || !profileReady}
+              >
                 {loading ? (
                   <span className="flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" />

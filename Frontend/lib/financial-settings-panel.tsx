@@ -176,16 +176,16 @@ export function FinancialSettingsPanel({
             : "";
         formDataToSend.append(key, text);
       }
-      // `statement` (STM-) is hidden from Document Number Configuration but
-      // Statement Automation still claims it for monthly budget statements —
-      // re-send the loaded value so a Finance save does not reset the series.
+      // Omit statement (STM-): Document Number Configuration no longer edits it.
+      // mergeDocumentNumbering keeps the stored series used by monthly budget
+      // statement automation. Do not send clone/default STM- values — that would
+      // overwrite a live nextNumber.
       formDataToSend.append(
         "documentNumbering",
         JSON.stringify({
           invoice: sequences.invoice,
           purchaseOrder: sequences.purchaseOrder,
           quote: sequences.quote,
-          statement: sequences.statement,
           statementOfAccount: sequences.statementOfAccount,
         })
       );
