@@ -701,3 +701,90 @@ test.describe.serial("Head Office Timezone reaches the automation schedule", () 
     ).toBeVisible();
   });
 });
+
+/**
+ * KAN-265 — the email template defaults, end to end.
+ *
+ * A workspace that has never written its own wording should find the Email
+ * Subject and Email Message already filled with the copy the client supplied,
+ * a guide naming the one variable the block can resolve, and a way back to
+ * that copy after editing it.
+ */
+test.describe("email template defaults", () => {
+  test.beforeEach(async ({ page }) => {
+    await signIn(page);
+    // Puts the stored settings back to blank, which is the state this feature
+    // exists to fill in.
+    await resetAutomationSettings(page);
+  });
+
+  test("the subject and message arrive pre-filled, per block", async ({ page }) => {
+    test.slow();
+    await page.goto(AUTOMATION_URL);
+
+    const invoice = invoiceBlock(page);
+    await invoice.getByRole("switch").click();
+    await expect(invoice.getByLabel(/email subject/i)).toHaveValue(
+      "Invoice {{invoice_number}} from {{business_name}}",
+    );
+    await expect(invoice.getByText(/please find attached invoice/i)).toBeVisible();
+
+    const statement = statementBlock(page);
+    await statement.getByRole("switch").click();
+    await expect(statement.getByLabel(/email subject/i)).toHaveValue(
+      "Account statement {{statement_number}} from {{business_name}}",
+    );
+    await expect(
+      statement.getByText(/it is not a tax invoice and does not raise any new charges/i),
+    ).toBeVisible();
+  });
+
+  test("the guide names the variable the block can actually resolve", async ({ page }) => {
+    test.slow();
+    await page.goto(AUTOMATION_URL);
+
+    const invoice = invoiceBlock(page);
+    await invoice.getByRole("switch").click();
+    await expect(
+      invoice.getByText(/replaced with the invoice number when the email is sent/i),
+    ).toBeVisible();
+
+    // An invoice run resolves no statement number, so that token must not be
+    // offered here — it would reach a client as literal braces.
+    await expect(invoice.getByText("{{statement_number}}")).toHaveCount(0);
+  });
+
+  test("reset puts the supplied copy back after the body is rewritten", async ({ page }) => {
+    test.slow();
+    await page.goto(AUTOMATION_URL);
+
+    const invoice = invoiceBlock(page);
+    await invoice.getByRole("switch").click();
+
+    const editor = invoice.getByRole("textbox", { name: /email message/i });
+    await editor.click();
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.type("scratch that");
+    await expect(invoice.getByText("scratch that")).toBeVisible();
+
+    await invoice.getByRole("button", { name: /reset to default/i }).click();
+
+    await expect(invoice.getByText(/please find attached invoice/i)).toBeVisible();
+    await expect(invoice.getByText("scratch that")).toHaveCount(0);
+  });
+
+  test("the pre-filled copy survives a save and reload", async ({ page }) => {
+    test.slow();
+    await page.goto(AUTOMATION_URL);
+
+    await invoiceBlock(page).getByRole("switch").click();
+    await page.getByRole("button", { name: /save changes/i }).click();
+    await expect(page.getByText(/saved successfully/i)).toBeVisible();
+
+    await page.reload();
+
+    await expect(invoiceBlock(page).getByLabel(/email subject/i)).toHaveValue(
+      "Invoice {{invoice_number}} from {{business_name}}",
+    );
+  });
+});
