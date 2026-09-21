@@ -68,6 +68,26 @@ function invoiceBlock(page: Page) {
   return page.getByRole("region", { name: /invoice automation/i });
 }
 
+/**
+ * Set Run At through the three selects KAN-263 replaced the native time input
+ * with. Each is chosen by its own aria-label, because "Run At" names the row
+ * rather than any one control.
+ */
+async function setRunAt(
+  page: Page,
+  block: ReturnType<typeof invoiceBlock>,
+  { hour, minute, meridiem }: { hour: string; minute: string; meridiem: "AM" | "PM" },
+) {
+  for (const [label, option] of [
+    [/run at hour/i, hour],
+    [/run at minute/i, minute],
+    [/run at am or pm/i, meridiem],
+  ] as const) {
+    await block.getByRole("combobox", { name: label }).click();
+    await page.getByRole("option", { name: option, exact: true }).click();
+  }
+}
+
 /** The statement block, which is configured entirely independently. */
 function statementBlock(page: Page) {
   return page.getByRole("region", { name: /statement automation/i });
@@ -597,14 +617,19 @@ test.describe("Invoice & Statement Automation", () => {
 
       const invoice = invoiceBlock(page);
       await invoice.getByRole("switch").click();
-      await invoice.getByLabel(/run at/i).fill("09:00");
+      await setRunAt(page, invoice, { hour: "9", minute: "00", meridiem: "AM" });
 
       await page.getByRole("button", { name: /save changes/i }).click();
       await expect(page.getByText(/saved successfully/i)).toBeVisible();
       await page.reload();
 
       const reloaded = invoiceBlock(page);
-      await expect(reloaded.getByLabel(/run at/i)).toHaveValue("09:00");
+      await expect(
+        reloaded.getByRole("combobox", { name: /run at hour/i }),
+      ).toHaveText("9");
+      await expect(
+        reloaded.getByRole("combobox", { name: /run at am or pm/i }),
+      ).toHaveText("AM");
 
       // The invariant, independent of the date the scheduler picks: every run of
       // this schedule happens at 09:00 in its own zone, so the time half of Next
@@ -786,5 +811,74 @@ test.describe("email template defaults", () => {
     await expect(invoiceBlock(page).getByLabel(/email subject/i)).toHaveValue(
       "Invoice {{invoice_number}} from {{business_name}}",
     );
+  });
+});
+
+/**
+ * KAN-263 — the Run At picker.
+ *
+ * The native `<input type="time">` rendered a different widget in every
+ * browser and showed AM/PM only when the reader's locale said so. It is now
+ * three selects, matching the controls beside it, saying AM/PM outright. The
+ * stored value is unchanged — HH:mm on a 24-hour clock — which is the part
+ * that must survive.
+ */
+test.describe("the Run At picker", () => {
+  test.beforeEach(async ({ page }) => {
+    await signIn(page);
+    await resetAutomationSettings(page);
+  });
+
+  test("offers hour, minute and AM/PM rather than a native time input", async ({ page }) => {
+    await page.goto(AUTOMATION_URL);
+    const invoice = invoiceBlock(page);
+    await invoice.getByRole("switch").click();
+
+    await expect(invoice.getByRole("combobox", { name: /run at hour/i })).toBeVisible();
+    await expect(invoice.getByRole("combobox", { name: /run at minute/i })).toBeVisible();
+    await expect(invoice.getByRole("combobox", { name: /run at am or pm/i })).toBeVisible();
+
+    // The control the client called old-school is gone, not merely hidden.
+    await expect(invoice.locator('input[type="time"]')).toHaveCount(0);
+  });
+
+  test("an afternoon time survives a save and reload", async ({ page }) => {
+    test.slow();
+    await page.goto(AUTOMATION_URL);
+    const invoice = invoiceBlock(page);
+    await invoice.getByRole("switch").click();
+
+    await setRunAt(page, invoice, { hour: "5", minute: "30", meridiem: "PM" });
+    await page.getByRole("button", { name: /save changes/i }).click();
+    await expect(page.getByText(/saved successfully/i)).toBeVisible();
+    await page.reload();
+
+    const reloaded = invoiceBlock(page);
+    await expect(reloaded.getByRole("combobox", { name: /run at hour/i })).toHaveText("5");
+    await expect(reloaded.getByRole("combobox", { name: /run at minute/i })).toHaveText("30");
+    await expect(reloaded.getByRole("combobox", { name: /run at am or pm/i })).toHaveText("PM");
+
+    // The half that proves the conversion: 5:30 PM must have been stored as
+    // 17:30, and Next Run is computed from the stored value.
+    await expect(reloaded.getByLabel(/next run/i)).toHaveValue(/5:30 PM$/);
+  });
+
+  // Midnight is the corner a naive hour % 12 turns into "0 AM", and it is a
+  // plausible slot for an overnight billing run.
+  test("stores midnight correctly", async ({ page }) => {
+    test.slow();
+    await page.goto(AUTOMATION_URL);
+    const invoice = invoiceBlock(page);
+    await invoice.getByRole("switch").click();
+
+    await setRunAt(page, invoice, { hour: "12", minute: "00", meridiem: "AM" });
+    await page.getByRole("button", { name: /save changes/i }).click();
+    await expect(page.getByText(/saved successfully/i)).toBeVisible();
+    await page.reload();
+
+    const reloaded = invoiceBlock(page);
+    await expect(reloaded.getByRole("combobox", { name: /run at hour/i })).toHaveText("12");
+    await expect(reloaded.getByRole("combobox", { name: /run at am or pm/i })).toHaveText("AM");
+    await expect(reloaded.getByLabel(/next run/i)).toHaveValue(/12:00 AM$/);
   });
 });
