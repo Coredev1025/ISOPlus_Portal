@@ -269,7 +269,7 @@ export default function WorkspaceDetail() {
                     onClick={() => router.push(`/workspace/${workspace?.id}/finance-settings`)}
                     className="mt-auto w-full"
                   >
-                    <span>Open</span>
+                    <span>Manage Finance</span>
                   </Button>
                 </Card>
 
