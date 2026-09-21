@@ -3,8 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 
 import axios from "@/app/utils/axiosConfig";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import Spinner from "@/components/ui/spin";
 import { HISTORY_PAGE_SIZE } from "@/constants/system-health";
 import { ErrorBanner } from "@/lib/system-health-banners";
@@ -12,8 +10,6 @@ import { RunHistoryPager } from "@/lib/system-health-pager";
 import { RunList } from "@/lib/system-health-run-row";
 import { ScheduleSummary } from "@/lib/system-health-schedule-summary";
 import type { RunEmailRow, RunRow, ScheduleRow } from "@/lib/system-health-types";
-
-type Refusal = { periodKey: string; runs: RunRow[] } | null;
 
 type Props = Readonly<{ workspaceId: string }>;
 
@@ -40,13 +36,11 @@ export function SystemHealthDrilldownView({ workspaceId }: Props) {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [refusal, setRefusal] = useState<Refusal>(null);
   const [runError, setRunError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
-  // Bumped by the run and retry handlers to ask for a reload. They do NOT call
-  // the fetch themselves: a handler closes over the page that was showing when
-  // its button was clicked, so a reload it issued directly would repaint that
+  // Bumped by the retry handler to ask for a reload. It does NOT call the
+  // fetch itself: the handler closes over the page that was showing when its
+  // button was clicked, so a reload it issued directly would repaint that
   // page's rows under whatever label the pager has since moved to.
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -95,46 +89,12 @@ export function SystemHealthDrilldownView({ workspaceId }: Props) {
     };
   }, [workspaceId, page, reloadToken]);
 
-  // Which kind the in-flight / last-refused dispatch was for, so the force
-  // override re-runs the same one rather than silently switching to invoices.
-  const [lastKind, setLastKind] = useState<"invoice" | "statement">("invoice");
-
-  const start = useCallback(
-    async (force: boolean, kind: "invoice" | "statement" = lastKind) => {
-      setBusy(true);
-      setRunError(null);
-      setLastKind(kind);
-      try {
-        await axios.post(runUrl(workspaceId, `/run${force ? "?force=1" : ""}`), { kind });
-        setRefusal(null);
-        reload();
-      } catch (err) {
-        const response = (err as { response?: { status?: number; data?: Refusal } }).response;
-        // 409 is the designed answer, not a failure: say which period, and
-        // offer the override rather than silently doing nothing. Anything
-        // else (500, network error, timeout) must not be swallowed either —
-        // a button that appears to do nothing is the worst outcome here.
-        if (response?.status === 409 && response.data) {
-          setRefusal(response.data);
-        } else {
-          setRunError("Could not start the run. Try again.");
-        }
-      } finally {
-        setBusy(false);
-      }
-    },
-    [workspaceId, reload, lastKind],
-  );
-
   const retry = useCallback(
     async (runId: string) => {
       setRetryingId(runId);
       setRunError(null);
       try {
         await axios.post(runUrl(workspaceId, `/runs/${runId}/retry`));
-        // The retry has changed the history, so a refusal card describing the
-        // period as already-run is now stale advice about a stale history.
-        setRefusal(null);
         reload();
       } catch {
         setRunError("Could not retry the run. Try again.");
@@ -177,9 +137,10 @@ export function SystemHealthDrilldownView({ workspaceId }: Props) {
 
   if (loading) return <Spinner />;
 
-  // One dispatch at a time: a forced re-run fired during a retry, or a retry
-  // during a run, would race for the same period.
-  const dispatching = busy || retryingId !== null;
+  // KAN-230 removed the manual run buttons, so a retry is the only dispatch
+  // this screen can start. The name is kept because RunList reads it as "is
+  // anything in flight" when deciding whether to offer Retry at all.
+  const dispatching = retryingId !== null;
 
   return (
     <div className="space-y-6">
@@ -187,40 +148,7 @@ export function SystemHealthDrilldownView({ workspaceId }: Props) {
 
       <ScheduleSummary schedules={schedules} />
 
-      <div className="flex items-center gap-3">
-        {/* Both kinds. The backend has always accepted either — only the
-            frontend was invoice-only, so a statement-only workspace's single
-            action was one the API 404s. */}
-        <Button type="button" disabled={dispatching} onClick={() => start(false, "invoice")}>
-          Run invoices now
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={dispatching}
-          onClick={() => start(false, "statement")}
-        >
-          Run statements now
-        </Button>
-      </div>
-
       {runError ? <ErrorBanner message={runError} /> : null}
-
-      {refusal ? (
-        <Card className="space-y-2 border-amber-500/40 p-4">
-          <p className="text-sm">
-            Already run for {refusal.periodKey} — {refusal.runs.length} run(s) recorded.
-          </p>
-          <Button
-            type="button"
-            variant="destructive"
-            disabled={dispatching}
-            onClick={() => start(true)}
-          >
-            Force re-run
-          </Button>
-        </Card>
-      ) : null}
 
       <RunList
         runs={runs}

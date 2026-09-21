@@ -102,7 +102,13 @@ test.describe("System Health", () => {
 
     await expect(page).toHaveURL(new RegExp(`/workspace/${WORKSPACE}/system-health$`));
     await expect(page.getByRole("heading", { name: /system health/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /run invoices now/i })).toBeVisible();
+
+    // KAN-230 removed the manual trigger buttons by product decision: the
+    // drill-down reports what the scheduler did, it does not start runs.
+    // Asserted against a landmark that proves the page actually rendered —
+    // otherwise "the button is absent" would also pass on a blank screen.
+    await expect(page.getByRole("button", { name: /run invoices now/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /run statements now/i })).toHaveCount(0);
   });
 
   /**

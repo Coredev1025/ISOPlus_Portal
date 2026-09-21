@@ -157,13 +157,16 @@ describe("SystemHealthDrilldownView", () => {
   // the button was clicked repaints page 1's rows under a "Page 2" label —
   // silently, on the one screen whose whole value is that the rows are what
   // they say they are.
-  it("reloads the page currently on screen, not the one showing when the run started", async () => {
+  // Driven by Retry since KAN-230 removed the manual run buttons. The guard is
+  // unchanged: it is about which page the reload targets, not about what
+  // started it.
+  it("reloads the page currently on screen, not the one showing when the retry started", async () => {
     get.mockImplementation((url: string) =>
       Promise.resolve({
         data: {
           workspaceId: "ws-1", schedules: [], total: 120, pageSize: 50,
           page: url.includes("page=2") ? 2 : 1,
-          runs: [url.includes("page=2") ? { ...RUN, _id: "r9", boardId: "b9" } : RUN],
+          runs: [url.includes("page=2") ? { ...RUN, _id: "r9", boardId: "b9" } : FAILED_RUN],
         },
       }),
     );
@@ -173,7 +176,7 @@ describe("SystemHealthDrilldownView", () => {
     render(<SystemHealthDrilldownView workspaceId="ws-1" />);
     await screen.findByText("b1");
 
-    await userEvent.click(screen.getByRole("button", { name: /run invoices now/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^retry$/i }));
     await userEvent.click(screen.getByRole("button", { name: /next/i }));
     await screen.findByText("b9");
 
@@ -217,79 +220,18 @@ describe("SystemHealthDrilldownView", () => {
     expect(screen.getByText("Xero token expired")).toBeInTheDocument();
   });
 
-  // The shared dispatch gate has to cover BOTH directions. A retry fired while
-  // a run is in flight races it for the same period; the server's 409 and
-  // jobId dedupe limit the damage, but the UI should not offer the click.
-  it("disables Retry while a run is in flight", async () => {
+  // Retry is the only dispatch this screen can start since KAN-230, so the
+  // gate now guards one direction: a second retry fired while the first is
+  // still in flight would race it for the same run.
+  it("disables Retry while a retry is in flight", async () => {
     respondWith({ runs: [FAILED_RUN], total: 1 });
     post.mockReturnValue(new Promise(() => {}));
 
     render(<SystemHealthDrilldownView workspaceId="ws-1" />);
     await screen.findByText("b1");
-    await userEvent.click(screen.getByRole("button", { name: /run invoices now/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^retry$/i }));
 
     await waitFor(() => expect(screen.getByRole("button", { name: /^retry$/i })).toBeDisabled());
-  });
-
-  // Guards the reload itself, not just that it cannot clobber: without it, a
-  // successful run leaves the history exactly as it was, which reads as a
-  // button that did nothing.
-  it("reloads the history after a run succeeds", async () => {
-    post.mockResolvedValue({ data: { enqueued: 1 } });
-
-    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
-    await screen.findByText("b1");
-    const callsBefore = get.mock.calls.length;
-
-    await userEvent.click(screen.getByRole("button", { name: /run invoices now/i }));
-
-    await waitFor(() => expect(get.mock.calls.length).toBeGreaterThan(callsBefore));
-  });
-
-  it("explains a refused run instead of appearing to do nothing", async () => {
-    post.mockRejectedValue({
-      response: { status: 409, data: { error: "already_run", periodKey: "20260116-0900", runs: [RUN] } },
-    });
-
-    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
-    await userEvent.click(await screen.findByRole("button", { name: /run invoices now/i }));
-
-    expect(await screen.findByText(/already run/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /force re-run/i })).toBeInTheDocument();
-  });
-
-  it("forces a re-run only after the override is chosen", async () => {
-    post.mockRejectedValueOnce({
-      response: { status: 409, data: { error: "already_run", periodKey: "p", runs: [RUN] } },
-    });
-
-    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
-    await userEvent.click(await screen.findByRole("button", { name: /run invoices now/i }));
-
-    post.mockResolvedValueOnce({ data: { enqueued: 1 } });
-    await userEvent.click(screen.getByRole("button", { name: /force re-run/i }));
-
-    await waitFor(() => {
-      expect(post).toHaveBeenLastCalledWith(
-        expect.stringContaining("force=1"),
-        expect.anything(),
-      );
-    });
-  });
-
-  // Guards the behaviour the 409 duplicate-guard design depends on: a
-  // regression that always appended force=1 would make the 409 branch dead
-  // code while still passing every other test in this file.
-  it("does not send force=1 on the first run request", async () => {
-    post.mockRejectedValueOnce({
-      response: { status: 409, data: { error: "already_run", periodKey: "p", runs: [RUN] } },
-    });
-
-    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
-    await userEvent.click(await screen.findByRole("button", { name: /run invoices now/i }));
-
-    await waitFor(() => expect(post).toHaveBeenCalled());
-    expect(post.mock.calls[0][0]).not.toContain("force=1");
   });
 
   it("shows an error when the initial load fails, rather than looking empty", async () => {
@@ -299,15 +241,6 @@ describe("SystemHealthDrilldownView", () => {
     render(<SystemHealthDrilldownView workspaceId="ws-1" />);
 
     expect(await screen.findByText(/could not load/i)).toBeInTheDocument();
-  });
-
-  it("surfaces a non-409 run failure instead of silently doing nothing", async () => {
-    post.mockRejectedValue(new Error("boom"));
-
-    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
-    await userEvent.click(await screen.findByRole("button", { name: /run invoices now/i }));
-
-    expect(await screen.findByText(/could not start the run/i)).toBeInTheDocument();
   });
 
   it("shows explicit copy when a workspace genuinely has no runs", async () => {
@@ -326,6 +259,65 @@ describe("SystemHealthDrilldownView", () => {
  * missing Xero connection from a participant with no address. Telling them
  * apart is the whole reason the drill-down exists.
  */
+/**
+ * KAN-230. The two manual trigger buttons are gone by product decision.
+ *
+ * The drill-down is a place to read what the scheduler did, not a place to
+ * make it do something. What went with them is the whole dispatch path: the
+ * 409 refusal card and its "Force re-run" override existed only to resolve a
+ * manual run, and nothing can reach them once nothing starts one.
+ *
+ * Retry is deliberately untouched. It re-runs one named historical run rather
+ * than starting a period, which is a different control the ticket does not
+ * name.
+ */
+describe("the drill-down does not trigger runs", () => {
+  beforeEach(() => {
+    get.mockReset();
+    post.mockReset();
+    respondWith({ runs: [RUN], total: 1 });
+  });
+
+  it("offers neither manual run button", async () => {
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await screen.findByText("b1");
+
+    expect(screen.queryByRole("button", { name: /run invoices now/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /run statements now/i })).not.toBeInTheDocument();
+  });
+
+  // The override only ever appeared in answer to a refused manual run, so it
+  // cannot be reachable once the buttons that started one are gone.
+  it("offers no force re-run override", async () => {
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await screen.findByText("b1");
+
+    expect(screen.queryByRole("button", { name: /force re-run/i })).not.toBeInTheDocument();
+  });
+
+  // The assertion that outlives any wording change: rendering the page must
+  // not POST to the dispatch endpoint at all.
+  it("never posts to the run endpoint on render", async () => {
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await screen.findByText("b1");
+
+    const runPosts = post.mock.calls.filter(([url]) => /\/run(\?|$)/.test(String(url)));
+    expect(runPosts).toEqual([]);
+  });
+
+  // Retry is a different control and stays. Guarding it here means a future
+  // tidy-up that deletes the rest of the dispatch plumbing cannot quietly
+  // take retry with it.
+  it("still offers retry on a failed run", async () => {
+    respondWith({ runs: [FAILED_RUN], total: 1 });
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await screen.findByText("b1");
+
+    expect(await screen.findByRole("button", { name: /^retry$/i })).toBeInTheDocument();
+  });
+});
+
 describe("skipped runs say why", () => {
   it("names the reason a run was skipped", async () => {
     respondWith({ runs: [{ ...RUN, skipReason: "accounting_not_connected" }], total: 1 });
