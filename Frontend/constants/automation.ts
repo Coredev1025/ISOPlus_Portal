@@ -100,6 +100,99 @@ export const EMAIL_MESSAGE_FIELD = {
 } as const;
 
 /**
+ * The two automation kinds, as the panel's `idPrefix` already spells them.
+ *
+ * Typed rather than left a bare string because the email defaults below are
+ * keyed on it: a third spelling would silently pick no default at all.
+ */
+export type AutomationKind = "invoice" | "statement";
+
+/**
+ * The one system variable each block's message may carry (KAN-265).
+ *
+ * The client asked for exactly one per block, not a menu. An invoice run
+ * resolves no statement number and a statement run resolves no invoice number
+ * (Backend/src/workers/automationWorker.js, buildTemplateVars), so offering
+ * both would offer each block a token that can never fill in — and an
+ * unresolved token is left verbatim by design, so it would reach a client as
+ * literal "{{statement_number}}" text.
+ *
+ * Touchpoints: lib/automation-email-block.tsx (the inline guide).
+ */
+export const EMAIL_TEMPLATE_VARIABLE: Readonly<Record<AutomationKind, string>> =
+  Object.freeze({
+    invoice: "{{invoice_number}}",
+    statement: "{{statement_number}}",
+  });
+
+/**
+ * What the inline guide says the variable does.
+ *
+ * Touchpoints: lib/automation-email-block.tsx.
+ */
+export const EMAIL_TEMPLATE_VARIABLE_HINT: Readonly<Record<AutomationKind, string>> =
+  Object.freeze({
+    invoice:
+      "Type {{invoice_number}} anywhere in the subject or message and it is "
+      + "replaced with the invoice number when the email is sent. A run "
+      + "covering several invoices lists them all.",
+    statement:
+      "Type {{statement_number}} anywhere in the subject or message and it is "
+      + "replaced with the statement number when the email is sent. A run "
+      + "covering several statements lists them all.",
+  });
+
+/**
+ * The pre-filled Email Subject per block, exactly as the client specified.
+ *
+ * `{{business_name}}` resolves alongside the document number — both are built
+ * in buildTemplateVars — so the subject reads "Invoice INV-1205 from Acme
+ * Care" on the way out.
+ *
+ * Touchpoints: lib/automation-email-defaults.ts.
+ */
+export const DEFAULT_EMAIL_SUBJECT: Readonly<Record<AutomationKind, string>> =
+  Object.freeze({
+    invoice: "Invoice {{invoice_number}} from {{business_name}}",
+    statement: "Account statement {{statement_number}} from {{business_name}}",
+  });
+
+/**
+ * The pre-filled Email Message per block, exactly as the client specified.
+ *
+ * HTML because the field is a rich-text editor: handing it plain text with
+ * newlines renders one run-on paragraph. Kept as the paragraphs the client
+ * wrote so "Reset to default" returns the document to a known copy rather
+ * than to something approximating it.
+ *
+ * Touchpoints: lib/automation-email-defaults.ts.
+ */
+export const DEFAULT_EMAIL_MESSAGE: Readonly<Record<AutomationKind, string>> =
+  Object.freeze({
+    invoice:
+      "<p>Dear Recipient,</p>"
+      + "<p>Please find attached invoice {{invoice_number}} for services "
+      + "delivered during the period shown on the document.</p>"
+      + "<p>The invoice includes payment details and the due date. Please "
+      + "quote the invoice number as the payment reference so we can allocate "
+      + "your payment correctly.</p>"
+      + "<p>Should you have any questions, please do not hesitate to contact "
+      + "us.</p>"
+      + "<p>Kind regards,</p>",
+    statement:
+      "<p>Dear Recipient,</p>"
+      + "<p>Please find attached your account statement, "
+      + "{{statement_number}}.</p>"
+      + "<p>The statement lists every invoice issued and every payment "
+      + "received on your account during that period, along with any "
+      + "outstanding balance and how long it has been owing. It is provided "
+      + "for your records. It is not a tax invoice and does not raise any new "
+      + "charges.</p>"
+      + "<p>Kind regards,</p>"
+      + "<p>Account Receivable Team</p>",
+  });
+
+/**
  * How each `PDFLink.deliveryState` reads on the status panel.
  *
  * The wire values mirror `Backend/src/constants/automation.js`

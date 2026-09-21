@@ -23,7 +23,10 @@ vi.mock('@/lib/automation-settings', async () => {
 });
 
 import { InvoiceStatementAutomationPanel } from '@/lib/invoice-statement-automation-panel';
-import { AUTOMATION_PANEL_POLL_MS } from '@/constants/automation';
+import {
+  AUTOMATION_PANEL_POLL_MS,
+  DEFAULT_EMAIL_SUBJECT,
+} from '@/constants/automation';
 import {
   DEFAULT_BLOCK,
   fetchAutomationDocuments,
@@ -791,5 +794,125 @@ describe('Load more resets when the workspace changes', () => {
     screen.getByRole('button', { name: /load more/i }).click();
     await waitFor(() => expect(documentsMock).toHaveBeenCalledTimes(2));
     expect(documentsMock.mock.calls[1][1]).toBe('cursor-B-page-2');
+  });
+});
+
+/**
+ * KAN-265. The Email Subject and Email Message arrive pre-filled with copy the
+ * client specified, the guide under the editor names the one variable the
+ * block can resolve, and "Reset to default" puts the copy back.
+ */
+describe('the email template defaults', () => {
+  const enabled = () => settings({ enabled: true }, { enabled: true });
+
+  it('pre-fills the invoice subject on a workspace that never set one', async () => {
+    fetchMock.mockResolvedValue(enabled());
+    await renderPanel();
+
+    expect(
+      within(invoiceSection()).getByLabelText(/email subject/i),
+    ).toHaveValue(DEFAULT_EMAIL_SUBJECT.invoice);
+  });
+
+  it('pre-fills the statement subject with its own copy', async () => {
+    fetchMock.mockResolvedValue(enabled());
+    await renderPanel();
+
+    expect(
+      within(statementSection()).getByLabelText(/email subject/i),
+    ).toHaveValue(DEFAULT_EMAIL_SUBJECT.statement);
+  });
+
+  // The rule that protects a client's own wording: a stored subject is theirs.
+  it('never overwrites a subject the client has written', async () => {
+    fetchMock.mockResolvedValue(
+      settings({ enabled: true, emailSubject: 'Your bill is ready' }, { enabled: true }),
+    );
+    await renderPanel();
+
+    expect(
+      within(invoiceSection()).getByLabelText(/email subject/i),
+    ).toHaveValue('Your bill is ready');
+  });
+
+  // Matched on the guide's own wording, not on the token alone: the default
+  // body carries the same token, so a bare token matcher finds two nodes and
+  // proves nothing about the guide.
+  it('explains the invoice variable under the editor', async () => {
+    fetchMock.mockResolvedValue(enabled());
+    await renderPanel();
+
+    const guide = within(invoiceSection()).getByText(
+      /replaced with the invoice number when the email is sent/i,
+    );
+    expect(guide).toHaveTextContent('{{invoice_number}}');
+  });
+
+  it('explains the statement variable under its own editor', async () => {
+    fetchMock.mockResolvedValue(enabled());
+    await renderPanel();
+
+    const guide = within(statementSection()).getByText(
+      /replaced with the statement number when the email is sent/i,
+    );
+    expect(guide).toHaveTextContent('{{statement_number}}');
+  });
+
+  // Each block offers only the variable it can resolve. An invoice run never
+  // produces a statement number, so a statement token anywhere in the invoice
+  // block would reach a client as literal braces.
+  it('never shows the other block\'s variable', async () => {
+    fetchMock.mockResolvedValue(enabled());
+    await renderPanel();
+
+    expect(invoiceSection()).not.toHaveTextContent('{{statement_number}}');
+    expect(statementSection()).not.toHaveTextContent('{{invoice_number}}');
+  });
+
+  it('offers a reset control on each enabled block', async () => {
+    fetchMock.mockResolvedValue(enabled());
+    await renderPanel();
+
+    expect(
+      within(invoiceSection()).getByRole('button', { name: /reset to default/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(statementSection()).getByRole('button', { name: /reset to default/i }),
+    ).toBeInTheDocument();
+  });
+
+  // The point of the button: a client who has rewritten the body can get the
+  // supplied copy back without retyping it.
+  it('puts the default copy back when reset is clicked', async () => {
+    fetchMock.mockResolvedValue(
+      settings({ enabled: true, emailMessage: '<p>my own words</p>' }, {}),
+    );
+    const user = userEvent.setup();
+    await renderPanel();
+
+    await user.click(
+      within(invoiceSection()).getByRole('button', { name: /reset to default/i }),
+    );
+
+    await waitFor(() =>
+      expect(within(invoiceSection()).getByText(/please find attached invoice/i))
+        .toBeInTheDocument(),
+    );
+  });
+
+  // The defaults must survive the round trip, or an automation enabled and
+  // saved would send the blank body this ticket exists to replace.
+  it('saves the pre-filled copy rather than a blank field', async () => {
+    fetchMock.mockResolvedValue(enabled());
+    const user = userEvent.setup();
+    await renderPanel();
+
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => expect(saveMock).toHaveBeenCalled());
+    const [, payload] = saveMock.mock.calls[0];
+    expect(payload.invoice.emailSubject).toBe(DEFAULT_EMAIL_SUBJECT.invoice);
+    expect(payload.statement.emailSubject).toBe(DEFAULT_EMAIL_SUBJECT.statement);
+    expect(payload.invoice.emailMessage).toContain('Please find attached invoice');
   });
 });

@@ -1,11 +1,15 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  DEFAULT_EMAIL_MESSAGE,
   EMAIL_MESSAGE_FIELD,
+  EMAIL_TEMPLATE_VARIABLE_HINT,
   EMAIL_TEXT_FIELDS,
   RECIPIENT_OPTIONS,
+  type AutomationKind,
 } from "@/constants/automation";
 import { EMAIL_PATTERN, isEmailAddressList } from "@/constants/validation";
 import {
@@ -75,6 +79,8 @@ function EmailTextField({
 
 type AutomationEmailBlockProps = Readonly<{
   idPrefix: string;
+  /** Decides which single system variable this block offers, and its copy. */
+  kind: AutomationKind;
   value: AutomationBlock;
   /** Differs per block: statements cannot be sent from the accounting platform. */
   sendMethodOptions: readonly AutomationSelectOption[];
@@ -83,6 +89,7 @@ type AutomationEmailBlockProps = Readonly<{
 
 export function AutomationEmailBlock({
   idPrefix,
+  kind,
   value,
   sendMethodOptions,
   onChange,
@@ -143,6 +150,25 @@ export function AutomationEmailBlock({
           value={value[EMAIL_MESSAGE_FIELD.key]}
           onChange={setText(EMAIL_MESSAGE_FIELD.key)}
         />
+
+        {/* The guide sits directly under the box, which is where the client
+            asked for it, and names only the one variable this block can
+            actually resolve. Reset sits beside it rather than above the
+            editor so it reads as an escape hatch, not a primary action. */}
+        <div className="mt-2 flex items-start justify-between gap-4">
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            {EMAIL_TEMPLATE_VARIABLE_HINT[kind]}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={() => setText(EMAIL_MESSAGE_FIELD.key)(DEFAULT_EMAIL_MESSAGE[kind])}
+          >
+            Reset to default
+          </Button>
+        </div>
       </AutomationField>
     </div>
   );

@@ -19,7 +19,9 @@ import {
   AUTOMATION_PANEL_POLL_MS,
   SEND_METHOD_OPTIONS,
   STATEMENT_SEND_METHOD_OPTIONS,
+  type AutomationKind,
 } from "@/constants/automation";
+import { withEmailDefaults } from "@/lib/automation-email-defaults";
 import {
   DEFAULT_BLOCK,
   fetchAutomationDocuments,
@@ -36,13 +38,35 @@ import {
  */
 function defaultSettings(): AutomationSettings {
   return {
-    invoice: structuredClone(DEFAULT_BLOCK),
-    statement: structuredClone(DEFAULT_BLOCK),
+    invoice: withEmailDefaults(structuredClone(DEFAULT_BLOCK), "invoice"),
+    statement: withEmailDefaults(structuredClone(DEFAULT_BLOCK), "statement"),
+  };
+}
+
+/**
+ * The loaded settings with any blank email copy pre-filled (KAN-265).
+ *
+ * Applied to what the server returned rather than only to the blank form, so
+ * a workspace configured before this shipped — every existing one — sees the
+ * copy too instead of an empty editor. `withEmailDefaults` only ever fills a
+ * blank field, so nothing a client wrote is touched.
+ */
+function withLoadedEmailDefaults(loaded: AutomationSettings): AutomationSettings {
+  return {
+    ...loaded,
+    invoice: withEmailDefaults(loaded.invoice, "invoice"),
+    statement: withEmailDefaults(loaded.statement, "statement"),
   };
 }
 
 type AutomationSectionProps = Readonly<{
-  idPrefix: string;
+  /**
+   * Doubles as the automation kind, which is what it has always spelled.
+   * Typed rather than a bare string because the email defaults are keyed on
+   * it — a second `kind` prop could disagree with this one, so there is only
+   * the one.
+   */
+  idPrefix: AutomationKind;
   icon: LucideIcon;
   title: string;
   description: string;
@@ -94,6 +118,7 @@ function AutomationSection({
 
             <AutomationEmailBlock
               idPrefix={idPrefix}
+              kind={idPrefix}
               value={value}
               sendMethodOptions={sendMethodOptions}
               onChange={onChange}
@@ -215,7 +240,7 @@ export function InvoiceStatementAutomationPanel({
       fetchAutomationSettings(workspaceId)
         .then((loaded) => {
           if (cancelled) return;
-          if (first) setSettings(loaded);
+          if (first) setSettings(withLoadedEmailDefaults(loaded));
           setSavedSettings(loaded);
           setRecentDocuments(loaded.recentDocuments ?? []);
           // Re-anchors Load More to the page after whatever is now newest —
