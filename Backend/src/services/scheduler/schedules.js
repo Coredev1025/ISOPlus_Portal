@@ -1,12 +1,13 @@
 import { isEqual } from 'lodash-es';
 
 import ScheduledJob from '../../models/ScheduledJob.js';
+import { mongoEq } from '../../utils/securityHelpers.js';
 import { info } from '../../utils/logger.js';
 import { isValidSchedule } from './nextRun.js';
 import { resolveTimezone } from './timezone.js';
 import { assertMinimumInterval } from './intervalFloor.js';
 import { pickerScheduleError } from './pickerValidation.js';
-import { advanceSchedule, canonicalStartDate } from './advance.js';
+import { advanceSchedule, canonicalStartDate, normaliseStartDate } from './advance.js';
 import { DUPLICATE_KEY, UPSERT_OPTIONS, LOG_SCOPE } from '../../constants/scheduler.js';
 
 /**
@@ -160,6 +161,75 @@ export async function upsertSchedule({
   });
 
   return job;
+}
+
+/**
+ * The schedule input that reproduces an existing row, ready to be re-saved in
+ * a different timezone.
+ *
+ * `startDate` is read back as the calendar date it was written in. It is
+ * stored as the instant of local midnight in the job's own zone, so handing
+ * that instant to a zone further west re-anchors it on the previous calendar
+ * day — a fortnightly series anchored on Tuesday comes back anchored on
+ * Monday and every run after it lands half a phase out. Passing the date
+ * string instead makes canonicalStartDate re-take midnight on the same day in
+ * the new zone, which is what "the same schedule, in a different timezone"
+ * means.
+ */
+function scheduleInputFrom(job) {
+  if (!job.schedule) return null;
+  return { ...job.schedule, startDate: normaliseStartDate(job.schedule.startDate, job.timezone) };
+}
+
+/**
+ * Bring a workspace's live schedules onto the timezone its business now uses.
+ *
+ * KAN-262. A schedule's timezone is a snapshot that `upsertSchedule` takes
+ * from `Business.headOfficeTimezone` at save time, and nothing re-took it when
+ * the business moved. The job went on computing `nextRunAt` in the old zone —
+ * and handing that zone to its handler, which dates the documents the run
+ * produces — until someone happened to re-save the automation form. The
+ * client saw it as a "Next Run" caption naming a timezone they had already
+ * changed; the caption was right, the schedule underneath it was wrong.
+ *
+ * Deliberately a no-op for anything already on the current zone, so saving a
+ * business profile that did not touch the timezone cannot walk a billing slot.
+ *
+ * Paused schedules are left alone. `upsertSchedule` sets `enabled: true`
+ * unconditionally, so re-pointing one through it would switch an automation
+ * the client had deliberately turned off back on. A paused block has no
+ * future run to move, its stored zone is the one its run history was produced
+ * in, and re-enabling it re-inherits the current zone anyway.
+ */
+export async function repointWorkspaceSchedules({ workspaceId, now = new Date() }) {
+  if (!workspaceId) return [];
+
+  const current = await resolveTimezone({ workspaceId });
+  const live = await ScheduledJob.find({
+    workspaceId: mongoEq(String(workspaceId)),
+    enabled: true,
+  }).lean();
+  const stale = live.filter((job) => job.timezone !== current);
+  if (stale.length === 0) return [];
+
+  const moved = [];
+  for (const job of stale) {
+    moved.push(await upsertSchedule({
+      kind: job.kind,
+      targetId: job.targetId,
+      workspaceId: job.workspaceId,
+      cron: job.cron ?? null,
+      schedule: scheduleInputFrom(job),
+      now,
+    }));
+  }
+
+  info(LOG_SCOPE, 'Workspace schedules re-pointed after a timezone change', {
+    workspaceId,
+    timezone: current,
+    kinds: moved.map((job) => job.kind),
+  });
+  return moved;
 }
 
 /** Disable rather than delete, so lastRunAt and missedRuns survive. */
