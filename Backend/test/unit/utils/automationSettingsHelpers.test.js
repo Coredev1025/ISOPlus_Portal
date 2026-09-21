@@ -191,6 +191,34 @@ describe('parseAutomationSettingsBody', () => {
     expect(result.error).toMatch(/sendMethod/);
   });
 
+  it('accepts the accounting send method on the invoice block', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, sendMethod: 'accounting' },
+    });
+    expect(result.error).toBeUndefined();
+  });
+
+  /**
+   * KAN-44. Only invoices can be delivered through the accounting platform;
+   * the worker emails a statement whatever this says. Accepting it stored a
+   * setting the client chose and the run silently ignored.
+   */
+  it('rejects the accounting send method on the statement block', () => {
+    const result = parseAutomationSettingsBody({
+      statement: { ...validBlock, sendMethod: 'accounting' },
+    });
+    expect(result.error).toMatch(/^statement: .*sendMethod/);
+  });
+
+  it('rejects the accounting send method on a disabled statement block too', () => {
+    // Stored as sent and used the moment the block is re-enabled, the same
+    // reasoning that validates a disabled block's email addresses.
+    const result = parseAutomationSettingsBody({
+      statement: { ...validBlock, enabled: false, sendMethod: 'accounting' },
+    });
+    expect(result.error).toMatch(/^statement: .*sendMethod/);
+  });
+
   it('rejects an invalid recipient', () => {
     const result = parseAutomationSettingsBody({
       invoice: { ...validBlock, recipient: 'nobody' },
@@ -361,6 +389,21 @@ describe('buildAutomationSettingsPayload', () => {
 
     expect(payload.invoice.timezone).toBe('Australia/Perth');
     expect(payload.statement.timezone).toBe('Pacific/Auckland');
+  });
+
+  /**
+   * KAN-44. A statement saved with 'accounting' before the API refused it is
+   * still emailed, so the form must say "Send from ISO+" — and the next save
+   * then writes the value that is really used.
+   */
+  it('reports a stored statement accounting send method as isoplus, how it is delivered', () => {
+    const payload = buildAutomationSettingsPayload({
+      invoice: { sendMethod: 'accounting' },
+      statement: { sendMethod: 'accounting' },
+    });
+
+    expect(payload.invoice.sendMethod).toBe('accounting');
+    expect(payload.statement.sendMethod).toBe('isoplus');
   });
 
   it('falls back to the default timezone when no job carries one', () => {

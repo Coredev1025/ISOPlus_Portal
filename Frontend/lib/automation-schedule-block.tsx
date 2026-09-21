@@ -60,7 +60,7 @@ export function AutomationField({
 }
 
 /** Structurally compatible with RunOnOption, so both blocks feed one select. */
-type AutomationSelectOption = { value: string | number; label: string };
+export type AutomationSelectOption = { value: string | number; label: string };
 
 type OptionSelectProps = Readonly<{
   id: string;

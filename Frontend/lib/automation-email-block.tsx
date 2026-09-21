@@ -6,10 +6,13 @@ import {
   EMAIL_MESSAGE_FIELD,
   EMAIL_TEXT_FIELDS,
   RECIPIENT_OPTIONS,
-  SEND_METHOD_OPTIONS,
 } from "@/constants/automation";
 import { EMAIL_PATTERN, isEmailAddressList } from "@/constants/validation";
-import { AutomationField, OptionSelect } from "@/lib/automation-schedule-block";
+import {
+  AutomationField,
+  OptionSelect,
+  type AutomationSelectOption,
+} from "@/lib/automation-schedule-block";
 import type { AutomationBlock } from "@/lib/automation-settings";
 
 /**
@@ -73,12 +76,15 @@ function EmailTextField({
 type AutomationEmailBlockProps = Readonly<{
   idPrefix: string;
   value: AutomationBlock;
+  /** Differs per block: statements cannot be sent from the accounting platform. */
+  sendMethodOptions: readonly AutomationSelectOption[];
   onChange: (next: AutomationBlock) => void;
 }>;
 
 export function AutomationEmailBlock({
   idPrefix,
   value,
+  sendMethodOptions,
   onChange,
 }: AutomationEmailBlockProps) {
   const set = (patch: Partial<AutomationBlock>) =>
@@ -106,7 +112,7 @@ export function AutomationEmailBlock({
           id={`${idPrefix}-send-method`}
           ariaLabel="Send Method"
           value={value.sendMethod}
-          options={SEND_METHOD_OPTIONS}
+          options={sendMethodOptions}
           onValueChange={(next) =>
             set({ sendMethod: next as AutomationBlock["sendMethod"] })
           }

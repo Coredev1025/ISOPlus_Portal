@@ -9,10 +9,17 @@ import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AutomationEmailBlock } from "@/lib/automation-email-block";
-import { AutomationScheduleBlock } from "@/lib/automation-schedule-block";
+import {
+  AutomationScheduleBlock,
+  type AutomationSelectOption,
+} from "@/lib/automation-schedule-block";
 import { AutomationStatusPanel } from "@/lib/automation-status-panel";
 import { hasInvalidEmail, mergeRecentDocuments } from "@/lib/automation-helpers";
-import { AUTOMATION_PANEL_POLL_MS } from "@/constants/automation";
+import {
+  AUTOMATION_PANEL_POLL_MS,
+  SEND_METHOD_OPTIONS,
+  STATEMENT_SEND_METHOD_OPTIONS,
+} from "@/constants/automation";
 import {
   DEFAULT_BLOCK,
   fetchAutomationDocuments,
@@ -40,6 +47,7 @@ type AutomationSectionProps = Readonly<{
   title: string;
   description: string;
   scheduleLabel: string;
+  sendMethodOptions: readonly AutomationSelectOption[];
   value: AutomationBlock;
   onChange: (next: AutomationBlock) => void;
 }>;
@@ -50,6 +58,7 @@ function AutomationSection({
   title,
   description,
   scheduleLabel,
+  sendMethodOptions,
   value,
   onChange,
 }: AutomationSectionProps) {
@@ -86,6 +95,7 @@ function AutomationSection({
             <AutomationEmailBlock
               idPrefix={idPrefix}
               value={value}
+              sendMethodOptions={sendMethodOptions}
               onChange={onChange}
             />
           </>
@@ -318,6 +328,7 @@ export function InvoiceStatementAutomationPanel({
         title="Invoice Automation"
         description="Generate and email invoices on a schedule instead of raising each one by hand."
         scheduleLabel="Generate Invoices Every"
+        sendMethodOptions={SEND_METHOD_OPTIONS}
         value={settings.invoice}
         onChange={update("invoice")}
       />
@@ -328,6 +339,7 @@ export function InvoiceStatementAutomationPanel({
         title="Statement Automation"
         description="Generate and email client statements on a schedule."
         scheduleLabel="Generate Statements Every"
+        sendMethodOptions={STATEMENT_SEND_METHOD_OPTIONS}
         value={settings.statement}
         onChange={update("statement")}
       />

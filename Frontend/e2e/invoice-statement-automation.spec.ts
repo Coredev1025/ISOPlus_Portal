@@ -322,6 +322,30 @@ test.describe("Invoice & Statement Automation", () => {
     await expect(reloaded.getByLabel("Send Method")).toContainText(/accounting|xero/i);
   });
 
+  test("Statement Send Method offers no accounting platform, and the API refuses one", async ({
+    page,
+  }) => {
+    // KAN-44. Only invoices go through the accounting platform. A statement
+    // saved that way was emailed regardless, and the tab never said so.
+    await page.goto(AUTOMATION_URL);
+
+    const statement = statementBlock(page);
+    await statement.getByRole("switch").click();
+    await statement.getByLabel("Send Method").click();
+
+    await expect(page.getByRole("option", { name: /send from iso\+/i })).toBeVisible();
+    await expect(page.getByRole("option", { name: /accounting|xero/i })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    // The dropdown is not the only writer: the PUT is reachable without it.
+    const response = await page.request.put(
+      `${BACKEND}/api/workspaces/${WORKSPACE}/automation-settings`,
+      { data: { statement: { enabled: false, sendMethod: "accounting" } } },
+    );
+    expect(response.status()).toBe(400);
+    expect(await response.text()).toMatch(/statement: sendMethod/);
+  });
+
   test("Restore Defaults clears the form without saving over the server", async ({
     page,
   }) => {
