@@ -343,8 +343,15 @@ describe('workspace detail page', () => {
     const financeCard = screen
       .getByRole('heading', { name: 'Finance Settings & Automation' })
       .closest('div.card-hover') as HTMLElement;
-    await user.click(within(financeCard).getByRole('button', { name: 'Open' }));
+    // KAN-258: the client asked for "Manage Finance" rather than a bare
+    // "Open", which said nothing about where it went.
+    await user.click(
+      within(financeCard).getByRole('button', { name: 'Manage Finance' }),
+    );
     expect(router.push).toHaveBeenCalledWith('/workspace/ws-1/finance-settings');
+    expect(
+      within(financeCard).queryByRole('button', { name: 'Open' }),
+    ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'View Audit Trail' }));
     expect(router.push).toHaveBeenCalledWith('/workspace/ws-1/audit-trail');
