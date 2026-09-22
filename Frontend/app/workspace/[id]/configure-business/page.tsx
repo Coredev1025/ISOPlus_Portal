@@ -66,7 +66,7 @@ type LogoUploadColumnProps = Readonly<{
   removeLabel: string;
   /** Square slots for default/square; wide uses a shorter, wider frame inside the same-height row. */
   variant: "square" | "wide";
-  helpText: string;
+  helpText: readonly string[];
   onRemove: () => void;
   onFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
 }>;
@@ -124,7 +124,13 @@ function LogoUploadColumn({
         className="block h-10 w-full min-w-0 shrink-0 whitespace-nowrap overflow-hidden file:mr-3 file:inline-flex file:h-full file:shrink-0 file:items-center file:border-0 file:bg-transparent file:px-0 file:text-sm file:font-medium file:text-foreground"
       />
 
-      <p className="text-sm leading-snug text-muted-foreground">{helpText}</p>
+      <div className="space-y-1">
+        {helpText.map((line) => (
+          <p key={line} className="text-sm leading-snug text-muted-foreground">
+            {line}
+          </p>
+        ))}
+      </div>
     </div>
   );
 }
@@ -662,7 +668,10 @@ export default function ConfigureBusinessPage() {
                 previewAlt="Default Logo Preview"
                 removeLabel="Remove Default Logo"
                 variant="square"
-                helpText="Maximum file size: 5MB. Used for general application areas, profile displays, and generated PDF documents."
+                helpText={[
+                  "Maximum file size: 1 MB",
+                  "Used for general application areas, profile displays, and generated PDF documents, including tax invoices.",
+                ]}
                 onRemove={() => handleRemoveLogo("default")}
                 onFileChange={(e) =>
                   handleLogoChange(e, "defaultLogo", setLogoFile)
@@ -674,7 +683,11 @@ export default function ConfigureBusinessPage() {
                 previewAlt="Square Logo Preview"
                 removeLabel="Remove Square Logo"
                 variant="square"
-                helpText="Maximum file size: 5MB. Used for compact spaces such as avatars, small cards, and app shortcuts."
+                helpText={[
+                  "Recommended dimensions: 512 × 512 px",
+                  "Maximum file size: 1 MB",
+                  "Used for digital forms, such as the Incident Report Form.",
+                ]}
                 onRemove={() => handleRemoveLogo("square")}
                 onFileChange={(e) =>
                   handleLogoChange(e, "squareLogo", setSquareLogoFile)
@@ -686,7 +699,10 @@ export default function ConfigureBusinessPage() {
                 previewAlt="Wide Logo Preview"
                 removeLabel="Remove Wide Logo"
                 variant="wide"
-                helpText="Maximum file size: 5MB. Used for headers, banners, and wide layout areas throughout the application."
+                helpText={[
+                  "Recommended dimensions: 820 × 312 px, with the logo centred within the middle third of the image.",
+                  "Maximum file size: 1 MB",
+                ]}
                 onRemove={() => handleRemoveLogo("wide")}
                 onFileChange={(e) =>
                   handleLogoChange(e, "wideLogo", setWideLogoFile)
