@@ -298,7 +298,11 @@ export const DELIVERY_REFUSAL_MESSAGES = {
   billing_contact_has_no_address: 'The billing contact named on this profile has no email address.',
   malformed_address: 'The email address on file is not a valid address.',
   unsupported_recipient_type: 'The Recipient setting is not one this workspace can send to.',
-  access_denied: 'The mail service refused this recipient. The address is outside the domains this environment is allowed to send to.',
+  // KAN-266: states the fact and names both candidates. The old wording
+  // asserted the recipient was at fault, but this reason is raised for any
+  // 403 — and SES authorises on the SENDING identity, so a Email From
+  // outside the allowed domains raises it just as readily.
+  access_denied: 'The mail service refused this send. Check the Email From address and the recipient — the server log for this run names which one the provider rejected.',
 };
 
 /**

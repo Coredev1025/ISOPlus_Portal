@@ -193,12 +193,31 @@ export const sesBackend = {
         attachments,
       });
     } catch (err) {
-      // The IAM guardrail on the dev key denies sends to domains outside its
-      // allowlist. Retrying that can never succeed, so it is a recorded
-      // refusal, not a thrown one — anything else stays thrown for BullMQ.
+      // An IAM policy denying ses:SendEmail. Retrying can never succeed, so it
+      // is a recorded refusal, not a thrown one — anything else stays thrown
+      // for BullMQ.
       if (!isAccessDeniedError(err)) throw err;
-      warn(LOG_SCOPE, 'SES refused the send (access denied); recipient is outside the allowed domains', {
-        kind, workspaceId, boardId, periodKey, recipientSource: recipient.source,
+      // KAN-266: both addresses and the provider's own words.
+      //
+      // SES authorises ses:SendEmail against the *sending identity* ARN —
+      // identity/<from-address> — and names the recipient only in an optional
+      // ses:Recipients condition. So a From outside the policy's identities
+      // raises exactly the same AccessDenied as a disallowed recipient, and
+      // this branch cannot tell which happened. It previously logged neither
+      // address nor the error, which left the logs unable to settle it either
+      // — and on portal-dev a From-address failure was read as a recipient
+      // one for two days. The provider's own message names the identity it
+      // objected to; that is the line worth having.
+      warn(LOG_SCOPE, 'SES refused the send (access denied)', {
+        kind,
+        workspaceId,
+        boardId,
+        periodKey,
+        recipientSource: recipient.source,
+        to: recipient.address,
+        from: record.from,
+        errorName: err?.name ?? null,
+        errorMessage: err?.message ?? null,
       });
       return { delivered: false, backend: this.name, reason: 'access_denied' };
     }
