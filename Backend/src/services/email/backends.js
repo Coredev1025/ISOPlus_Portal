@@ -16,7 +16,9 @@ import { getS3File } from '../../utils/uploadS3.js';
 import { error as logError, info, warn } from '../../utils/logger.js';
 import { recordEmailSend } from './deliveryEvents.js';
 import { resolveRecipient } from './recipients.js';
-import { isAccessDeniedError, isEmailTransportConfigured, sendEmail } from './sesTransport.js';
+import {
+  describeSendError, isAccessDeniedError, isEmailTransportConfigured, sendEmail,
+} from './sesTransport.js';
 import { defaultEmailBody, defaultEmailSubject } from '../../utils/automationEmailDefaults.js';
 
 const LOG_SCOPE = 'Email-Delivery';
@@ -216,8 +218,7 @@ export const sesBackend = {
         recipientSource: recipient.source,
         to: recipient.address,
         from: record.from,
-        errorName: err?.name ?? null,
-        errorMessage: err?.message ?? null,
+        ...describeSendError(err),
       });
       return { delivered: false, backend: this.name, reason: 'access_denied' };
     }

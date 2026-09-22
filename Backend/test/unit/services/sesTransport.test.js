@@ -260,6 +260,36 @@ describe('sesTransport', () => {
       expect(error).toHaveBeenCalledTimes(1);
       expect(allLoggedText()).not.toContain(SECRET);
     });
+
+    /**
+     * KAN-266. The message alone does not identify the call. The AWS error
+     * name, HTTP status and request id are what let a failure be settled
+     * against CloudTrail instead of guessed at from prose — and none of them
+     * is an address, so the deliberate no-addresses rule below still holds.
+     */
+    it('records the AWS error name, status and request id', async () => {
+      sendMail.mockRejectedValueOnce(Object.assign(
+        new Error('not authorized to perform ses:SendEmail'),
+        {
+          name: 'AccessDeniedException',
+          $fault: 'client',
+          $metadata: { httpStatusCode: 403, requestId: 'aws-req-91ab' },
+        },
+      ));
+
+      await expect(sendEmail(MESSAGE)).rejects.toThrow(/not authorized/);
+
+      const [, , context] = error.mock.calls[0];
+      expect(context).toMatchObject({
+        errorName: 'AccessDeniedException',
+        httpStatusCode: 403,
+        awsRequestId: 'aws-req-91ab',
+      });
+      // The privacy rule this log was written under is unchanged.
+      const logged = allLoggedText();
+      expect(logged).not.toContain('client@example.com');
+      expect(logged).not.toContain(SECRET);
+    });
   });
 });
 

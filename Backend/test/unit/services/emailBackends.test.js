@@ -197,7 +197,11 @@ describe('sesBackend', () => {
   it('names the sender, the recipient and the provider error when a send is refused', async () => {
     sendEmail.mockRejectedValueOnce(Object.assign(
       new Error("not authorized to perform 'ses:SendEmail' on resource identity/billing@provider.test"),
-      { name: 'AccessDeniedException' },
+      {
+        name: 'AccessDeniedException',
+        $fault: 'client',
+        $metadata: { httpStatusCode: 403, requestId: 'aws-req-7f3c', attempts: 1 },
+      },
     ));
 
     await sesBackend.deliver(MESSAGE);
@@ -213,6 +217,32 @@ describe('sesBackend', () => {
     // The provider's own words, which is the part that actually says which
     // address it objected to.
     expect(context.errorMessage).toMatch(/identity\/billing@provider\.test/);
+  });
+
+  /**
+   * The request id is what makes a refusal *definitive* rather than merely
+   * described: it is the handle that pulls the exact call out of CloudTrail,
+   * where the IAM decision — and the condition that produced it — is recorded.
+   * Without it you are still inferring from an error string.
+   */
+  it('carries the AWS request id and status, so the call can be found in CloudTrail', async () => {
+    sendEmail.mockRejectedValueOnce(Object.assign(
+      new Error('not authorized to perform ses:SendEmail'),
+      {
+        name: 'AccessDeniedException',
+        $fault: 'client',
+        $metadata: { httpStatusCode: 403, requestId: 'aws-req-7f3c', attempts: 1 },
+      },
+    ));
+
+    await sesBackend.deliver(MESSAGE);
+
+    const [, , context] = warn.mock.calls.find(([, m]) => /refused the send/i.test(m));
+    expect(context).toMatchObject({
+      awsRequestId: 'aws-req-7f3c',
+      httpStatusCode: 403,
+      fault: 'client',
+    });
   });
 
   it('still throws non-policy send failures so the job retries', async () => {
