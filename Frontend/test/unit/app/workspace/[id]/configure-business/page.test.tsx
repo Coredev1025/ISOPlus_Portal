@@ -359,6 +359,47 @@ describe('configure business page', () => {
     });
   });
 
+  it('lists size, dimensions, and use for each logo as separate lines', async () => {
+    stubBusiness();
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Company Name')).toHaveValue('Hillsgrade Care');
+    });
+
+    const defaultCol = screen.getByRole('heading', { name: 'Default Logo' }).closest('div');
+    const squareCol = screen.getByRole('heading', { name: 'Square Logo' }).closest('div');
+    const wideCol = screen.getByRole('heading', { name: 'Wide Logo' }).closest('div');
+
+    expect(within(defaultCol!).getByText('Maximum file size: 1 MB')).toBeInTheDocument();
+    expect(
+      within(defaultCol!).getByText(
+        'Used for general application areas, profile displays, and generated PDF documents, including tax invoices.',
+      ),
+    ).toBeInTheDocument();
+    expect(within(defaultCol!).queryByText(/Recommended dimensions/)).not.toBeInTheDocument();
+
+    expect(within(squareCol!).getByText('Recommended dimensions: 512 × 512 px')).toBeInTheDocument();
+    expect(within(squareCol!).getByText('Maximum file size: 1 MB')).toBeInTheDocument();
+    expect(
+      within(squareCol!).getByText(
+        'Used for digital forms, such as the Incident Report Form.',
+      ),
+    ).toBeInTheDocument();
+
+    expect(
+      within(wideCol!).getByText(
+        'Recommended dimensions: 820 × 312 px, with the logo centred within the middle third of the image.',
+      ),
+    ).toBeInTheDocument();
+    expect(within(wideCol!).getByText('Maximum file size: 1 MB')).toBeInTheDocument();
+    expect(within(wideCol!).queryByText(/^Used for/)).not.toBeInTheDocument();
+
+    expect(screen.queryByText(/5MB/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/avatars, small cards/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/headers, banners/)).not.toBeInTheDocument();
+  });
+
   it('uses the full-width finance-settings page chrome and Save Changes label', async () => {
     stubBusiness();
     renderPage();
