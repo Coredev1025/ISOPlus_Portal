@@ -23,7 +23,15 @@ vi.mock('../../../src/utils/uploadS3.js', () => ({
   getS3File: vi.fn(async () => Buffer.from('%PDF-1.7 fake')),
 }));
 
+// KAN-266 asserts on what the refusal branch actually records, so the logger
+// has to be observable rather than a side effect nothing can see.
+vi.mock('../../../src/utils/logger.js', () => ({
+  info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), default: {},
+}));
+
 import { localOutboxBackend, sesBackend } from '../../../src/services/email/backends.js';
+import { warn } from '../../../src/utils/logger.js';
+import { DELIVERY_REFUSAL_MESSAGES } from '../../../src/constants/automation.js';
 import { sendEmail } from '../../../src/services/email/sesTransport.js';
 import { resolveRecipient } from '../../../src/services/email/recipients.js';
 import { getS3File } from '../../../src/utils/uploadS3.js';
@@ -176,6 +184,67 @@ describe('sesBackend', () => {
     expect(result.reason).toBe('access_denied');
   });
 
+  /**
+   * KAN-266. A refused send used to record kind/workspace/board/period and
+   * nothing else — no addresses, and not the provider's own error. On
+   * portal-dev that made a sender-address failure indistinguishable from a
+   * recipient one, and the logs could not settle it either way.
+   *
+   * SES authorises ses:SendEmail against the *sending identity* ARN, so a From
+   * outside the policy's identities produces the same AccessDenied as a
+   * disallowed recipient. Both addresses have to be on the line.
+   */
+  it('names the sender, the recipient and the provider error when a send is refused', async () => {
+    sendEmail.mockRejectedValueOnce(Object.assign(
+      new Error("not authorized to perform 'ses:SendEmail' on resource identity/billing@provider.test"),
+      {
+        name: 'AccessDeniedException',
+        $fault: 'client',
+        $metadata: { httpStatusCode: 403, requestId: 'aws-req-7f3c', attempts: 1 },
+      },
+    ));
+
+    await sesBackend.deliver(MESSAGE);
+
+    const refusal = warn.mock.calls.find(([, message]) => /refused the send/i.test(message));
+    expect(refusal, 'the refusal should be logged').toBeDefined();
+    const [, , context] = refusal;
+    expect(context).toMatchObject({
+      to: 'jane@example.test',
+      from: 'billing@provider.test',
+      errorName: 'AccessDeniedException',
+    });
+    // The provider's own words, which is the part that actually says which
+    // address it objected to.
+    expect(context.errorMessage).toMatch(/identity\/billing@provider\.test/);
+  });
+
+  /**
+   * The request id is what makes a refusal *definitive* rather than merely
+   * described: it is the handle that pulls the exact call out of CloudTrail,
+   * where the IAM decision — and the condition that produced it — is recorded.
+   * Without it you are still inferring from an error string.
+   */
+  it('carries the AWS request id and status, so the call can be found in CloudTrail', async () => {
+    sendEmail.mockRejectedValueOnce(Object.assign(
+      new Error('not authorized to perform ses:SendEmail'),
+      {
+        name: 'AccessDeniedException',
+        $fault: 'client',
+        $metadata: { httpStatusCode: 403, requestId: 'aws-req-7f3c', attempts: 1 },
+      },
+    ));
+
+    await sesBackend.deliver(MESSAGE);
+
+    const [, , context] = warn.mock.calls.find(([, m]) => /refused the send/i.test(m));
+    expect(context).toMatchObject({
+      awsRequestId: 'aws-req-7f3c',
+      httpStatusCode: 403,
+      fault: 'client',
+    });
+  });
+
   it('still throws non-policy send failures so the job retries', async () => {
     sendEmail.mockRejectedValueOnce(new Error('Throttling: Maximum sending rate exceeded'));
 
@@ -286,5 +355,26 @@ describe('sesBackend delivery tracking', () => {
 
     expect(result.delivered).toBe(true);
     spy.mockRestore();
+  });
+});
+
+/**
+ * KAN-266. The copy a client reads must not name a cause the code has not
+ * established. Any 403 becomes `access_denied`, and on portal-dev that was a
+ * From-address problem being reported as a recipient one.
+ */
+describe('the refusal message shown for access_denied', () => {
+  const message = DELIVERY_REFUSAL_MESSAGES.access_denied;
+
+  it('does not blame the recipient', () => {
+    expect(message).not.toMatch(/refused this recipient/i);
+  });
+
+  it('points at the sender as well, since that is what SES authorises on', () => {
+    expect(message).toMatch(/email from/i);
+  });
+
+  it('still says plainly that the send was refused', () => {
+    expect(message).toMatch(/refused/i);
   });
 });

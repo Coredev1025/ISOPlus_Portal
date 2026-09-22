@@ -74,6 +74,27 @@ export function emailTransportConfig() {
  * allowlisted domains — so callers treat it as a recorded refusal rather than
  * a retryable failure: retrying can never succeed.
  */
+/**
+ * The provider's own account of a failure, in the fields that identify it.
+ *
+ * KAN-266. A message alone cannot settle why SES refused a send: the same
+ * prose covers a denied sending identity and a denied recipient. The request
+ * id is the handle that pulls the exact call out of CloudTrail, where the IAM
+ * decision is recorded — with it a refusal is definitive rather than inferred.
+ *
+ * Deliberately no addresses, no body and no credential: this is metadata about
+ * the call, and the callers' own privacy rules are unaffected by it.
+ */
+export function describeSendError(err) {
+  return {
+    errorName: err?.name ?? null,
+    errorMessage: err?.message ?? null,
+    httpStatusCode: err?.$metadata?.httpStatusCode ?? null,
+    awsRequestId: err?.$metadata?.requestId ?? null,
+    fault: err?.$fault ?? null,
+  };
+}
+
 export function isAccessDeniedError(err) {
   return err?.name === 'AccessDeniedException'
     || err?.name === 'AccessDenied'
@@ -180,8 +201,11 @@ export async function sendEmail({ from, to, cc, replyTo, subject, html, text, at
     return { messageId, accepted, rejected: [] };
   } catch (err) {
     // Region and recipient COUNT only: no addresses, no body, no credential.
+    // describeSendError adds only metadata about the call — name, status,
+    // request id — so that rule is unchanged.
     error('SES-Transport', 'Email send failed', {
       message: err?.message,
+      ...describeSendError(err),
       region: envValue('AWS_REGION'),
       recipientCount: recipients.length,
       attachmentCount: attachments.length,
