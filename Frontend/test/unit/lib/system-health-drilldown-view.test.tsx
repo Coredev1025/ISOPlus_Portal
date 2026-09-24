@@ -318,6 +318,102 @@ describe("the drill-down does not trigger runs", () => {
   });
 });
 
+/**
+ * KAN-267. A run with nothing to bill closes Succeeded and sends nothing —
+ * correctly. The panel said only "No emails were sent for this run", which
+ * reads identically to a misconfiguration, and the info log that explained it
+ * was unreachable in the Application Logs viewer. The run now carries the
+ * reason, and the panel states it.
+ */
+describe("a successful run that sent nothing says why", () => {
+  const QUIET_RUN = {
+    ...RUN,
+    _id: "r-quiet",
+    status: "succeeded",
+    skipReason: null,
+    outcomeReason: "no_documents_generated",
+  };
+
+  beforeEach(() => {
+    get.mockReset();
+    post.mockReset();
+    respondWith({ runs: [QUIET_RUN], total: 1 });
+  });
+
+  // These tests expand a run, so they DO fetch /emails. "is not fetched until
+  // the operator asks for it" below asserts on the whole call history, so the
+  // history has to be handed back clean or this block fails that one.
+  afterEach(() => {
+    get.mockClear();
+    post.mockClear();
+  });
+
+  it("explains an empty period instead of only saying nothing was sent", async () => {
+    get.mockResolvedValueOnce({
+      data: { workspaceId: "ws-1", schedules: [], runs: [QUIET_RUN], total: 1, page: 1, pageSize: 50 },
+    });
+    get.mockResolvedValue({ data: { emails: [] } });
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await screen.findByText("b1");
+    await userEvent.click(screen.getByRole("button", { name: /show emails/i }));
+
+    expect(
+      await screen.findByText(/nothing to bill in this period/i),
+    ).toBeInTheDocument();
+  });
+
+  // The bare sentence on its own was the complaint; it must not be the whole
+  // answer any more.
+  it("does not leave the bare 'no emails' line as the only explanation", async () => {
+    get.mockResolvedValueOnce({
+      data: { workspaceId: "ws-1", schedules: [], runs: [QUIET_RUN], total: 1, page: 1, pageSize: 50 },
+    });
+    get.mockResolvedValue({ data: { emails: [] } });
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await screen.findByText("b1");
+    await userEvent.click(screen.getByRole("button", { name: /show emails/i }));
+
+    await screen.findByText(/nothing to bill in this period/i);
+    const bare = screen.queryByText("No emails were sent for this run.");
+    expect(bare).toBeNull();
+  });
+
+  // A run whose documents went to the accounting platform is a different
+  // answer, and must not be described as an empty period.
+  it("distinguishes documents that were not emailed from an empty period", async () => {
+    const pushed = { ...QUIET_RUN, _id: "r-pushed", outcomeReason: "documents_generated_but_not_emailed" };
+    get.mockResolvedValueOnce({
+      data: { workspaceId: "ws-1", schedules: [], runs: [pushed], total: 1, page: 1, pageSize: 50 },
+    });
+    get.mockResolvedValue({ data: { emails: [] } });
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await screen.findByText("b1");
+    await userEvent.click(screen.getByRole("button", { name: /show emails/i }));
+
+    expect(await screen.findByText(/were not emailed/i)).toBeInTheDocument();
+    expect(screen.queryByText(/nothing to bill in this period/i)).toBeNull();
+  });
+
+  // A run that genuinely sent nothing and carries no reason must still say
+  // something rather than rendering an empty space.
+  it("falls back to the plain sentence when the run carries no reason", async () => {
+    const noReason = { ...QUIET_RUN, _id: "r-none", outcomeReason: null };
+    get.mockResolvedValueOnce({
+      data: { workspaceId: "ws-1", schedules: [], runs: [noReason], total: 1, page: 1, pageSize: 50 },
+    });
+    get.mockResolvedValue({ data: { emails: [] } });
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await screen.findByText("b1");
+    await userEvent.click(screen.getByRole("button", { name: /show emails/i }));
+
+    expect(await screen.findByText(/no emails were sent for this run/i)).toBeInTheDocument();
+  });
+});
+
 describe("skipped runs say why", () => {
   it("names the reason a run was skipped", async () => {
     respondWith({ runs: [{ ...RUN, skipReason: "accounting_not_connected" }], total: 1 });

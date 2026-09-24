@@ -63,6 +63,24 @@ export const TRIGGER_SCHEDULE = 'schedule';
 export const TRIGGER_MANUAL = 'manual';
 
 /** Read-only by convention. */
+/**
+ * Why a run that SUCCEEDED still produced nothing (KAN-267).
+ *
+ * Distinct from a skip reason: a skip means the run never happened, this means
+ * it ran correctly and there was simply nothing to do. Both are quiet, and
+ * before this the panel could not tell a reader which — "No emails were sent
+ * for this run" covered a correct empty period, a board with no recipients,
+ * and a genuine misconfiguration alike.
+ *
+ * Touchpoints: workers/automationWorker.js (sets it),
+ * services/automation/runs.js (stores it), models/AutomationRun.js,
+ * Frontend/constants/system-health.ts (OUTCOME_REASON_LABELS).
+ */
+export const OUTCOME_NO_DOCUMENTS = 'no_documents_generated';
+export const OUTCOME_NO_EMAILS_SENT = 'documents_generated_but_not_emailed';
+
+export const OUTCOME_REASONS = [OUTCOME_NO_DOCUMENTS, OUTCOME_NO_EMAILS_SENT];
+
 export const RUN_TRIGGERS = [TRIGGER_SCHEDULE, TRIGGER_MANUAL];
 
 // ── Metrics ─────────────────────────────────────────────────────────────────

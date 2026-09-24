@@ -77,10 +77,17 @@ export function markRunSkipped({ jobId, skipReason }) {
   return closeRun(jobId, { measureDuration: false, set: { status: RUN_SKIPPED, skipReason } });
 }
 
-export function markRunSucceeded({ jobId, recipient = null }) {
+export function markRunSucceeded({ jobId, recipient = null, outcomeReason = null }) {
   return closeRun(jobId, {
     measureDuration: true,
-    set: { status: RUN_SUCCEEDED, recipient, error: null },
+    set: {
+      status: RUN_SUCCEEDED,
+      recipient,
+      error: null,
+      // KAN-267: why a successful run was quiet, so System Health can say so
+      // instead of leaving a reader to guess.
+      outcomeReason,
+    },
   });
 }
 

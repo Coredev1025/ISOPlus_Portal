@@ -269,6 +269,52 @@ describe('startAutomationWorker', () => {
       expect(run.error).toBe('mongo is down');
     });
 
+    /**
+     * KAN-267. A period with nothing to bill closes Succeeded and sends
+     * nothing — correctly. But System Health then said only "No emails were
+     * sent for this run", with no reason, and the info log that explains it
+     * was unreachable in the Application Logs viewer. The run itself has to
+     * carry the answer, or the panel has nothing to show.
+     */
+    it('records WHY a succeeded run produced nothing', async () => {
+      // The offline outbox stands in for a mail backend, exactly as the
+      // delivery test below does — otherwise the run skips on
+      // no_email_backend and never reaches generation at all.
+      const savedOffline = process.env.ISOPLUS_OFFLINE;
+      const savedRoot = process.env.LOCAL_FILE_ROOT;
+      const root = mkdtempSync(join(tmpdir(), 'worker-run-empty-'));
+      process.env.ISOPLUS_OFFLINE = '1';
+      process.env.LOCAL_FILE_ROOT = root;
+      try {
+        await seedRun();
+        // Business and settings exist and the block is enabled — the run is
+        // meant to happen. There is simply no billable item in the period,
+        // which is the case the ticket is about.
+        await Business.create({ workspaceId: 'ws-1', name: 'Empty Period Biz' });
+        await AutomationSettings.create({
+          workspaceId: 'ws-1',
+          invoice: { enabled: true, emailSubject: 'Invoice run', emailMessage: 'Attached.', replyTo: 'a@b.com' },
+        });
+        startAutomationWorker();
+
+        await registeredHandler()({ ...RUN_JOB, attemptsMade: 0 });
+
+        const run = await AutomationRun.findOne({ jobId: RUN_JOB.id }).lean();
+        // Succeeded, not skipped and not failed: the run did its job.
+        expect(run.status).toBe(RUN_SUCCEEDED);
+        expect(run.error).toBeNull();
+        // And it says why it was quiet.
+        expect(run.outcomeReason).toBe('no_documents_generated');
+      } finally {
+        if (savedOffline === undefined) delete process.env.ISOPLUS_OFFLINE;
+        else process.env.ISOPLUS_OFFLINE = savedOffline;
+        if (savedRoot === undefined) delete process.env.LOCAL_FILE_ROOT;
+        else process.env.LOCAL_FILE_ROOT = savedRoot;
+        rmSync(root, { recursive: true, force: true });
+        await Business.deleteMany({ workspaceId: 'ws-1' });
+      }
+    });
+
     it('closes the run as succeeded when delivery actually happens', async () => {
       const savedOffline = process.env.ISOPLUS_OFFLINE;
       const savedRoot = process.env.LOCAL_FILE_ROOT;

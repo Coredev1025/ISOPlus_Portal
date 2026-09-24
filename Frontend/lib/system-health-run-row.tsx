@@ -8,7 +8,7 @@ import {
   timezoneForKind,
 } from "@/lib/system-health-helpers";
 import type { RunEmailRow, RunRow, ScheduleRow } from "@/lib/system-health-types";
-import { SKIP_REASON_LABELS } from "@/constants/system-health";
+import { OUTCOME_REASON_LABELS, SKIP_REASON_LABELS } from "@/constants/system-health";
 
 const TRIGGER_LABELS: Record<RunRow["trigger"], string> = {
   schedule: "Scheduled",
@@ -34,17 +34,27 @@ type RowProps = Readonly<{
  * onToggleEmails — because a history page of 50 runs would otherwise pay for
  * detail an operator wants on one row at a time.
  */
-function RunEmails({ emails, loading, timeZone }: Readonly<{
+function RunEmails({ emails, loading, timeZone, outcomeReason }: Readonly<{
   emails: RunEmailRow[] | undefined;
   loading: boolean;
   timeZone: string | undefined;
+  outcomeReason: string | null | undefined;
 }>) {
   if (loading) return <p className="text-xs text-muted-foreground">Loading emails…</p>;
   if (!emails) return null;
-  // Empty is an answer: a skipped run, or one whose documents went to the
-  // accounting platform instead of being emailed.
+  // Empty is an answer — but only if it says which answer. KAN-267: "No
+  // emails were sent for this run" read identically for a period that
+  // correctly had nothing to bill and for a broken configuration, so a
+  // tester escalated a run that had behaved exactly as designed. The run now
+  // carries the reason; the bare sentence is the fallback for a row written
+  // before it did.
   if (emails.length === 0) {
-    return <p className="text-xs text-muted-foreground">No emails were sent for this run.</p>;
+    const explained = outcomeReason ? OUTCOME_REASON_LABELS[outcomeReason] : undefined;
+    return (
+      <p className="text-xs text-muted-foreground">
+        {explained ?? "No emails were sent for this run."}
+      </p>
+    );
   }
 
   return (
@@ -109,7 +119,12 @@ function RunRowItem({
       </div>
 
       {emails || emailsLoading ? (
-        <RunEmails emails={emails} loading={emailsLoading} timeZone={timeZone} />
+        <RunEmails
+          emails={emails}
+          loading={emailsLoading}
+          timeZone={timeZone}
+          outcomeReason={run.outcomeReason}
+        />
       ) : null}
 
       {showFooter ? (
