@@ -74,6 +74,25 @@ export const HISTORY_PAGE_SIZE = 50;
  *
  * Touchpoints: lib/system-health-run-row.tsx (the only reader).
  */
+/**
+ * Why a run that SUCCEEDED still sent nothing (KAN-267).
+ *
+ * Separate from SKIP_REASON_LABELS on purpose: a skip means the run never
+ * happened, these mean it ran correctly and had nothing to send. Reading "No
+ * emails were sent for this run" could previously mean either, which is what
+ * sent a tester to engineering for a run that behaved exactly as designed.
+ *
+ * Touchpoints: lib/system-health-run-row.tsx (the only reader). Values mirror
+ * Backend/src/constants/systemHealth.js (OUTCOME_REASONS).
+ */
+export const OUTCOME_REASON_LABELS: Record<string, string> = {
+  no_documents_generated:
+    "Nothing to bill in this period, so no document was generated and no email was sent. "
+    + "Widen the schedule's interval, or check the service dates on the board fall inside it.",
+  documents_generated_but_not_emailed:
+    "Documents were generated but were not emailed — this block sends them to the accounting platform instead.",
+};
+
 export const SKIP_REASON_LABELS: Record<string, string> = {
   settings_disabled: "Skipped because automation is switched off for this block",
   no_email_backend: "Skipped because no email backend is configured in this environment",

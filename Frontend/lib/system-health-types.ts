@@ -10,6 +10,8 @@ export type RunRow = {
   jobId: string;
   status: RunStatus;
   skipReason: string | null;
+  /** Why a SUCCEEDED run produced nothing (KAN-267); null when it did. */
+  outcomeReason?: string | null;
   trigger: "schedule" | "manual";
   startedAt: string;
   finishedAt: string | null;

@@ -2,13 +2,10 @@ import express from 'express';
 import mongoose from 'mongoose';
 import { authenticateToken } from '../middleware/auth.js';
 import { warn, info, error } from '../utils/logger.js';
-import { pickAllowedSortField, toQueryString } from '../utils/securityHelpers.js';
+import { pickAllowedSortField } from '../utils/securityHelpers.js';
+import { buildLogQuery } from '../utils/logQueryHelpers.js';
 
 const router = express.Router();
-
-function escapeRegex(str) {
-    return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 // Define your Log schema
 const logSchema = new mongoose.Schema({
@@ -44,6 +41,8 @@ router.get('/', authenticateToken, async (req, res) => {
             search = '',
             level = '',
             source = '',
+            workspaceId = '',
+            boardId = '',
             sortBy = 'timestamp',
             sortOrder = 'desc'
         } = req.query;
@@ -52,27 +51,7 @@ router.get('/', authenticateToken, async (req, res) => {
         const limitNumber = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
         const skip = (pageNumber - 1) * limitNumber;
 
-        const query = {};
-        const levelStr = toQueryString(level);
-        const sourceStr = toQueryString(source);
-        const searchStr = toQueryString(search);
-
-        if (levelStr && levelStr !== 'all') {
-            query.level = { $regex: new RegExp(`^${escapeRegex(levelStr)}$`, 'i') };
-        }
-
-        if (sourceStr && sourceStr !== 'all') {
-            query['metadata.source'] = { $regex: new RegExp(escapeRegex(sourceStr), 'i') };
-        }
-
-        if (searchStr) {
-            const safe = escapeRegex(searchStr);
-            const regex = new RegExp(safe, 'i');
-            query.$or = [
-                { message: regex },
-                { 'metadata.source': regex }
-            ];
-        }
+        const query = buildLogQuery({ level, source, workspaceId, boardId, search });
 
         const sortField = pickAllowedSortField(sortBy, ['timestamp', 'level', 'message'], 'timestamp');
         

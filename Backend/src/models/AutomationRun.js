@@ -28,6 +28,13 @@ const automationRunSchema = new mongoose.Schema(
 
     status: { type: String, required: true, enum: RUN_STATUSES, default: RUN_QUEUED },
     skipReason: { type: String, default: null },
+    /**
+     * Why a SUCCEEDED run produced nothing (KAN-267). Null when the run did
+     * produce and send documents. Not an enum on the schema: closeRun writes
+     * through findOneAndUpdate, where enum validators do not run anyway, and
+     * the writer is the single caller below.
+     */
+    outcomeReason: { type: String, default: null },
     trigger: { type: String, required: true, enum: RUN_TRIGGERS, default: TRIGGER_SCHEDULE },
 
     startedAt: { type: Date, required: true, default: () => new Date() },

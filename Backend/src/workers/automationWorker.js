@@ -22,6 +22,8 @@ import {
   SKIP_ACCOUNTING_NOT_CONNECTED,
   SKIP_NO_EMAIL_BACKEND,
   SKIP_SETTINGS_DISABLED,
+  OUTCOME_NO_DOCUMENTS,
+  OUTCOME_NO_EMAILS_SENT,
 } from '../constants/systemHealth.js';
 import { info, warn, error } from '../utils/logger.js';
 
@@ -296,6 +298,21 @@ async function composeAndDeliver(job) {
   const board = await Board.findOne({ boardId: mongoEq(String(boardId)) }).lean();
 
   const groups = deliveryGroups(results);
+
+  // KAN-267. A run that generated nothing, or generated documents that were
+  // never emailed, closes Succeeded and is silent — correctly. Naming which
+  // of the two happened is what lets System Health explain itself instead of
+  // showing a bare "No emails were sent for this run".
+  //
+  // `results` empty means the period had nothing billable in it, which is by
+  // far the common case and the one this ticket was raised for. Documents but
+  // no groups means they went somewhere other than email — the accounting
+  // platform — and that is a different answer to give.
+  const outcomeReason = (() => {
+    if (results.length === 0) return OUTCOME_NO_DOCUMENTS;
+    if (groups.length === 0) return OUTCOME_NO_EMAILS_SENT;
+    return null;
+  })();
   for (const group of groups) {
     await deliverGroup({
       kind,
@@ -313,7 +330,10 @@ async function composeAndDeliver(job) {
   // The recipient KEY this run delivered under, not an address: deliverEmail
   // resolves addresses inside the backend and does not hand one back. Null for
   // the billing-contact route, which is one message with no per-person key.
-  return { recipient: distinctValues(groups.map((g) => g.participant)).join(', ') || null };
+  return {
+    recipient: distinctValues(groups.map((g) => g.participant)).join(', ') || null,
+    outcomeReason,
+  };
 }
 
 /**
@@ -339,7 +359,11 @@ async function processAutomationJob(job) {
     if (outcome?.skipReason) {
       await markRunSkipped({ jobId: job.id, skipReason: outcome.skipReason });
     } else {
-      await markRunSucceeded({ jobId: job.id, recipient: outcome?.recipient ?? null });
+      await markRunSucceeded({
+        jobId: job.id,
+        recipient: outcome?.recipient ?? null,
+        outcomeReason: outcome?.outcomeReason ?? null,
+      });
     }
   } catch (err) {
     if (isLastAttempt) await markRunFailed({ jobId: job.id, error: err.message });
