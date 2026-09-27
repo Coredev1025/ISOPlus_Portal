@@ -220,14 +220,17 @@ describe('a scheduled statement run', () => {
 
   /**
    * Section 4.1: the period is configured separately from invoicing and can be
-   * weekly. The cadence already decides when the job fires; it must also
-   * decide what the statement covers, or a weekly workspace receives the whole
-   * of last month again every week.
+   * weekly. The cadence still decides when the job fires and what the
+   * statement's own period covers (its header, `periodKey`, and de-duplication
+   * against re-running the same slot) — but KAN-274 means that no longer
+   * changes which invoices and payments appear as line items: every one of
+   * them shows regardless of cadence, so a weekly workspace closes at the same
+   * $150 a monthly one would.
    *
    * The slot is 1 September in Sydney, so a weekly period is 25–31 August. The
-   * seeded invoice (5 August) and its payment (20 August) both fall before it:
-   * they belong to the opening balance, not to this period's charges and
-   * payments, and the account still closes at the $150 owing.
+   * seeded invoice (5 August) and its payment (20 August) both fall before
+   * that window, and still show as their own charge and payment rows rather
+   * than being folded into an opening balance.
    */
   it('covers the week, not the month, on a weekly cadence', async () => {
     await generateStatementsForBoard({
@@ -241,7 +244,7 @@ describe('a scheduled statement run', () => {
 
     const rendered = statementRender();
     expect(rendered).toBeDefined();
-    expect(summaryStrip(rendered)).toEqual(['$150.00', '$0.00', '$0.00', '$150.00']);
+    expect(summaryStrip(rendered)).toEqual(['$0.00', '$250.00', '$100.00', '$150.00']);
   });
 
   // Section 4.5. Nothing invoiced, nothing owing, nothing to say.
@@ -408,9 +411,11 @@ describe('a scheduled statement run, on a multi-item invoice', () => {
     expect(summaryStrip(rendered)).toEqual(['$0.00', '$250.00', '$0.00', '$250.00']);
   });
 
-  it('carries a prior-period multi-item invoice into the opening balance once', async () => {
+  it('charges a prior-period multi-item invoice once, not once per row', async () => {
     await Item.updateOne({ itemId: 'item-1' }, { $unset: { 'data.Amount Received($)': '' } });
-    // Both rows moved to July, before the August period opens.
+    // Both rows moved to July, before the August period opens. KAN-274: this
+    // no longer moves the invoice into an opening balance — it is still its
+    // own charge row, dedup still collapsing the two PDFLink rows into one.
     const july = new Date('2026-07-05T00:00:00.000Z');
     await PDFLink.updateOne({ itemId: 'item-1' }, { $set: { createdAt: july } });
     await secondRowOf({ createdAt: july });
@@ -419,7 +424,8 @@ describe('a scheduled statement run, on a multi-item invoice', () => {
 
     const rendered = statementRender();
     expect(rendered).toBeDefined();
-    expect(summaryStrip(rendered)).toEqual(['$250.00', '$0.00', '$0.00', '$250.00']);
+    expect(JSON.parse(rendered.transactions)).toHaveLength(1);
+    expect(summaryStrip(rendered)).toEqual(['$0.00', '$250.00', '$0.00', '$250.00']);
   });
 });
 

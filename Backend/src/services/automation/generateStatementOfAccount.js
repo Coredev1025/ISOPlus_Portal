@@ -33,10 +33,9 @@ import { buildOutputKey } from '../../utils/s3OutputKey.js';
 import { buildStatementDocument } from '../../utils/statementOfAccountDocument.js';
 import {
   buildStatementLedger,
-  collectPayments,
   hasStatementActivity,
 } from '../../utils/statementLedger.js';
-import { invoicesFromDocuments, openingBalanceBefore } from '../../utils/statementAccountHistory.js';
+import { invoicesFromDocuments } from '../../utils/statementAccountHistory.js';
 import { getLogoData } from '../../utils/invoicePdfSupport.js';
 import { renderStatementOfAccountPdf } from '../../utils/statementOfAccountPdf.js';
 import { findParticipantProfile } from '../email/recipients.js';
@@ -155,9 +154,18 @@ export async function generateStatementOfAccount({
 }) {
   const invoices = await participantInvoices(workspaceId, boardId, participant);
   const items = await participantPaymentItems(workspaceId, boardId, participant, nameField);
-  const openingBalance = openingBalanceBefore(invoices, collectPayments(items), period.start);
+  // KAN-274: every invoice and payment ever recorded now becomes its own line
+  // item (see chargeRows/paymentRows in statementLedger.js), not only this
+  // period's — so there is nothing left for an opening balance to carry
+  // forward without counting the same invoice twice. `asAt` is the actual
+  // moment of generation, not the period's own end: a statement's period is a
+  // fixed calendar boundary computed ahead of time, and an invoice for that
+  // same period is generated one cycle later, so it is always dated just
+  // after that boundary. Using the real "now" is what lets this statement see
+  // an invoice generated moments — or cycles — before it, rather than only
+  // ever catching up one statement late.
   const { ledger, ageing } = buildStatementLedger({
-    invoices, items, period, openingBalance, timezone,
+    invoices, items, period, openingBalance: 0, timezone, asAt: new Date(),
   });
 
   if (!hasStatementActivity(ledger)) {

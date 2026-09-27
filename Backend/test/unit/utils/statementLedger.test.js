@@ -112,12 +112,17 @@ describe('buildStatementLedger — dated payments', () => {
     expect(bucketTotal).toBe(ledger.closingBalance);
   });
 
-  it('excludes an invoice raised outside the period', () => {
+  // KAN-274: every invoice ever raised for the participant is its own line
+  // item now, not only the ones this statement's period happens to span — an
+  // invoice raised well before the period still shows, same as one raised
+  // just after it (the case the ticket's live reproduction turned on).
+  it('includes an invoice raised outside the period, up to the asAt cutoff', () => {
     const outside = [invoice('INV-OLD', '2025-01-01', 900, '2025-01-15')];
     const { ledger } = buildStatementLedger({
       invoices: outside, items: [], period: PERIOD, openingBalance: 0, timezone: TZ,
     });
-    expect(ledger.rows).toEqual([]);
+    expect(ledger.rows.map((r) => [r.reference, r.charge])).toEqual([['INV-OLD', 900]]);
+    expect(ledger.closingBalance).toBe(900);
   });
 
   it('treats an invoice with no recorded total as zero rather than NaN', () => {
@@ -150,6 +155,47 @@ describe('buildStatementLedger — no payment date available', () => {
     });
     const bucketTotal = Object.values(ageing).reduce((sum, v) => sum + v, 0);
     expect(bucketTotal).toBe(ledger.closingBalance);
+  });
+});
+
+/**
+ * KAN-274: the live reproduction. An invoice generated the day after its own
+ * statement's period closed — the automated invoicing job's own eligibility
+ * window always excludes its own run day, so a freshly generated invoice's
+ * `createdAt` lands just outside whatever statement period is current at
+ * generation time — was completely invisible as a line item on the very next
+ * statement, only ever reflected in the ageing/closing-balance figures.
+ *
+ * INV-14 ($2,765.06), generated 27/09/2026. SOA-116, period 26/09–26/09/2026,
+ * showed Opening $15,158.36 / Charges $0.00 / Closing $15,158.36 under the old
+ * period-only filter — invisible as a row despite existing.
+ */
+describe('buildStatementLedger — an invoice raised the day after the period closes', () => {
+  const dailyPeriod = { start: '2026-09-26T00:00:00.000+10:00', end: '2026-09-26T23:59:59.999+10:00' };
+
+  it('is not shown when the statement is struck before the invoice exists (period.end as asAt)', () => {
+    const invoices = [invoice('INV-14', '2026-09-27T00:00:00.000+10:00', 2765.06, '2026-10-11')];
+    const { ledger } = buildStatementLedger({
+      invoices, items: [], period: dailyPeriod, openingBalance: 0, timezone: TZ,
+    });
+    // Struck as-at the period's own end, the invoice did not exist yet.
+    expect(ledger.rows).toEqual([]);
+  });
+
+  it('appears as its own charge row once the statement is struck after the invoice exists', () => {
+    const invoices = [invoice('INV-14', '2026-09-27T00:00:00.000+10:00', 2765.06, '2026-10-11')];
+    const { ledger } = buildStatementLedger({
+      invoices,
+      items: [],
+      period: dailyPeriod,
+      openingBalance: 0,
+      timezone: TZ,
+      // The moment generation actually happened — later than the period it
+      // covers, which is what lets this statement see the invoice at all.
+      asAt: '2026-09-27T09:00:00.000+10:00',
+    });
+    expect(ledger.rows.map((r) => [r.reference, r.charge])).toEqual([['INV-14', 2765.06]]);
+    expect(ledger.closingBalance).toBe(2765.06);
   });
 });
 
@@ -268,15 +314,20 @@ describe('buildStatementLedger — a payment with no date', () => {
     expect(ledger.closingBalance).toBe(100);
   });
 
-  it('ages against an invoice raised before the period', () => {
-    // The opening balance is the caller's; here it is what openingBalanceBefore
-    // would give for this history — 250 charged less 100 received.
+  // KAN-274: an invoice raised before the period is now its own charge row
+  // too, so the caller no longer supplies a non-zero opening balance for it —
+  // doing so would double-count it, once on the line and once in the opening
+  // figure. Passing 0 here is the contract `generateStatementOfAccount.js`
+  // now follows.
+  it('ages against an invoice raised before the period, as its own row', () => {
     const invoices = [invoice('INV-OLD', '2026-03-01', 250, '2026-03-15')];
     const items = [paidItem('INV-OLD', 100, undefined)];
     const { ledger, ageing } = buildStatementLedger({
-      invoices, items, period: PERIOD, openingBalance: 150, timezone: TZ, asAt,
+      invoices, items, period: PERIOD, openingBalance: 0, timezone: TZ, asAt,
     });
-    expect(ledger.rows).toEqual([]);
+    expect(ledger.rows).toHaveLength(1);
+    expect(ledger.rows[0].charge).toBe(250);
+    expect(ledger.rows[0].payment).toBe(100);
     expect(ledger.closingBalance).toBe(150);
     expect(ageing.d90plus).toBe(150);
   });

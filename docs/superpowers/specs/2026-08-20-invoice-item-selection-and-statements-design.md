@@ -357,3 +357,48 @@ Recorded here rather than by editing the sections above, per the convention in
   layout constraints and points at the live file; `templates/render-sample.mjs`
   renders from it. A sample PDF is not committed, because a binary goes stale
   silently; the README says how to produce one.
+- **KAN-274, 4.2's charge-row scoping.** The spec (and the shipped code, until
+  now) put only invoices raised inside the statement's own period on the
+  transaction list; anything else affected the opening balance or the ageing
+  buckets but never appeared as a line. That made a freshly generated invoice
+  invisible on the very next statement, and often on several statements after
+  it: the automated invoicing job's own eligibility window always excludes its
+  own run day, so an invoice's `createdAt` almost always lands just after
+  whatever statement period is current when it is generated, and a period is a
+  fixed calendar boundary computed independently of it — the two are adjacent
+  by construction, not by drift. Live case: an invoice for $2,765.06 generated
+  the day after its own statement's one-day period closed was completely
+  absent from the next statement as a row, showing only in the closing
+  balance.
+
+  Confirmed with the reporter as a deliberate change, not a bug in the
+  original design: every invoice and payment ever recorded for the participant
+  is now its own line item, on every statement, regardless of which period it
+  was originally raised in — `chargeRows` and `paymentRows` in
+  `statementLedger.js` no longer take the statement's `period` at all, only
+  `asAt`, the same boundary ageing already used (`asAtCutoff`): a document
+  raised after the statement was struck is excluded, because it did not exist
+  yet, but nothing else is. `generateStatementOfAccount.js` now passes the
+  actual moment of generation as `asAt` rather than leaving it to default to
+  the period's own end, which is what lets a statement see an invoice
+  generated moments — or cycles — before it, rather than only ever catching up
+  one statement late.
+
+  This forced the opening balance to zero. `openingBalanceBefore` (still in
+  `statementAccountHistory.js`, still unit tested, just no longer called from
+  here) computed what was owing before the period started, so it could be
+  carried in as one figure; with every invoice and payment now shown
+  regardless of period, keeping a non-zero opening balance would double-count
+  whatever it already carried in, once on its own line and once in the opening
+  figure. The statement's own period is still real — it still drives the
+  cadence, the header's "period covered", `periodKey`, and de-duplication
+  against re-running the same slot — it no longer scopes which transactions
+  appear. A statement is therefore no longer a period summary in the sense
+  4.2 originally described; it is the account's full history as at the moment
+  it was struck, labelled with the period it was generated for. See the
+  reconciliation reasoning in the KAN-274 pull request for why this does not
+  double-count: ageing (`outstandingByInvoice`) was already scoped this way,
+  never by period, so this change only brings the ledger's own charge and
+  payment rows into agreement with a boundary the ageing summary already
+  used — the two were already required to reconcile, and disagreeing on scope
+  was the latent defect.
