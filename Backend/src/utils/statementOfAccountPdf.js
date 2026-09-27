@@ -17,10 +17,10 @@ import { fileURLToPath } from 'node:url';
 
 import { generate } from '@pdfme/generator';
 import {
-  image, line, rectangle, table, text,
+  image, line, table, text,
 } from '@pdfme/schemas';
 
-import { AGEING_BUCKETS, assertAgeingReconciles } from './statementAgeing.js';
+import { assertAgeingReconciles } from './statementAgeing.js';
 import { assertRunningBalanceReconciles, roundMoney } from './statementTransactions.js';
 import { enableRepeatHeadOnTables, formatDateNumericAU } from './invoicePdfSupport.js';
 import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
@@ -64,11 +64,6 @@ const moneyCell = (value) => (Number(value || 0) === 0 ? '' : formatStatementMon
  * second line, not a gap where the ABN would have been.
  */
 const block = (...lines) => lines.filter((line_) => String(line_ ?? '').trim() !== '').join('\n');
-
-/** The five ageing cells, in the order the template lays them out. */
-const AGEING_FIELDS = Object.freeze([
-  'ageingCurrent', 'ageingDays30', 'ageingDays60', 'ageingDays90', 'ageingDays90plus',
-]);
 
 /**
  * The transaction rows, as the table plugin wants them.
@@ -114,7 +109,16 @@ function paymentAdviceInputs(providerBlockText, recipientName, ledger, ageing) {
  *
  * Both reconciliation checks run here, before anything is rendered — section
  * 4.3 and 4.4 both say to fail the statement rather than send one that does
- * not add up. Doing it at the render boundary means no caller can skip them.
+ * not add up. Doing it at the render boundary means no caller can skip them,
+ * even though KAN-276 removed the Ageing Summary band and the Opening
+ * Balance / Charges / Payments / Closing Balance strip from what actually
+ * gets drawn — the reference statements this template matches (Purple Lotus,
+ * Westpoint Group) carry neither. The `ageing` and `ledger` figures those
+ * bands displayed are still computed by statementLedger.js/statementAgeing.js
+ * exactly as before (something else may still rely on them, e.g. overdue
+ * detection); this function just stops handing the display-only cells to the
+ * template. `ageing.current` and `ledger.closingBalance` themselves are still
+ * used below, by the payment-advice block and "BALANCE DUE AUD".
  */
 export function buildStatementInputs(statement, timezone = DEFAULT_TIMEZONE) {
   const {
@@ -132,8 +136,8 @@ export function buildStatementInputs(statement, timezone = DEFAULT_TIMEZONE) {
 
   // Every variable field is a plain `text` schema, so its input is a plain
   // string — newline-separated for the multi-line blocks. The label-only
-  // fields (STATEMENT TO, the column heads, the notice) carry their own
-  // content in the template and take no input.
+  // fields (STATEMENT TO, the column heads) carry their own content in the
+  // template and take no input.
   return {
     // KAN-229. Already a data URI by the time it gets here — this module does
     // no I/O. Empty rather than absent when the business has no Default Logo:
@@ -150,16 +154,7 @@ export function buildStatementInputs(statement, timezone = DEFAULT_TIMEZONE) {
       meta.accountNumber,
     ),
 
-    openingBalance: formatStatementMoney(ledger.openingBalance),
-    totalCharges: formatStatementMoney(ledger.totalCharges),
-    totalPayments: formatStatementMoney(ledger.totalPayments),
-    closingBalance: formatStatementMoney(ledger.closingBalance),
-
     transactions: JSON.stringify(buildTransactionRows(ledger.rows, timezone)),
-
-    ...Object.fromEntries(AGEING_BUCKETS.map(
-      (bucket, i) => [AGEING_FIELDS[i], formatStatementMoney(ageing[bucket.key])],
-    )),
 
     paymentValues: block(
       bank.accountName,
@@ -187,14 +182,15 @@ export async function renderStatementOfAccountPdf(statement, timezone = DEFAULT_
   const pdfBytes = await generate({
     template,
     inputs: [buildStatementInputs(statement, timezone)],
-    // `rectangle` draws the summary strip and the ageing band. The template
-    // uses no multiVariableText, so that plugin is no longer registered.
-    // `image` draws the letterhead logo, and must stay registered as long as
-    // the template carries the field — pdfme throws on a schema type it has
-    // no renderer for, so dropping it fails every statement, not just the
-    // ones with a logo.
+    // KAN-276 removed the summary strip and the ageing band — the template's
+    // only two `rectangle` schemas — so that plugin is no longer registered.
+    // The template uses no multiVariableText either, so that plugin was
+    // already absent. `image` draws the letterhead logo, and must stay
+    // registered as long as the template carries the field — pdfme throws on
+    // a schema type it has no renderer for, so dropping it fails every
+    // statement, not just the ones with a logo.
     plugins: {
-      text, line, rectangle, table, image,
+      text, line, table, image,
     },
   });
   return Buffer.from(pdfBytes);

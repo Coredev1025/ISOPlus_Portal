@@ -402,3 +402,20 @@ Recorded here rather than by editing the sections above, per the convention in
   payment rows into agreement with a boundary the ageing summary already
   used — the two were already required to reconcile, and disagreeing on scope
   was the latent defect.
+- **KAN-276, section 6's template no longer shows the Ageing Summary band or
+  the Opening Balance / Charges / Payments / Closing Balance strip.** KAN-273
+  matched the template to the Purple Lotus / Westpoint Group reference
+  statements but kept both bands as a judgment call, flagging in its own pull
+  request that neither appears in the raw Xero reference PDFs. The reviewer
+  disagreed; KAN-276 removed the visible blocks (and the italic disclaimer
+  paragraph, also absent from both references), and moved the logo from a
+  large top-left placement to a small one flush with the top-right margin,
+  matching the references. Section 4.3's ageing computation and section 4.4's
+  running balance are unaffected — `buildAgeingSummary`/`buildRunningBalance`
+  in `statementLedger.js` still run unchanged, and `buildStatementInputs` in
+  `statementOfAccountPdf.js` still calls both reconciliation checks before
+  rendering. Only the template fields that displayed those figures, and the
+  input values `buildStatementInputs` fed them, were removed; `ageing.current`
+  and `ledger.closingBalance` themselves are still used by the tear-off
+  "PAYMENT ADVICE" block and "BALANCE DUE AUD", which the reference layout
+  does carry.

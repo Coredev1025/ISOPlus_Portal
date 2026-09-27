@@ -22,11 +22,11 @@
         "type": "image",
         "content": "",
         "position": {
-          "x": 12,
-          "y": 22
+          "x": 178,
+          "y": 12
         },
-        "width": 18,
-        "height": 18,
+        "width": 20,
+        "height": 14,
         "rotate": 0,
         "opacity": 1,
         "readOnly": false,
@@ -40,7 +40,7 @@
           "x": 126,
           "y": 12
         },
-        "width": 72,
+        "width": 50,
         "height": 26,
         "fontSize": 8,
         "lineHeight": 1.4,
@@ -125,145 +125,11 @@
         "fontName": "Roboto"
       },
       {
-        "name": "summaryBox",
-        "type": "rectangle",
-        "position": {
-          "x": 12,
-          "y": 74
-        },
-        "width": 186,
-        "height": 17,
-        "borderWidth": 0.4,
-        "borderColor": "#d4d4d4",
-        "color": "#f4f4f2",
-        "readOnly": true
-      },
-      {
-        "name": "openingLabel",
-        "type": "text",
-        "content": "OPENING BALANCE",
-        "position": {
-          "x": 15,
-          "y": 77
-        },
-        "width": 44,
-        "height": 4,
-        "fontSize": 6.5,
-        "characterSpacing": 0.5,
-        "fontColor": "#8a8a8a",
-        "readOnly": true,
-        "fontName": "Roboto"
-      },
-      {
-        "name": "openingBalance",
-        "type": "text",
-        "content": "$284.20",
-        "position": {
-          "x": 15,
-          "y": 81.5
-        },
-        "width": 44,
-        "height": 7,
-        "fontSize": 12,
-        "fontColor": "#1a1a1a",
-        "fontName": "Roboto"
-      },
-      {
-        "name": "chargesLabel",
-        "type": "text",
-        "content": "CHARGES",
-        "position": {
-          "x": 61.5,
-          "y": 77
-        },
-        "width": 44,
-        "height": 4,
-        "fontSize": 6.5,
-        "characterSpacing": 0.5,
-        "fontColor": "#8a8a8a",
-        "readOnly": true,
-        "fontName": "Roboto"
-      },
-      {
-        "name": "totalCharges",
-        "type": "text",
-        "content": "$3,065.93",
-        "position": {
-          "x": 61.5,
-          "y": 81.5
-        },
-        "width": 44,
-        "height": 7,
-        "fontSize": 12,
-        "fontColor": "#1a1a1a",
-        "fontName": "Roboto"
-      },
-      {
-        "name": "paymentsLabel",
-        "type": "text",
-        "content": "PAYMENTS",
-        "position": {
-          "x": 108,
-          "y": 77
-        },
-        "width": 44,
-        "height": 4,
-        "fontSize": 6.5,
-        "characterSpacing": 0.5,
-        "fontColor": "#8a8a8a",
-        "readOnly": true,
-        "fontName": "Roboto"
-      },
-      {
-        "name": "totalPayments",
-        "type": "text",
-        "content": "$1,264.60",
-        "position": {
-          "x": 108,
-          "y": 81.5
-        },
-        "width": 44,
-        "height": 7,
-        "fontSize": 12,
-        "fontColor": "#1a1a1a",
-        "fontName": "Roboto"
-      },
-      {
-        "name": "closingLabel",
-        "type": "text",
-        "content": "CLOSING BALANCE",
-        "position": {
-          "x": 154.5,
-          "y": 77
-        },
-        "width": 41,
-        "height": 4,
-        "fontSize": 6.5,
-        "characterSpacing": 0.5,
-        "fontColor": "#8a8a8a",
-        "readOnly": true,
-        "fontName": "Roboto"
-      },
-      {
-        "name": "closingBalance",
-        "type": "text",
-        "content": "$2,085.53",
-        "position": {
-          "x": 154.5,
-          "y": 81.5
-        },
-        "width": 41,
-        "height": 7,
-        "fontSize": 12,
-        "fontColor": "#1a1a1a",
-        "fontName": "Roboto"
-      },
-      {
         "name": "transactions",
         "type": "table",
         "position": {
           "x": 12,
-          "y": 97
+          "y": 78
         },
         "width": 186,
         "height": 45,
@@ -352,208 +218,11 @@
         "fontName": "Roboto"
       },
       {
-        "name": "ageingLabel",
-        "type": "text",
-        "content": "AGEING SUMMARY",
-        "position": {
-          "x": 12,
-          "y": 150
-        },
-        "width": 60,
-        "height": 4,
-        "fontSize": 7,
-        "characterSpacing": 0.8,
-        "fontColor": "#8a8a8a",
-        "readOnly": true,
-        "fontName": "Roboto"
-      },
-      {
-        "name": "ageingHeadRule",
-        "type": "line",
-        "position": {
-          "x": 12,
-          "y": 160
-        },
-        "width": 186,
-        "height": 0.6,
-        "color": "#1a1a1a",
-        "readOnly": true
-      },
-      {
-        "name": "ageingHeadCurrent",
-        "type": "text",
-        "content": "Current",
-        "position": {
-          "x": 12,
-          "y": 155.5
-        },
-        "width": 37.2,
-        "height": 4.5,
-        "fontSize": 7.5,
-        "alignment": "center",
-        "fontColor": "#5c5c5c",
-        "readOnly": true,
-        "fontName": "Roboto"
-      },
-      {
-        "name": "ageingHead30",
-        "type": "text",
-        "content": "1-30 days",
-        "position": {
-          "x": 49.2,
-          "y": 155.5
-        },
-        "width": 37.2,
-        "height": 4.5,
-        "fontSize": 7.5,
-        "alignment": "center",
-        "fontColor": "#5c5c5c",
-        "readOnly": true,
-        "fontName": "Roboto"
-      },
-      {
-        "name": "ageingHead60",
-        "type": "text",
-        "content": "31-60 days",
-        "position": {
-          "x": 86.4,
-          "y": 155.5
-        },
-        "width": 37.2,
-        "height": 4.5,
-        "fontSize": 7.5,
-        "alignment": "center",
-        "fontColor": "#5c5c5c",
-        "readOnly": true,
-        "fontName": "Roboto"
-      },
-      {
-        "name": "ageingHead90",
-        "type": "text",
-        "content": "61-90 days",
-        "position": {
-          "x": 123.6,
-          "y": 155.5
-        },
-        "width": 37.2,
-        "height": 4.5,
-        "fontSize": 7.5,
-        "alignment": "center",
-        "fontColor": "#5c5c5c",
-        "readOnly": true,
-        "fontName": "Roboto"
-      },
-      {
-        "name": "ageingHead90plus",
-        "type": "text",
-        "content": "90+ days",
-        "position": {
-          "x": 160.8,
-          "y": 155.5
-        },
-        "width": 37.2,
-        "height": 4.5,
-        "fontSize": 7.5,
-        "alignment": "center",
-        "fontColor": "#5c5c5c",
-        "readOnly": true,
-        "fontName": "Roboto"
-      },
-      {
-        "name": "ageingBand",
-        "type": "rectangle",
-        "position": {
-          "x": 12,
-          "y": 161
-        },
-        "width": 186,
-        "height": 10,
-        "borderWidth": 0,
-        "borderColor": "#ffffff",
-        "color": "#f4f4f2",
-        "readOnly": true
-      },
-      {
-        "name": "ageingCurrent",
-        "type": "text",
-        "content": "$1,042.78",
-        "position": {
-          "x": 12,
-          "y": 163
-        },
-        "width": 37.2,
-        "height": 6,
-        "fontSize": 10,
-        "alignment": "center",
-        "fontColor": "#1a1a1a",
-        "fontName": "Roboto"
-      },
-      {
-        "name": "ageingDays30",
-        "type": "text",
-        "content": "$1,042.75",
-        "position": {
-          "x": 49.2,
-          "y": 163
-        },
-        "width": 37.2,
-        "height": 6,
-        "fontSize": 10,
-        "alignment": "center",
-        "fontColor": "#1a1a1a",
-        "fontName": "Roboto"
-      },
-      {
-        "name": "ageingDays60",
-        "type": "text",
-        "content": "$0.00",
-        "position": {
-          "x": 86.4,
-          "y": 163
-        },
-        "width": 37.2,
-        "height": 6,
-        "fontSize": 10,
-        "alignment": "center",
-        "fontColor": "#1a1a1a",
-        "fontName": "Roboto"
-      },
-      {
-        "name": "ageingDays90",
-        "type": "text",
-        "content": "$0.00",
-        "position": {
-          "x": 123.6,
-          "y": 163
-        },
-        "width": 37.2,
-        "height": 6,
-        "fontSize": 10,
-        "alignment": "center",
-        "fontColor": "#9a3412",
-        "fontName": "Roboto"
-      },
-      {
-        "name": "ageingDays90plus",
-        "type": "text",
-        "content": "$0.00",
-        "position": {
-          "x": 160.8,
-          "y": 163
-        },
-        "width": 37.2,
-        "height": 6,
-        "fontSize": 10,
-        "alignment": "center",
-        "fontColor": "#9a3412",
-        "fontName": "Roboto"
-      },
-      {
         "name": "footerRule",
         "type": "line",
         "position": {
           "x": 12,
-          "y": 180
+          "y": 133
         },
         "width": 186,
         "height": 0.3,
@@ -566,7 +235,7 @@
         "content": "BANK ACCOUNT",
         "position": {
           "x": 12,
-          "y": 184
+          "y": 137
         },
         "width": 60,
         "height": 4,
@@ -582,7 +251,7 @@
         "content": "Account name\nBank\nBSB\nAccount number\nReference",
         "position": {
           "x": 12,
-          "y": 189
+          "y": 142
         },
         "width": 30,
         "height": 22,
@@ -598,7 +267,7 @@
         "content": "Sample Care Services Pty Ltd\nExample Bank\n000-000\n00000000\nACC-00000",
         "position": {
           "x": 45,
-          "y": 189
+          "y": 142
         },
         "width": 65,
         "height": 22,
@@ -613,7 +282,7 @@
         "content": "BALANCE DUE AUD",
         "position": {
           "x": 138,
-          "y": 184
+          "y": 137
         },
         "width": 60,
         "height": 4,
@@ -630,7 +299,7 @@
         "content": "$2,085.53",
         "position": {
           "x": 138,
-          "y": 189
+          "y": 142
         },
         "width": 60,
         "height": 10,
@@ -640,27 +309,11 @@
         "fontName": "Roboto"
       },
       {
-        "name": "notice",
-        "type": "text",
-        "content": "This statement summarises activity on your account for the period shown. It is not a tax invoice and raises no new charges. Every amount listed here appears on a tax invoice already issued to you. When making a payment, please quote the invoice number as the reference so it is applied correctly. If any entry looks wrong, contact us before paying and we will check it.",
-        "position": {
-          "x": 12,
-          "y": 215
-        },
-        "width": 186,
-        "height": 14,
-        "fontSize": 7.5,
-        "lineHeight": 1.5,
-        "fontColor": "#8a8a8a",
-        "readOnly": true,
-        "fontName": "Roboto"
-      },
-      {
         "name": "tearOffRule",
         "type": "line",
         "position": {
           "x": 12,
-          "y": 233
+          "y": 172
         },
         "width": 186,
         "height": 0.4,
@@ -673,7 +326,7 @@
         "content": "PAYMENT ADVICE",
         "position": {
           "x": 12,
-          "y": 237
+          "y": 176
         },
         "width": 90,
         "height": 7,
@@ -689,7 +342,7 @@
         "content": "To: Sample Care Services Pty Ltd\nABN: 00 000 000 000\n12 Example Street, Sampleton, Victoria 3000, Australia",
         "position": {
           "x": 12,
-          "y": 245
+          "y": 184
         },
         "width": 90,
         "height": 17,
@@ -704,7 +357,7 @@
         "content": "Customer",
         "position": {
           "x": 112,
-          "y": 245
+          "y": 184
         },
         "width": 26,
         "height": 4,
@@ -720,7 +373,7 @@
         "content": "Sample Participant",
         "position": {
           "x": 140,
-          "y": 244.5
+          "y": 183.5
         },
         "width": 46,
         "height": 5,
@@ -734,7 +387,7 @@
         "content": "Overdue",
         "position": {
           "x": 112,
-          "y": 253
+          "y": 192
         },
         "width": 26,
         "height": 7,
@@ -749,7 +402,7 @@
         "content": "Current",
         "position": {
           "x": 146,
-          "y": 253
+          "y": 192
         },
         "width": 26,
         "height": 7,
@@ -764,7 +417,7 @@
         "content": "Total AUD Due",
         "position": {
           "x": 174,
-          "y": 253
+          "y": 192
         },
         "width": 24,
         "height": 7,
@@ -780,7 +433,7 @@
         "content": "$0.00",
         "position": {
           "x": 112,
-          "y": 261
+          "y": 200
         },
         "width": 26,
         "height": 5,
@@ -794,7 +447,7 @@
         "content": "$0.00",
         "position": {
           "x": 146,
-          "y": 261
+          "y": 200
         },
         "width": 26,
         "height": 5,
@@ -808,7 +461,7 @@
         "content": "$0.00",
         "position": {
           "x": 174,
-          "y": 261
+          "y": 200
         },
         "width": 24,
         "height": 5,
@@ -822,7 +475,7 @@
         "content": "Amount Enclosed\nEnter the amount you are paying above",
         "position": {
           "x": 12,
-          "y": 270
+          "y": 209
         },
         "width": 160,
         "height": 7,

@@ -134,29 +134,29 @@ describe('buildStatementInputs', () => {
     expect(inputs.metaValues.split('\n')[2]).toBe('01/09/2025 to 31/08/2026');
   });
 
-  // The ageing summary is five separate text fields over a rectangle rather
-  // than a table: it is fixed at five columns and never grows, and a second
-  // table schema on the page risks the padding/overlap bug that shows up when
-  // the transaction table spans pages.
-  it('renders the ageing cells in the declared bucket order', () => {
+  // KAN-276: the Ageing Summary band (Current / 1-30 / 31-60 / 61-90 / 90+)
+  // is not present in either the Purple Lotus or Westpoint Group reference
+  // statement, so it no longer renders. The underlying ageing computation
+  // itself is untouched — buildAgeingSummary still runs and is still checked
+  // for reconciliation below — this only stops feeding it to the template.
+  it('no longer surfaces the ageing-summary cells to the template (KAN-276)', () => {
     const inputs = buildStatementInputs(statementWith(transactions, outstanding), TZ);
-    expect([
-      inputs.ageingCurrent,
-      inputs.ageingDays30,
-      inputs.ageingDays60,
-      inputs.ageingDays90,
-      inputs.ageingDays90plus,
-    ]).toEqual(['$1,232.50', '$1,195.00', '$0.00', '$0.00', '$0.00']);
+    expect(inputs).not.toHaveProperty('ageingCurrent');
+    expect(inputs).not.toHaveProperty('ageingDays30');
+    expect(inputs).not.toHaveProperty('ageingDays60');
+    expect(inputs).not.toHaveProperty('ageingDays90');
+    expect(inputs).not.toHaveProperty('ageingDays90plus');
   });
 
-  it('fills the summary strip from the ledger totals', () => {
+  // KAN-276: the Opening Balance / Charges / Payments / Closing Balance band
+  // above the transaction table is not present in either reference statement
+  // either — the reference shows only "BALANCE DUE AUD" after the table.
+  it('no longer surfaces the opening/charges/payments/closing summary strip to the template (KAN-276)', () => {
     const inputs = buildStatementInputs(statementWith(transactions, outstanding), TZ);
-    expect([
-      inputs.openingBalance,
-      inputs.totalCharges,
-      inputs.totalPayments,
-      inputs.closingBalance,
-    ]).toEqual(['$0.00', '$2,427.50', '$0.00', '$2,427.50']);
+    expect(inputs).not.toHaveProperty('openingBalance');
+    expect(inputs).not.toHaveProperty('totalCharges');
+    expect(inputs).not.toHaveProperty('totalPayments');
+    expect(inputs).not.toHaveProperty('closingBalance');
   });
 
   it('refuses to build a statement whose ageing does not match the balance', () => {
@@ -172,11 +172,16 @@ describe('buildStatementInputs', () => {
 
   // KAN-273: the annotated bad output showed a "BALANCE DUE" figure that did
   // not reconcile with the transaction rows shown alongside it. `amountDue`
-  // must always be the same figure as `closingBalance` — never a separately
+  // must always be the ledger's actual closing balance — never a separately
   // sourced or stale value — for exactly the same statement.
-  it('states the same figure for amountDue and closingBalance, always', () => {
-    const inputs = buildStatementInputs(statementWith(transactions, outstanding), TZ);
-    expect(inputs.amountDue).toBe(inputs.closingBalance);
+  //
+  // KAN-276 removed the `closingBalance` template field (the summary strip it
+  // belonged to is gone), so this now compares `amountDue` against the ledger
+  // directly rather than against that sibling field.
+  it('states amountDue as the ledger\'s actual closing balance, always', () => {
+    const statement = statementWith(transactions, outstanding);
+    const inputs = buildStatementInputs(statement, TZ);
+    expect(inputs.amountDue).toBe(formatStatementMoney(statement.ledger.closingBalance));
   });
 });
 
@@ -447,6 +452,87 @@ describe('the committed statement of account template', () => {
       expect(field.position.x + field.width).toBeLessThanOrEqual(template.basePdf.width - right);
       expect(field.position.y + field.height).toBeLessThanOrEqual(template.basePdf.height - bottom);
     }
+  });
+
+  /**
+   * KAN-276: a direct comparison against the Purple Lotus / Westpoint Group
+   * reference statements — the same references KAN-273 was built against —
+   * showed three blocks the reference does not carry at all. The ageing
+   * *computation* (statementAgeing.js) is untouched; this is only the
+   * rendered block, per the ticket's explicit scope note.
+   */
+  describe('KAN-276 removals', () => {
+    it('no longer carries the Ageing Summary band', async () => {
+      const template = JSON.parse(await readFile(TEMPLATE_PATH, 'utf8'));
+      const names = template.schemas.flat().map((field) => field.name);
+      const removed = [
+        'ageingLabel', 'ageingHeadRule', 'ageingHeadCurrent', 'ageingHead30',
+        'ageingHead60', 'ageingHead90', 'ageingHead90plus', 'ageingBand',
+        'ageingCurrent', 'ageingDays30', 'ageingDays60', 'ageingDays90', 'ageingDays90plus',
+      ];
+      for (const name of removed) {
+        expect(names, `expected no ${name} field`).not.toContain(name);
+      }
+    });
+
+    it('no longer carries the Opening/Charges/Payments/Closing Balance summary band', async () => {
+      const template = JSON.parse(await readFile(TEMPLATE_PATH, 'utf8'));
+      const names = template.schemas.flat().map((field) => field.name);
+      const removed = [
+        'summaryBox', 'openingLabel', 'openingBalance', 'chargesLabel', 'totalCharges',
+        'paymentsLabel', 'totalPayments', 'closingLabel', 'closingBalance',
+      ];
+      for (const name of removed) {
+        expect(names, `expected no ${name} field`).not.toContain(name);
+      }
+    });
+
+    it('no longer carries the italic disclaimer paragraph', async () => {
+      const template = JSON.parse(await readFile(TEMPLATE_PATH, 'utf8'));
+      const names = template.schemas.flat().map((field) => field.name);
+      expect(names).not.toContain('notice');
+    });
+
+    // The reference shows nothing between the transaction table and
+    // "BALANCE DUE AUD" — confirm that ordering survives the removals rather
+    // than merely that the fields are gone.
+    it('renders "BALANCE DUE AUD" after the transaction table with nothing in between', async () => {
+      const template = JSON.parse(await readFile(TEMPLATE_PATH, 'utf8'));
+      const fields = template.schemas.flat();
+      const table = fields.find((field) => field.name === 'transactions');
+      const amountDueLabel = fields.find((field) => field.name === 'amountDueLabel');
+      expect(amountDueLabel.position.y).toBeGreaterThan(table.position.y);
+    });
+  });
+
+  describe('KAN-276 logo placement', () => {
+    it('sits flush against the top-right margin, not top-left', async () => {
+      const template = JSON.parse(await readFile(TEMPLATE_PATH, 'utf8'));
+      const logo = template.schemas.flat().find((field) => field.name === 'logo');
+      const [top, right] = template.basePdf.padding;
+      expect(logo.position.y).toBe(top);
+      expect(logo.position.x + logo.width).toBe(template.basePdf.width - right);
+      expect(logo.position.x).toBeGreaterThan(template.basePdf.width / 2);
+    });
+
+    // Small relative to the previous top-left placement (18x18mm) that
+    // prompted this ticket.
+    it('is smaller than the previous placement', async () => {
+      const template = JSON.parse(await readFile(TEMPLATE_PATH, 'utf8'));
+      const logo = template.schemas.flat().find((field) => field.name === 'logo');
+      expect(logo.width * logo.height).toBeLessThan(18 * 18);
+    });
+
+    // providerBlock right-aligns its text to its own box, so its rightmost
+    // glyph always sits at providerBlock.x + providerBlock.width regardless
+    // of content length — the logo must not sit to the left of that edge.
+    it('does not overlap the provider identity block', async () => {
+      const template = JSON.parse(await readFile(TEMPLATE_PATH, 'utf8'));
+      const fields = template.schemas.flat();
+      const logo = fields.find((field) => field.name === 'logo');
+      const providerBlock = fields.find((field) => field.name === 'providerBlock');
+      expect(providerBlock.position.x + providerBlock.width).toBeLessThanOrEqual(logo.position.x);
+    });
   });
 });
 
