@@ -35,6 +35,7 @@ const {
   sendEmail,
   resetEmailTransport,
 } = await import('../../../src/services/email/sesTransport.js');
+const { EMAIL_FROM_NAME } = await import('../../../src/constants/email.js');
 
 const SECRET = 'NotARealAwsSecretAccessKey1234567890abcd';
 const CONFIG_KEYS = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION', 'EMAIL_FROM'];
@@ -154,12 +155,19 @@ describe('sesTransport', () => {
 
     it('falls back to EMAIL_FROM when the message has no From of its own', async () => {
       await sendEmail({ ...MESSAGE, from: undefined });
-      expect(sendMail.mock.calls[0][0].from).toBe('noreply@dev.isoplus.online');
+      expect(sendMail.mock.calls[0][0].from).toBe(`${EMAIL_FROM_NAME} <noreply@dev.isoplus.online>`);
     });
 
-    it('keeps an explicit From when the settings block provides one', async () => {
+    it('keeps an explicit From address when the caller provides one', async () => {
       await sendEmail(MESSAGE);
-      expect(sendMail.mock.calls[0][0].from).toBe('accounts@dev.isoplus.online');
+      expect(sendMail.mock.calls[0][0].from).toBe(`${EMAIL_FROM_NAME} <accounts@dev.isoplus.online>`);
+    });
+
+    // KAN-270: Email From is application-level configuration — the display
+    // name is fixed and always applied, whichever address ends up sending.
+    it('always sends under the fixed display name, never a bare address', async () => {
+      await sendEmail(MESSAGE);
+      expect(sendMail.mock.calls[0][0].from).toMatch(new RegExp(`^${EMAIL_FROM_NAME} <.+>$`));
     });
 
     it('normalises a string recipient to an array', async () => {
@@ -190,13 +198,13 @@ describe('sesTransport', () => {
       expect(nodemailer.createTransport).not.toHaveBeenCalled();
     });
 
-    // The gate that let generation proceed is isEmailTransportConfigured({ from }),
-    // so the gate that lets the send proceed has to ask the same question. Asking
-    // it without the From burned the invoice number and then refused to deliver.
-    it('sends when the message carries its own From and EMAIL_FROM is unset', async () => {
+    // KAN-270: Email From is application-level configuration now. A caller
+    // passing its own From can no longer stand in for EMAIL_FROM being unset
+    // — that per-workspace opt-in path is retired.
+    it('refuses to send when EMAIL_FROM is unset, even if the caller passes an explicit From', async () => {
       delete process.env.EMAIL_FROM;
-      await sendEmail({ ...MESSAGE, from: 'billing@dev.isoplus.online' });
-      expect(sendMail.mock.calls[0][0].from).toBe('billing@dev.isoplus.online');
+      await expect(sendEmail({ ...MESSAGE, from: 'billing@dev.isoplus.online' })).rejects.toThrow(/not configured/i);
+      expect(nodemailer.createTransport).not.toHaveBeenCalled();
     });
 
     it('passes cc, replyTo, html and attachments straight through', async () => {
@@ -293,11 +301,11 @@ describe('sesTransport', () => {
   });
 });
 
-describe('isEmailTransportConfigured with a settings-provided From', () => {
-  // A workspace that has filled in Email From has named its sending identity.
-  // Requiring EMAIL_FROM as well refused to send an email whose sender was
-  // already known — which is how a fully configured workspace could sit unable
-  // to deliver on an environment that simply had no default.
+// KAN-270: the per-workspace "settings-provided From" opt-in is retired.
+// isEmailTransportConfigured takes no arguments any more — EMAIL_FROM is the
+// only sender source — and ignores any stray argument a caller still passes,
+// rather than silently reading it as a sending identity.
+describe('isEmailTransportConfigured takes no arguments (Email From is app-level only)', () => {
   beforeEach(() => {
     process.env.AWS_ACCESS_KEY_ID = 'key';
     process.env.AWS_SECRET_ACCESS_KEY = 'secret';
@@ -305,25 +313,12 @@ describe('isEmailTransportConfigured with a settings-provided From', () => {
     delete process.env.EMAIL_FROM;
   });
 
-  it('is configured when the settings supply a From and EMAIL_FROM is unset', () => {
-    expect(isEmailTransportConfigured({ from: 'billing@dev.isoplus.online' })).toBe(true);
-  });
-
-  it('is still not configured when neither is set', () => {
-    expect(isEmailTransportConfigured({ from: null })).toBe(false);
+  it('is not configured when EMAIL_FROM is unset, even if a from-shaped argument is passed', () => {
+    expect(isEmailTransportConfigured({ from: 'billing@dev.isoplus.online' })).toBe(false);
     expect(isEmailTransportConfigured()).toBe(false);
   });
 
-  it('treats a blank settings From as absent, not as a sender', () => {
-    expect(isEmailTransportConfigured({ from: '   ' })).toBe(false);
-  });
-
-  it('still requires the AWS credential — a From alone is not enough', () => {
-    delete process.env.AWS_SECRET_ACCESS_KEY;
-    expect(isEmailTransportConfigured({ from: 'billing@dev.isoplus.online' })).toBe(false);
-  });
-
-  it('falls back to EMAIL_FROM when the settings supply none', () => {
+  it('is configured once EMAIL_FROM is set, independent of any argument', () => {
     process.env.EMAIL_FROM = 'no-reply@dev.isoplus.online';
     expect(isEmailTransportConfigured()).toBe(true);
   });

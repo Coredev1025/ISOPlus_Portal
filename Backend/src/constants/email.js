@@ -4,6 +4,7 @@
  * Touchpoints:
  *   - EMAIL_EVENTS_POLLING            → workers/emailEventsWorker.js
  *   - EMAIL_EVENTS_FAILURE_LIMIT      → workers/emailEventsWorker.js
+ *   - EMAIL_FROM_NAME                 → services/email/sesTransport.js (sendEmail)
  *
  * This file imports nothing, per the constants rule in CLAUDE.md.
  */
@@ -29,3 +30,11 @@ export const EMAIL_EVENTS_POLLING = {
  * fires.
  */
 export const EMAIL_EVENTS_FAILURE_LIMIT = 10;
+
+/**
+ * KAN-270: the display name every automation email is sent as. Fixed
+ * app-wide, not configurable per workspace — the sending ADDRESS still
+ * varies by environment via the EMAIL_FROM env var (sesTransport.js), only
+ * this name is hardcoded.
+ */
+export const EMAIL_FROM_NAME = 'Automated Email - DO NOT REPLY';

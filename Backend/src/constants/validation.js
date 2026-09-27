@@ -30,7 +30,7 @@
  * address the API then refuses.
  *
  * Touchpoints: utils/automationSettingsHelpers.js (validateEmails, over
- * sendCopyTo/replyTo/emailFrom), validators/businessProfile.js
+ * sendCopyTo/replyTo), validators/businessProfile.js
  * (validateIdentityFields).
  */
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;

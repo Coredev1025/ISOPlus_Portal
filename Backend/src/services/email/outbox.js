@@ -46,11 +46,14 @@ export function resetEmailBackends() {
  * The worker asks BEFORE generating: generation claims invoice numbers and
  * writes PDFLink rows, so discovering there is no transport afterwards burns
  * real numbers on documents nobody receives.
+ *
+ * KAN-270: Email From is application-level configuration (EMAIL_FROM), so
+ * this no longer takes a per-message override to check.
  */
-export function activeEmailBackendName({ from = null } = {}) {
+export function activeEmailBackendName() {
   return selectBackendName({
     offline: isOfflineMode(),
-    transportConfigured: isEmailTransportConfigured({ from }),
+    transportConfigured: isEmailTransportConfigured(),
   });
 }
 
@@ -65,14 +68,13 @@ export function activeEmailBackendName({ from = null } = {}) {
 export async function deliverEmail(message) {
   registerBuiltInEmailBackends();
 
-  const name = activeEmailBackendName({ from: message?.block?.emailFrom ?? null });
+  const name = activeEmailBackendName();
   if (!name) {
     // Louder than a silent skip: an environment that is online with no
     // transport can neither send nor usefully pretend to.
     throw new Error(
-      'Email delivery is not configured: set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY ' +
-      "and AWS_REGION, give the workspace an Email From (or set EMAIL_FROM as the " +
-      'default), or run offline to write outbox previews instead.',
+      'Email delivery is not configured: set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, ' +
+      'AWS_REGION and EMAIL_FROM, or run offline to write outbox previews instead.',
     );
   }
 

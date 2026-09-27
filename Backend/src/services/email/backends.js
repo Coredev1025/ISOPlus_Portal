@@ -17,7 +17,7 @@ import { error as logError, info, warn } from '../../utils/logger.js';
 import { recordEmailSend } from './deliveryEvents.js';
 import { resolveRecipient } from './recipients.js';
 import {
-  describeSendError, isAccessDeniedError, isEmailTransportConfigured, sendEmail,
+  describeSendError, emailTransportConfig, isAccessDeniedError, isEmailTransportConfigured, sendEmail,
 } from './sesTransport.js';
 import { defaultEmailBody, defaultEmailSubject } from '../../utils/automationEmailDefaults.js';
 
@@ -66,7 +66,6 @@ export function composeRecord(message) {
     periodKey,
     recipientType: block?.recipient ?? null,
     sendMethod: block?.sendMethod ?? null,
-    from: block?.emailFrom || null,
     replyTo: block?.replyTo || null,
     copyTo: block?.sendCopyTo || null,
     subject: block?.emailSubject || defaultEmailSubject(kind, context),
@@ -186,7 +185,6 @@ export const sesBackend = {
     let sent;
     try {
       sent = await sendEmail({
-        from: record.from,
         to: recipient.address,
         cc: record.copyTo,
         replyTo: record.replyTo,
@@ -210,6 +208,9 @@ export const sesBackend = {
       // — and on portal-dev a From-address failure was read as a recipient
       // one for two days. The provider's own message names the identity it
       // objected to; that is the line worth having.
+      //
+      // KAN-270: the From address is application-level (EMAIL_FROM) now, not
+      // read off this message — emailTransportConfig() is the current value.
       warn(LOG_SCOPE, 'SES refused the send (access denied)', {
         kind,
         workspaceId,
@@ -217,7 +218,7 @@ export const sesBackend = {
         periodKey,
         recipientSource: recipient.source,
         to: recipient.address,
-        from: record.from,
+        from: emailTransportConfig().from,
         ...describeSendError(err),
       });
       return { delivered: false, backend: this.name, reason: 'access_denied' };

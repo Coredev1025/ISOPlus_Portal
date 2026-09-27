@@ -23,7 +23,6 @@ const MESSAGE = {
     recipient: 'billing_contact',
     sendMethod: 'isoplus',
     replyTo: 'billing@iso-plus.com.au',
-    emailFrom: 'accounts@iso-plus.com.au',
     emailSubject: 'Your invoice',
     emailMessage: 'Please find your invoice attached.',
   },
@@ -131,12 +130,6 @@ describe('emailOutbox', () => {
     // the property it protected has to hold: an environment that is online
     // with no sending configuration must not quietly write a preview nobody
     // reads while a client waits for an invoice.
-    //
-    // "No sending configuration" means no AWS credential, not merely no
-    // EMAIL_FROM. A workspace's own Email From is a sending identity now, and
-    // MESSAGE carries one — clearing the default alone leaves this environment
-    // perfectly able to send, which is exactly how this test used to pass on a
-    // credential-free CI runner and fail on a developer's machine.
     process.env.ISOPLUS_OFFLINE = '0';
     delete process.env.EMAIL_BACKEND;
     delete process.env.EMAIL_FROM;
@@ -147,21 +140,23 @@ describe('emailOutbox', () => {
     await expect(deliverEmail(MESSAGE)).rejects.toThrow(/not configured/i);
   });
 
-  // The other half of that rule, and the reason the one above had to change:
-  // a workspace that has configured its own Email From can send on an
-  // environment with no EMAIL_FROM default. Asserted through
+  // KAN-270: Email From is application-level configuration now — EMAIL_FROM
+  // is the only thing that turns delivery on, and activeEmailBackendName no
+  // longer takes a per-message override to check. Asserted through
   // activeEmailBackendName rather than deliverEmail because this is the
   // question the worker asks BEFORE generating, and answering it must not
   // depend on a recipient resolving or on SES being reachable.
-  it('online: a workspace Email From is a sending identity of its own', () => {
+  it('online: EMAIL_FROM alone (with the AWS credential) turns on the ses backend', () => {
     process.env.ISOPLUS_OFFLINE = '0';
     delete process.env.EMAIL_BACKEND;
-    delete process.env.EMAIL_FROM;
     process.env.AWS_ACCESS_KEY_ID = 'AKIAEXAMPLE';
     process.env.AWS_SECRET_ACCESS_KEY = 'example-secret';
     process.env.AWS_REGION = 'ap-southeast-2';
 
+    delete process.env.EMAIL_FROM;
     expect(activeEmailBackendName()).toBeNull();
-    expect(activeEmailBackendName({ from: MESSAGE.block.emailFrom })).toBe('ses');
+
+    process.env.EMAIL_FROM = 'noreply@dev.isoplus.online';
+    expect(activeEmailBackendName()).toBe('ses');
   });
 });

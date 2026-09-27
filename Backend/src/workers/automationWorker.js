@@ -276,7 +276,7 @@ async function composeAndDeliver(job) {
   // to deliver afterwards burns real numbers on PDFs nobody receives and leaves
   // rows that make the re-run hand back those stale documents. Resolves rather
   // than throws — nothing irreversible happened.
-  const backend = activeEmailBackendName({ from: block?.emailFrom ?? null });
+  const backend = activeEmailBackendName();
   if (!backend) {
     warn('Automation', 'No email backend configured; generated nothing rather than discarding it', {
       kind, workspaceId, boardId, periodKey,
