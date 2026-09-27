@@ -72,16 +72,41 @@ const AGEING_FIELDS = Object.freeze([
 
 /**
  * The transaction rows, as the table plugin wants them.
+ *
+ * Column order matches the Xero-style reference layout (KAN-273): Date /
+ * Activity / Reference / Due Date / Invoice Amount / Payments / Balance AUD.
+ * A row with no due date — a payment, or an invoice none could be derived
+ * for — gets a blank cell, never a placeholder string.
  */
 export function buildTransactionRows(rows, timezone) {
   return rows.map((row) => [
     formatDateNumericAU(row.date, timezone),
-    row.reference ?? '',
     row.description ?? '',
+    row.reference ?? '',
+    row.dueDate ? formatDateNumericAU(row.dueDate, timezone) : '',
     moneyCell(row.charge),
     moneyCell(row.payment),
     formatStatementMoney(row.balance),
   ]);
+}
+
+/**
+ * The tear-off "PAYMENT ADVICE" block at the foot of the statement.
+ *
+ * Mirrors the reference layout's own payment-advice strip: the provider's
+ * identity repeated as "To:", the recipient's name as the customer, and the
+ * closing balance split into what is overdue versus current — both of which
+ * the ageing summary already computes, so this does no arithmetic of its own
+ * beyond the subtraction.
+ */
+function paymentAdviceInputs(providerBlockText, recipientName, ledger, ageing) {
+  return {
+    paymentAdviceProvider: providerBlockText ? `To: ${providerBlockText}` : '',
+    paymentAdviceCustomer: recipientName,
+    paymentAdviceOverdue: formatStatementMoney(ledger.closingBalance - ageing.current),
+    paymentAdviceCurrent: formatStatementMoney(ageing.current),
+    paymentAdviceTotalDue: formatStatementMoney(ledger.closingBalance),
+  };
 }
 
 /**
@@ -99,6 +124,12 @@ export function buildStatementInputs(statement, timezone = DEFAULT_TIMEZONE) {
   assertRunningBalanceReconciles(ledger.rows, ledger.closingBalance);
   assertAgeingReconciles(ageing, ledger.closingBalance);
 
+  const providerBlockText = block(
+    provider.name,
+    provider.abn ? `ABN: ${provider.abn}` : '',
+    provider.address,
+  );
+
   // Every variable field is a plain `text` schema, so its input is a plain
   // string — newline-separated for the multi-line blocks. The label-only
   // fields (STATEMENT TO, the column heads, the notice) carry their own
@@ -110,11 +141,7 @@ export function buildStatementInputs(statement, timezone = DEFAULT_TIMEZONE) {
     // text-only header every statement had before.
     logo: provider.logo ?? '',
 
-    providerBlock: block(
-      provider.name,
-      provider.abn ? `ABN: ${provider.abn}` : '',
-      provider.address,
-    ),
+    providerBlock: providerBlockText,
     participantBlock: block(recipient.name, recipient.address),
     metaValues: block(
       meta.statementNumber,
@@ -142,6 +169,8 @@ export function buildStatementInputs(statement, timezone = DEFAULT_TIMEZONE) {
       bank.reference,
     ),
     amountDue: formatStatementMoney(ledger.closingBalance),
+
+    ...paymentAdviceInputs(providerBlockText, recipient.name, ledger, ageing),
   };
 }
 

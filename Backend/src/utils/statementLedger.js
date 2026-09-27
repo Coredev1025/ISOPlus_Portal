@@ -117,6 +117,10 @@ function chargeRows(invoices, payments, asAt, datedPayments) {
       date: inv.createdAt,
       reference: inv.invoiceNumber,
       description: inv.description || 'Services invoiced',
+      // KAN-273: the statement's Due Date column, carried straight through
+      // from the invoice — undefined rather than a placeholder when the
+      // invoice has none, so the renderer leaves the cell blank.
+      dueDate: inv.dueDate,
       charge: roundMoney(parseAmount(inv.invoiceTotal)),
       payment: paidAgainst(netted, inv.invoiceNumber),
       sequence: index * 2,

@@ -80,6 +80,28 @@ describe('buildStatementLedger — dated payments', () => {
     expect(ledger.closingBalance).toBe(2427.5);
   });
 
+  // KAN-273: the statement's Due Date column read nothing — the invoice's own
+  // due date was computed (statementAccountHistory.js) but never carried onto
+  // the charge row, so the printed statement fell back to a template
+  // placeholder ("XX/XX/XX") instead of the real date.
+  it('carries the invoice due date onto its own charge row', () => {
+    const { ledger } = buildStatementLedger({
+      invoices, items: [], period: PERIOD, openingBalance: 0, timezone: TZ,
+    });
+    expect(ledger.rows.map((r) => r.dueDate)).toEqual(['2026-08-15', '2026-09-14']);
+  });
+
+  // A payment row is not an invoice and has no due date of its own — it must
+  // not inherit the charge row's date.
+  it('leaves the due date blank on a payment row', () => {
+    const items = [paidItem('INV-1160', 1195, '2026-07-20')];
+    const { ledger } = buildStatementLedger({
+      invoices, items, period: PERIOD, openingBalance: 0, timezone: TZ,
+    });
+    const paymentRow = ledger.rows.find((r) => r.payment > 0);
+    expect(paymentRow.dueDate).toBeUndefined();
+  });
+
   it('interleaves payments with charges in date order', () => {
     const items = [paidItem('INV-1160', 1195, '2026-07-20')];
     const { ledger } = buildStatementLedger({
