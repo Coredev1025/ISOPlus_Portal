@@ -361,6 +361,71 @@ describe('a scheduled statement run, on untidy data', () => {
     const budget = results.filter((row) => row.itemId.startsWith('statement:'));
     expect(budget.map((row) => row.participant)).toEqual(['Aaron Test', PARTICIPANT]);
   });
+
+  /**
+   * KAN-275: `data['Participant Full Name']` is a free-text copy an operator
+   * can hand-edit on the shift itself, independent of who the shift is really
+   * for. Live data (workspace 55369, board eNiJpH14PN3, confirmed
+   * 2026-09-27/28) had Master Plan items whose own copy had drifted to
+   * fragments of the real name ("Maso", "Mas", "Mas K") through repeated test
+   * edits, while `data['Participant Profile']` — the same reference already
+   * used by invoice generation (ndisInvoiceGeneratorRouteHelpers.js) and the
+   * monthly statement (monthlyStatementRouteHelpers.js) to resolve a shift's
+   * true participant — still correctly pointed at the real participant's
+   * profile record. The invoice for such a shift showed the right participant
+   * name (it resolves through the reference, not the free text); its recorded
+   * payment did not — `participantPaymentItems` matched only the drifted text
+   * and silently dropped the item, so a payment that had actually been
+   * recorded looked, on the statement, like it never was.
+   */
+  it('still finds a payment whose shift has a corrupted Participant Full Name but a correct Participant Profile reference', async () => {
+    // item-1 keeps its own drift-free 'Participant Full Name' (unaffected by
+    // this case) but loses 'Full Name/Preferred Name' so the profile lookup
+    // below is unambiguous about which item is the real profile record.
+    await Item.updateOne({ itemId: 'item-1' }, { $unset: { 'data.Full Name/Preferred Name': '' } });
+    await Item.create({
+      itemId: 'profile-masoud',
+      workspaceId: WORKSPACE,
+      boardId: BOARD,
+      folderId: 'folder-profile',
+      data: { 'Full Name/Preferred Name': PARTICIPANT },
+    });
+    await Item.create({
+      itemId: 'item-drifted',
+      workspaceId: WORKSPACE,
+      boardId: BOARD,
+      folderId: 'folder-1',
+      invoicedBy: 'INV-1205',
+      data: {
+        // Stale/corrupted free text — this must not be what payment matching
+        // relies on.
+        'Participant Full Name': 'Maso',
+        // The correct, undamaged reference chain.
+        'Participant Profile': ['profile-masoud'],
+        'Amount Received($)': '75',
+        'Invoice Received Date': '2026-08-21T00:00:00.000Z',
+      },
+    });
+
+    const result = await generateStatementOfAccount({
+      workspaceId: WORKSPACE,
+      boardId: BOARD,
+      participant: PARTICIPANT,
+      period: { start: '2026-08-01T00:00:00.000Z', end: '2026-08-31T23:59:59.999Z' },
+      timezone: TZ,
+      periodKey: PERIOD_KEY,
+      claimStatementNumber: async () => 'SOA-KAN275',
+      nameField: 'Participant Full Name',
+    });
+
+    expect(result).not.toBeNull();
+    const rendered = statementRender();
+    expect(rendered).toBeDefined();
+    // $250 charged (one invoice, unchanged); $100 from item-1's own payment
+    // plus $75 from item-drifted's — found only via its Participant Profile
+    // reference — for $175 received and $75 still owing.
+    expect(summaryStrip(rendered)).toEqual(['$0.00', '$250.00', '$175.00', '$75.00']);
+  });
 });
 
 /**
