@@ -34,7 +34,12 @@ Full detail: `CLAUDE.md` (Backend/Frontend architecture sections),
 
 ## Current status
 
-- Repo just pulled to `505ded4f` on `develop` (was 35 commits behind).
+- This file, `ARCHITECTURE.md` and `CONTRIBUTING.md` were added via
+  [PR #925](https://github.com/ISO-Consulting-Services/isoplus-portal/pull/925),
+  merged to `develop` at `e700e235`. If you're reading this file itself, it
+  may have been updated since, check `git log -- docs/claude-handoff.md`.
+- Repo pulled to `505ded4f` on `develop` before that PR (was 35 commits
+  behind).
 - Recent merges of note: **KAN-266** (SES refusal diagnostics correctly blame
   the sending identity, not the recipient), **KAN-267** (Application Logs
   search + System Health messaging + a back button for a zero-output run,
@@ -86,3 +91,43 @@ Full detail: `CLAUDE.md` (Backend/Frontend architecture sections),
   architecture/conventions sections short and points here for the rest;
   `ARCHITECTURE.md` and `CONTRIBUTING.md` (added alongside this file) are
   deliberately thin pointers for the same reason, not full restatements.
+
+## Reference
+
+Operational details that took real digging to find. Re-check before relying
+on them if it's been a while — these are facts about external systems, not
+things this repo controls.
+
+- **Jira**: cloud ID / site is `isoconsultingservices.atlassian.net`, project
+  key `KAN`. The Jira MCP tools take `cloudId` as that site string directly.
+- **AWS**: two SSO profiles are configured locally —
+  `isoplus-dev-role` (used for read-only investigation; has EB, SES and
+  CloudWatch Logs read access, but **not** `ssm:*` or
+  `ses:ListSuppressedDestinations`) and `isoplus-admin`. SSO session needs
+  `aws sso login --profile isoplus-dev-role` when expired (opens a browser).
+  Region is `ap-southeast-2`.
+- **Elastic Beanstalk environments**: `isoplus-be-dev-blue` (dev,
+  `develop` branch deploys here) and `isoplus-be-prod-blue` (prod, `main`
+  branch). Only `isoplus-be-prod-blue` has CloudWatch log streaming enabled —
+  for dev, use the EB "request/retrieve-environment-info" tail (last ~100
+  lines per log file) or the in-app Application Logs / System Health views,
+  not CloudWatch, for anything on dev.
+- **Portal roles**: the in-app dashboard's **Application Logs** and
+  **System Health** tabs only render for accounts with `owner` or
+  `support_admin` role in that environment's own `users` collection — being
+  logged in via ISO+ OAuth is not sufficient by itself. Role is per
+  environment (dev vs prod are separate databases).
+- **Known test workspaces on dev** (`portal-dev.isoplus.online`): `55369`
+  ("Development Test Workspace"), `55515` ("Automated Invoicing Test",
+  Arash's manual/automated invoicing test bed), `55390` (used for an earlier
+  automation-timezone bug). Their boards and item data are real test fixtures,
+  not synthetic — dates on them drift into the past relative to "today" as
+  time passes, which is exactly what caused the KAN-267 investigation.
+
+## Process note
+
+The commit adding this Reference section was originally pushed straight to
+`develop` with no branch or PR (2026-09-27, commit `12401aa5`). That was
+wrong and got reverted (`e687e970`) and redone here via a branch and PR
+instead. **Never push directly to `develop`** — branch and open a PR, even
+for docs-only changes.
