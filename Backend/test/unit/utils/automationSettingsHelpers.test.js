@@ -240,11 +240,15 @@ describe('parseAutomationSettingsBody', () => {
     expect(result.error).toMatch(/replyTo/);
   });
 
-  it('rejects a malformed emailFrom', () => {
+  // emailFrom is retired (KAN-270): Email From is application-level
+  // configuration now, so it is no longer validated. A stray value (e.g. from
+  // an older client) passes through this parse step unexamined — the model no
+  // longer declares the field, so Mongoose drops it silently on save.
+  it('no longer validates emailFrom — a malformed one does not reject the body', () => {
     const result = parseAutomationSettingsBody({
       invoice: { ...validBlock, emailFrom: 'not-an-email' },
     });
-    expect(result.error).toMatch(/emailFrom/);
+    expect(result.error).toBeUndefined();
   });
 
   // Commit ceaefe3 bounded the integer branch (unit month) and missed this

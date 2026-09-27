@@ -23,7 +23,10 @@ const blockSchema = new mongoose.Schema(
     recipient: { type: String, required: true, default: 'billing_contact', enum: RECIPIENTS },
     sendCopyTo: { type: String, default: '' },
     replyTo: { type: String, default: '' },
-    emailFrom: { type: String, default: '' },
+    // emailFrom removed (KAN-270): Email From is application-level
+    // configuration now (EMAIL_FROM env var + a hardcoded display name), not
+    // a per-workspace setting. A pre-existing stored document may still carry
+    // a stale emailFrom string; nothing reads it any more.
     emailSubject: { type: String, default: '' },
     emailMessage: { type: String, default: '' },
   },

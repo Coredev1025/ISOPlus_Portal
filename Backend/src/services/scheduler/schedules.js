@@ -50,8 +50,8 @@ function comparableSchedule(schedule) {
  * Does this write leave the cadence exactly as it already is?
  *
  * `routes/workspace.js` calls upsertSchedule on every automation-settings PUT,
- * including a save that only changes `emailFrom` — `toScheduleInput` carries
- * the cadence fields alone, so such a save re-upserts a byte-identical
+ * including a save that only changes the reply-to address — `toScheduleInput`
+ * carries the cadence fields alone, so such a save re-upserts a byte-identical
  * schedule. Recomputing `nextRunAt` there is not harmless: if the row was
  * already due (the tick is backed up and an admin edits the reply-to address),
  * the recompute pushes the slot to the next cycle. That cycle is never billed,

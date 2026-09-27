@@ -47,7 +47,6 @@ const MESSAGE = {
   block: {
     recipient: 'billing_contact',
     sendMethod: 'isoplus',
-    emailFrom: 'billing@provider.test',
     replyTo: 'reply@provider.test',
     sendCopyTo: 'copy@provider.test',
     emailSubject: 'Your ISO+ invoice run',
@@ -140,10 +139,13 @@ describe('sesBackend', () => {
       expect.objectContaining({ workspaceId: '55390', participant: 'Jane Smith', recipientType: 'billing_contact' }),
     );
     const sent = sendEmail.mock.calls[0][0];
+    // KAN-270: Email From is application-level configuration now — sendEmail
+    // is not given a per-workspace From at all, only sesTransport.js (env +
+    // the hardcoded display name) decides it.
+    expect(sent).not.toHaveProperty('from');
     expect(sent).toMatchObject({
       to: 'jane@example.test',
       cc: 'copy@provider.test',
-      from: 'billing@provider.test',
       replyTo: 'reply@provider.test',
       subject: 'Your ISO+ invoice run',
       html: '<p>Attached.</p>',
@@ -209,9 +211,11 @@ describe('sesBackend', () => {
     const refusal = warn.mock.calls.find(([, message]) => /refused the send/i.test(message));
     expect(refusal, 'the refusal should be logged').toBeDefined();
     const [, , context] = refusal;
+    // KAN-270: the From logged here is the app-level sending identity
+    // (emailTransportConfig().from, mocked above), not a per-workspace value.
     expect(context).toMatchObject({
       to: 'jane@example.test',
-      from: 'billing@provider.test',
+      from: 'noreply@test',
       errorName: 'AccessDeniedException',
     });
     // The provider's own words, which is the part that actually says which

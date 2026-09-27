@@ -13,15 +13,21 @@
 //     all, and those claim real invoice numbers off Business.documentNumbering.
 //     "Probably sendable" is not good enough to burn one.
 //
-// EMAIL_FROM is both the default From and the deliberate opt-in: the AWS
-// credential is shared with S3, so its presence alone must not turn on
-// customer email. Only the sending identity's domain is verified in SES
-// (dev.isoplus.online in dev), so a user-configured From on another domain
-// will be rejected by SES — the error names the address.
+// EMAIL_FROM is the deliberate opt-in: the AWS credential is shared with S3,
+// so its presence alone must not turn on customer email. Only the sending
+// identity's domain is verified in SES (dev.isoplus.online in dev), so an
+// EMAIL_FROM on another domain will be rejected by SES — the error names the
+// address.
+//
+// KAN-270: Email From is application-level configuration, not a
+// per-workspace one. The address still varies by environment (EMAIL_FROM),
+// but the display name is fixed (EMAIL_FROM_NAME) and no longer read from a
+// workspace's automation settings.
 
 import nodemailer from 'nodemailer';
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { info, error } from '../../utils/logger.js';
+import { EMAIL_FROM_NAME } from '../../constants/email.js';
 
 let transporter = null;
 
@@ -31,27 +37,18 @@ function envValue(name) {
 }
 
 /**
- * True only when the AWS credential, region and a From address are all present.
+ * True only when the AWS credential, region and EMAIL_FROM are all present.
  * Any one missing means delivery is off, rather than half on.
  *
- * `from` is the workspace's own Email From, off the automation settings block.
- * When a workspace has configured one, that IS the sending identity, so
- * requiring EMAIL_FROM as well would refuse to send an email whose sender is
- * already known — which is what it did, and why a fully configured workspace
- * could sit unable to deliver on an environment that simply had no default.
- *
- * The deployment-level gate is not lost by this. AUTOMATION_ENABLED still has
- * to be on for the scheduler to fan out at all, and the AWS credential still
- * has to be present here; what changes is that the *sender address* may come
- * from the workspace rather than only from the environment.
+ * KAN-270: Email From is application-level configuration now, so this is the
+ * only sender source — there is no per-workspace override to check any more.
  */
-export function isEmailTransportConfigured({ from = null } = {}) {
-  const sender = String(from ?? '').trim() || envValue('EMAIL_FROM');
+export function isEmailTransportConfigured() {
   return Boolean(
     envValue('AWS_ACCESS_KEY_ID')
     && envValue('AWS_SECRET_ACCESS_KEY')
     && envValue('AWS_REGION')
-    && sender,
+    && envValue('EMAIL_FROM'),
   );
 }
 
@@ -142,10 +139,22 @@ function toAddressList(value) {
 }
 
 /**
+ * "Automated Email - DO NOT REPLY <address>" — the standard `"Name <address>"`
+ * header form. nodemailer's SES transport composes a real MIME message and
+ * parses this into separate display-name/address parts (mime-node ->
+ * addressparser), so the name reaches the raw message it hands to SES, not
+ * just a top-level SDK field.
+ */
+function formatFromHeader(address) {
+  return `${EMAIL_FROM_NAME} <${address}>`;
+}
+
+/**
  * Send one composed message through SES.
  *
  * @param {object} message
- * @param {string} [message.from] Defaults to EMAIL_FROM when the settings block has none.
+ * @param {string} [message.from] Sending address. Defaults to EMAIL_FROM.
+ *   Always sent under the fixed EMAIL_FROM_NAME display name (KAN-270).
  * @param {string|string[]} message.to
  * @param {string|string[]} [message.cc]
  * @param {string} [message.replyTo]
@@ -160,20 +169,15 @@ export async function sendEmail({ from, to, cc, replyTo, subject, html, text, at
   if (recipients.length === 0) {
     throw new Error('sendEmail requires at least one recipient — refusing to send a message to nobody.');
   }
-  // The same question the preflight gate asked, with the same argument. Asking
-  // it without `from` is how a workspace that had configured its own Email From
-  // passed the gate that decides whether to generate — burning a real invoice
-  // number off Business.documentNumbering — and was then refused here.
-  if (!isEmailTransportConfigured({ from })) {
+  if (!isEmailTransportConfigured()) {
     throw new Error(
-      'Email transport is not configured: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and '
-      + 'AWS_REGION must all be set, and a From address must come from either the '
-      + "workspace's Email From or EMAIL_FROM.",
+      'Email transport is not configured: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, '
+      + 'AWS_REGION and EMAIL_FROM must all be set.',
     );
   }
 
   const envelope = {
-    from: from || envValue('EMAIL_FROM'),
+    from: formatFromHeader(from || envValue('EMAIL_FROM')),
     to: recipients,
     cc: toAddressList(cc),
     replyTo,

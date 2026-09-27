@@ -23,7 +23,6 @@ export const DEFAULT_AUTOMATION_BLOCK = {
   recipient: 'billing_contact',
   sendCopyTo: '',
   replyTo: '',
-  emailFrom: '',
   emailSubject: '',
   emailMessage: '',
 };
@@ -82,8 +81,8 @@ function validateRunOn(unit, runOn) {
  *
  * Only `sendCopyTo` takes a list. Three people needed the automated mail — the
  * developer, the account manager and the reviewer — and the field held exactly
- * one address, so a run could copy one of them. Reply-to and Email From each
- * name a single mailbox by definition and stay single.
+ * one address, so a run could copy one of them. Reply-to names a single
+ * mailbox by definition and stays single.
  *
  * A trailing comma leaves an empty segment, which would reach SES as a blank
  * recipient rather than being quietly dropped, so it is rejected rather than
@@ -96,11 +95,10 @@ function isEmailAddressList(value) {
   return parts.length > 0 && parts.every((part) => EMAIL_PATTERN.test(part));
 }
 
+// emailFrom dropped (KAN-270): Email From is application-level configuration
+// now, not a per-workspace field, so it is no longer validated here.
 function validateEmails(block) {
-  for (const field of ['replyTo', 'emailFrom']) {
-    const value = block[field];
-    if (value && !EMAIL_PATTERN.test(value)) return `${field} must be a valid email address`;
-  }
+  if (block.replyTo && !EMAIL_PATTERN.test(block.replyTo)) return 'replyTo must be a valid email address';
   const copyTo = block.sendCopyTo;
   if (copyTo && !isEmailAddressList(copyTo)) {
     return 'sendCopyTo must be a valid email address, or several separated by commas';
