@@ -13,6 +13,12 @@
  *   4.5 — An account with no activity and nothing owing gets no statement.
  *
  * Payments come from the ISO+ service records, where they are entered by hand.
+ *
+ * KAN-274 departs from the spec's original period-only charge scoping: every
+ * invoice and payment ever recorded for the participant is a line item, as at
+ * the moment the statement was struck, not only the ones this statement's own
+ * period spans. See "Changes since approval" in
+ * `docs/superpowers/specs/2026-08-20-invoice-item-selection-and-statements-design.md`.
  */
 
 import {
@@ -62,10 +68,22 @@ export function collectPayments(items) {
 /** Whether a payment carries a date the ledger can place it by. */
 const isDated = (payment) => !Number.isNaN(new Date(payment.date).getTime());
 
-const withinPeriod = (value, period) => {
+/**
+ * Whether `value` is a usable date at or before `asAt`.
+ *
+ * KAN-274: charge and payment rows used to be scoped to the statement's own
+ * period (`withinPeriod`, since removed). Every invoice ever raised is now a
+ * line item regardless of which period it belongs to, so the only boundary
+ * left is the one `asAtCutoff` already applies to ageing — a document raised
+ * after the statement was struck is not on it, because it did not exist yet.
+ * An unusable date is excluded rather than kept, unlike `asAtCutoff`: a
+ * payment with no date must not get a row of its own here, it is netted onto
+ * its invoice instead (see `chargeRows`).
+ */
+const raisedBy = (value, asAt) => {
   const at = new Date(value).getTime();
   if (Number.isNaN(at)) return false;
-  return at >= new Date(period.start).getTime() && at <= new Date(period.end).getTime();
+  return at <= new Date(asAt).getTime();
 };
 
 const paidAgainst = (payments, invoiceNumber) => roundMoney(
@@ -75,7 +93,15 @@ const paidAgainst = (payments, invoiceNumber) => roundMoney(
 );
 
 /**
- * Charge rows, one per invoice raised in the period.
+ * Charge rows, one per invoice ever raised for the participant, as at `asAt`.
+ *
+ * KAN-274: every invoice is a line item here now, not only ones this
+ * statement's own period spans — the CR this shipped under. A freshly
+ * generated invoice's `createdAt` almost always falls just after whatever
+ * period is current when it is generated (the invoicing job's own eligibility
+ * window excludes its own run day), so scoping this to the period made a
+ * brand new invoice invisible on the very next statement, visible only in the
+ * running balance and ageing figures.
  *
  * When payments cannot be dated, the payment is netted onto the charge row
  * rather than given a row of its own — see `buildStatementLedger`. In dated
@@ -83,10 +109,10 @@ const paidAgainst = (payments, invoiceNumber) => roundMoney(
  * its invoice's date, because that is the earliest it can have been made and
  * the one date the ageing already knows it by.
  */
-function chargeRows(invoices, payments, period, datedPayments) {
+function chargeRows(invoices, payments, asAt, datedPayments) {
   const netted = datedPayments ? payments.filter((p) => !isDated(p)) : payments;
   return invoices
-    .filter((inv) => withinPeriod(inv.createdAt, period))
+    .filter((inv) => raisedBy(inv.createdAt, asAt))
     .map((inv, index) => ({
       date: inv.createdAt,
       reference: inv.invoiceNumber,
@@ -98,11 +124,16 @@ function chargeRows(invoices, payments, period, datedPayments) {
 }
 
 /**
- * Payment rows, one per recorded payment, in the period.
+ * Payment rows, one per recorded payment, as at `asAt`.
+ *
+ * KAN-274: no longer scoped to the period either, for the same reason as
+ * `chargeRows` — every charge row it might offset can now come from any
+ * period, so a payment scoped to only the current one would leave an older,
+ * already-settled invoice looking outstanding again on this statement.
  */
-function paymentRows(payments, period) {
+function paymentRows(payments, asAt) {
   return payments
-    .filter((p) => withinPeriod(p.date, period))
+    .filter((p) => raisedBy(p.date, asAt))
     .map((p, index) => ({
       date: p.date,
       reference: p.invoiceNumber,
@@ -159,7 +190,17 @@ function outstandingByInvoice(invoices, payments) {
 }
 
 /**
- * The settled ledger and ageing for one participant and period.
+ * The settled ledger and ageing for one participant, as at `asAt`.
+ *
+ * `period` is no longer used to scope which invoices or payments become rows
+ * — KAN-274 made every one of them a line item regardless of period, so the
+ * caller's `openingBalance` should be 0 (see `generateStatementOfAccount.js`):
+ * with the full history already on the ledger, there is nothing left for an
+ * opening figure to carry forward without counting the same invoice twice.
+ * `period` is kept only as the fallback source for `asAt` — callers that
+ * genuinely want "as at the period's own end" (the pure-function tests below
+ * that do not care about generation timing) can still get it from the
+ * default — and for whatever the caller prints as the period covered.
  *
  * `datedPayments` is the switch for the open question about
  * `Invoice Received Date`. With it true — the default — each payment gets its
@@ -185,8 +226,8 @@ export function buildStatementLedger({
 }) {
   const payments = collectPayments(items);
   const rows = [
-    ...chargeRows(invoices, payments, period, datedPayments),
-    ...(datedPayments ? paymentRows(payments, period) : []),
+    ...chargeRows(invoices, payments, asAt, datedPayments),
+    ...(datedPayments ? paymentRows(payments, asAt) : []),
   ];
 
   const ledger = buildRunningBalance(openingBalance, rows);
