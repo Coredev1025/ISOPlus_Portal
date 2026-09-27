@@ -10,15 +10,6 @@
  */
 
 /**
- * Touchpoints: lib/automation-email-block.tsx (Recipient select). Values are
- * the wire values of `AutomationBlock["recipient"]`.
- */
-export const RECIPIENT_OPTIONS = [
-  { value: "billing_contact", label: "Billing Contact" },
-  { value: "client_participant", label: "Client / Participant" },
-] as const;
-
-/**
  * Touchpoints: lib/invoice-statement-automation-panel.tsx (Invoice block's Send
  * Method select, via lib/automation-email-block.tsx). Values are the wire
  * values of `AutomationBlock["sendMethod"]`.

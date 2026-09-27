@@ -394,6 +394,9 @@ describe('processWebhookNdisInvoicePdfItem', () => {
         itemId: 'pp_1',
         data: {
           'Full Name/Preferred Name': 'Janet Roe',
+          // KAN-272: the Billing Contact/Address below are only printed when
+          // a Billing Email is also on the profile (Case A).
+          'Billing Email': 'roe.trust@example.com',
           'Billing Contact': 'Roe Family Trust',
           'Billing Address': '12 Smith St, Blacktown, NSW 2148',
           'NDIS Number': '430 123 456',

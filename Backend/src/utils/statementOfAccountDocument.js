@@ -13,6 +13,7 @@
  */
 
 import { REF_ATTRIBUTE_NAMES } from '../constants/monthlyStatementAttributes.js';
+import { resolveInvoiceRecipient } from './invoiceRecipientHelpers.js';
 
 const str = (value) => String(value ?? '').trim();
 
@@ -26,21 +27,28 @@ function businessAddress(business) {
 }
 
 /**
- * The participant's address, from whichever of the two postcode spellings the
- * board uses. Both appear in REF_ATTRIBUTE_NAMES because both appear in real
- * ISO+ workspaces.
+ * Recipient/address resolution (KAN-272): Case A/AA/B, off the profile's
+ * Billing Email/Billing Contact/Billing Address attributes, falling back to
+ * the participant's own profile address. `participant` is this generator's
+ * already-resolved display name (the same handle the invoice and the email
+ * already use), so it is what Case AA/B print rather than re-reading a Full
+ * Name/Preferred Name attribute that may not be the one the profile matched
+ * on.
  */
-function profileAddress(profile) {
+function resolveRecipient(profile, participant) {
   const data = profile?.data ?? {};
   const read = (name) => str(data[name]);
-  const postcode = read(REF_ATTRIBUTE_NAMES.PROFILE_POSTCODE)
-    || read(REF_ATTRIBUTE_NAMES.PROFILE_POST_CODE);
-  const locality = [read(REF_ATTRIBUTE_NAMES.PROFILE_STATE), postcode].filter(Boolean).join(' ');
-  return joinParts([
-    read(REF_ATTRIBUTE_NAMES.PROFILE_ADDRESS),
-    read(REF_ATTRIBUTE_NAMES.PROFILE_SUBURB),
-    locality,
-  ]);
+  const postcode = read(REF_ATTRIBUTE_NAMES.PROFILE_POSTCODE) || read(REF_ATTRIBUTE_NAMES.PROFILE_POST_CODE);
+  return resolveInvoiceRecipient({
+    billingEmail: read(REF_ATTRIBUTE_NAMES.PROFILE_BILLING_EMAIL),
+    billingContact: read(REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT),
+    billingAddress: read(REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS),
+    fullName: participant,
+    address: read(REF_ATTRIBUTE_NAMES.PROFILE_ADDRESS),
+    suburb: read(REF_ATTRIBUTE_NAMES.PROFILE_SUBURB),
+    state: read(REF_ATTRIBUTE_NAMES.PROFILE_STATE),
+    postcode,
+  });
 }
 
 /**
@@ -59,6 +67,7 @@ export function buildStatementDocument({
   business, profile, participant, statementNumber, period, ledger, ageing, logo,
 }) {
   const bank = business?.bankDetails ?? {};
+  const recipient = resolveRecipient(profile, participant);
   return {
     provider: {
       name: str(business?.name),
@@ -67,8 +76,8 @@ export function buildStatementDocument({
       logo: str(logo),
     },
     recipient: {
-      name: str(participant),
-      address: profileAddress(profile),
+      name: recipient.recipientName,
+      address: recipient.addressLines.join(', '),
     },
     meta: {
       statementNumber: str(statementNumber),

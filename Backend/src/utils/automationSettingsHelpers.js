@@ -11,7 +11,7 @@ import {
 import { EMAIL_PATTERN } from '../constants/validation.js';
 import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
 import { pickerScheduleError } from '../services/scheduler/pickerValidation.js';
-import { SEND_METHODS, RECIPIENTS } from '../models/AutomationSettings.js';
+import { SEND_METHODS } from '../models/AutomationSettings.js';
 
 export const DEFAULT_AUTOMATION_BLOCK = {
   enabled: false,
@@ -20,7 +20,6 @@ export const DEFAULT_AUTOMATION_BLOCK = {
   runAt: '09:00',
   startDate: null,
   sendMethod: 'isoplus',
-  recipient: 'billing_contact',
   sendCopyTo: '',
   replyTo: '',
   emailSubject: '',
@@ -131,7 +130,6 @@ function validateSchedule(block) {
   if (n > MAX_EVERY_N) return `every.n must be ${MAX_EVERY_N} or less`;
   if (!RUN_AT_PATTERN.test(String(block.runAt ?? ''))) return 'runAt must be HH:MM';
   if (!SEND_METHODS.includes(block.sendMethod)) return 'invalid sendMethod';
-  if (!RECIPIENTS.includes(block.recipient)) return 'invalid recipient';
   return validateRunOn(unit, block.runOn);
 }
 

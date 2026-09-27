@@ -754,7 +754,12 @@ function taxArgs(bodyOverrides = {}) {
   };
 }
 
-async function seedParticipantTaxFixtures() {
+// KAN-272: Billing Contact/Address are only used as the recipient when a
+// Billing Email is also on the profile (Case A) — see
+// invoiceRecipientHelpers.js. `Email` here is the participant's OWN address,
+// unrelated to Billing Email; it stays so `handleXeroInvoiceParticipantTax`'s
+// other tests keep exercising that field's own read path.
+async function seedParticipantTaxFixtures(profileOverrides = {}) {
   await Business.create({ workspaceId: 'ws_1', name: 'Hills Grade Care', headOfficeTimezone: 'Australia/Sydney' });
   await Item.create({
     workspaceId: 'ws_1',
@@ -763,9 +768,11 @@ async function seedParticipantTaxFixtures() {
     itemId: 'pp_1',
     data: {
       'Full Name/Preferred Name': 'Jane Roe',
+      'Billing Email': 'roe.trust@example.com',
       'Billing Contact': 'Roe Family Trust',
       'Billing Address': '12 Smith St, Blacktown, NSW, 2148',
       Email: 'billing@example.com',
+      ...profileOverrides,
     },
   });
 }
@@ -923,5 +930,41 @@ describe('handleXeroInvoiceParticipantTax', () => {
     expect(isoplus.validateItemBelongsToTenant).toHaveBeenCalledWith('ws_1', 'bd_1', 'itm_5002');
     expect(xero.ensureAuthenticated).toHaveBeenCalledWith('ws_1');
     expect(xero.createInvoice.mock.calls[0][0].lineItems).toHaveLength(2);
+  });
+
+  /**
+   * KAN-272. `getParticipantTaxBillingDetails` now resolves Case A/AA/B via
+   * the shared resolver instead of always using Billing Contact/Address.
+   */
+  describe('Case A/AA/B recipient resolution', () => {
+    it('Case AA: falls back to the participant\'s own name when Billing Contact is blank', async () => {
+      await seedParticipantTaxFixtures({ 'Billing Contact': '' });
+      xero.createInvoice.mockResolvedValue({ invoiceNumber: 'INV-903' });
+      const args = taxArgs();
+
+      await handleXeroInvoiceParticipantTax(args);
+
+      expect(xero.createInvoice).toHaveBeenCalledWith(
+        expect.objectContaining({ reference: 'Participant Tax Invoice - Jane Roe' }),
+      );
+      expect(args.res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ participantName: 'Jane Roe' }),
+      );
+    });
+
+    it('Case B: uses the participant\'s own name, not the Billing Contact, when Billing Email is blank', async () => {
+      await seedParticipantTaxFixtures({ 'Billing Email': '' });
+      xero.createInvoice.mockResolvedValue({ invoiceNumber: 'INV-904' });
+      const args = taxArgs();
+
+      await handleXeroInvoiceParticipantTax(args);
+
+      expect(xero.createInvoice).toHaveBeenCalledWith(
+        expect.objectContaining({ reference: 'Participant Tax Invoice - Jane Roe' }),
+      );
+      expect(args.res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ participantName: 'Jane Roe' }),
+      );
+    });
   });
 });

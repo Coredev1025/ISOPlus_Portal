@@ -86,20 +86,19 @@ function buildTemplateVars({ businessName, results }) {
 }
 
 /**
- * How many messages one job produces: one per participant, for every recipient
- * type.
+ * How many messages one job produces: one per participant.
  *
- * `billing_contact` used to flatten the whole board into a single message with
- * no participant, and that was wrong twice over. It cannot be delivered — the
- * recipient type only chooses WHICH address on a participant's profile is used
- * (Billing Email, or their own Email when no Billing Contact is named), so a
- * group with no participant has no profile to read and resolveRecipient
- * answered no_participant_name for the DEFAULT setting, every time. And if it
- * had resolved, one message carrying every participant's invoices addressed to
- * one of them is a cross-client data leak.
+ * Flattening the whole board into a single message with no participant would
+ * be wrong twice over. It cannot be delivered — resolveRecipient reads a
+ * participant profile Item, keyed by participant display name (KAN-272: Case
+ * A/AA/B off that profile's Billing Email, falling back to their own Email),
+ * so a group with no participant has no profile to read and resolveRecipient
+ * answers no_participant_name every time. And if it had resolved, one message
+ * carrying every participant's invoices addressed to one of them is a
+ * cross-client data leak.
  *
  * There is no board-level or workspace-level billing contact to send that
- * shared message to: selectBillingAddress reads a participant profile, and
+ * shared message to: selectProfileAddress reads a participant profile, and
  * Business.email is the provider's own address, not the client's.
  *
  * A row with no participant collects under a null key rather than being

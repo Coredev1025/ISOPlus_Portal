@@ -54,6 +54,12 @@ const REF_ATTRIBUTE_NAMES = {
   PROFILE_PREFERRED_NAME: 'Preferred Name',
   PROFILE_BILLING_CONTACT: 'Billing Contact',
   PROFILE_BILLING_ADDRESS: 'Billing Address',
+  PROFILE_BILLING_EMAIL: 'Billing Email',
+  PROFILE_ADDRESS: 'Address',
+  PROFILE_SUBURB: 'Suburb',
+  PROFILE_STATE: 'State',
+  PROFILE_POSTCODE: 'Postcode',
+  PROFILE_POST_CODE: 'Post Code',
   SERVICE_PLAN_ID: 'Service Plan ID',
 };
 
@@ -176,10 +182,15 @@ const adjustmentRecord = () => ({
   },
 });
 
+// KAN-272: Contact/Address are only printed as the Billing Contact/Address
+// when a Billing Email is also on the profile (Case A) — see
+// invoiceRecipientHelpers.js. This fixture carries one so the many tests
+// below that share it keep exercising that path.
 const participantProfileItem = () => ({
   itemId: 'pp_1',
   data: {
     'Full Name/Preferred Name': 'Jane Citizen',
+    'Billing Email': 'bob@example.com',
     'Billing Contact': 'Bob Citizen',
     'Billing Address': '  12 Example St, Sydney NSW 2000  ',
   },
@@ -294,16 +305,24 @@ describe('resolveParticipantTaxReceiverDetails', () => {
     expect(resolveParticipantTaxReceiverDetails([deliveredRecord()], refMap(), helpers)).toEqual(blank);
   });
 
-  it('falls back to a single space for a profile with no billing fields', () => {
+  // KAN-272 Case B: no Billing Email at all, so the recipient is the
+  // participant themselves — under their own name, not a blank field. Before
+  // this ticket the function used Billing Contact/Address unconditionally, so
+  // a profile with none of those printed nothing recognisable at all.
+  it('falls back to the participant\'s own name when the profile has no billing fields', () => {
     const bare = { itemId: 'pp_1', data: { 'Full Name/Preferred Name': 'Jane Citizen' } };
 
     expect(resolveParticipantTaxReceiverDetails([deliveredRecord()], refMap(bare), helpers)).toEqual({
       participantName: 'Jane Citizen',
-      receiverName: ' ',
+      receiverName: 'Jane Citizen',
       receiverAddress: ' ',
     });
   });
 
+  // Case AA: Billing Email present but Billing Address blank falls back to
+  // the participant's own address fields — also blank on this fixture, so
+  // still a single space, but now via the AA fallback rather than the
+  // trimmed Billing Address itself.
   it('collapses a whitespace-only billing address back to a single space', () => {
     const profile = participantProfileItem();
     profile.data['Billing Address'] = '   ';
@@ -312,12 +331,75 @@ describe('resolveParticipantTaxReceiverDetails', () => {
       .toBe(' ');
   });
 
-  it('throws when the billing address is stored as a non-string, because it is trimmed unguarded', () => {
+  // Characterizes a fix that came along with the KAN-272 rewrite: the shared
+  // resolver coerces every field with String(...).trim() rather than calling
+  // .trim() directly, so a numeric ISO+ attribute value no longer crashes PDF
+  // generation.
+  it('coerces a non-string billing address instead of throwing', () => {
     const profile = participantProfileItem();
     profile.data['Billing Address'] = 2000; // numeric attribute value from ISO+
 
-    expect(() => resolveParticipantTaxReceiverDetails([deliveredRecord()], refMap(profile), helpers))
-      .toThrow(TypeError);
+    expect(resolveParticipantTaxReceiverDetails([deliveredRecord()], refMap(profile), helpers).receiverAddress)
+      .toBe('2000');
+  });
+});
+
+describe('resolveParticipantTaxReceiverDetails — Case A/AA/B', () => {
+  const helpers = {
+    getValueFromFlatData,
+    attributeNames: ATTRIBUTE_NAMES,
+    refAttributeNames: REF_ATTRIBUTE_NAMES,
+    getParticipantNameFromProfile,
+  };
+
+  const fullProfile = () => ({
+    itemId: 'pp_1',
+    data: {
+      'Full Name/Preferred Name': 'Jane Citizen',
+      'Billing Email': 'bob@example.com',
+      'Billing Contact': 'Bob Citizen',
+      'Billing Address': '12 Example St, Sydney NSW 2000',
+      Address: '5 Client Rd',
+      Suburb: 'Newtown',
+      State: 'NSW',
+      Postcode: '2042',
+    },
+  });
+
+  it('Case A: uses the Billing Contact/Address when Billing Email is present', () => {
+    const result = resolveParticipantTaxReceiverDetails([deliveredRecord()], refMap(fullProfile()), helpers);
+
+    expect(result).toEqual({
+      participantName: 'Jane Citizen',
+      receiverName: 'Bob Citizen',
+      receiverAddress: '12 Example St, Sydney NSW 2000',
+    });
+  });
+
+  it('Case AA: falls back to the participant\'s own name and address when Billing Contact is blank', () => {
+    const profile = fullProfile();
+    profile.data['Billing Contact'] = '';
+
+    const result = resolveParticipantTaxReceiverDetails([deliveredRecord()], refMap(profile), helpers);
+
+    expect(result).toEqual({
+      participantName: 'Jane Citizen',
+      receiverName: 'Jane Citizen',
+      receiverAddress: '5 Client Rd, Newtown, NSW 2042',
+    });
+  });
+
+  it('Case B: ignores a populated Billing Contact/Address when Billing Email is blank', () => {
+    const profile = fullProfile();
+    profile.data['Billing Email'] = '';
+
+    const result = resolveParticipantTaxReceiverDetails([deliveredRecord()], refMap(profile), helpers);
+
+    expect(result).toEqual({
+      participantName: 'Jane Citizen',
+      receiverName: 'Jane Citizen',
+      receiverAddress: '5 Client Rd, Newtown, NSW 2042',
+    });
   });
 });
 

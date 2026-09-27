@@ -1,6 +1,14 @@
-// Turns the recipient *type* an AutomationSettings block stores
-// (billing_contact | client_participant) into a real mailbox, by reading the
+// Turns a participant's ISO+ profile into a real mailbox, by reading the
 // participant-profile Item in the Intake Register.
+//
+// KAN-272: mailbox selection used to follow a per-workspace "Recipient"
+// setting (billing_contact | client_participant) passed in as `recipientType`
+// — which is how a profile with a Billing Email on file could still have
+// every invoice mailed to the participant, because the setting said
+// Client/Participant. That setting is gone. Mailbox selection is now Case
+// A/AA/B, driven purely by Billing Email presence — the same rule
+// invoiceRecipientHelpers.js applies to PDF content, so a document and its
+// envelope can never disagree about who they are addressed to.
 //
 // The worker knows a participant only as a display name, so every lookup here
 // is a name match against the profile board. That makes the failure modes the
@@ -12,11 +20,9 @@ import Item from '../../models/Item.js';
 import { REF_ATTRIBUTE_NAMES } from '../../constants/monthlyStatementAttributes.js';
 import { EMAIL_PATTERN } from '../../constants/validation.js';
 import { getValueFromFlatData } from '../../utils/automationInvoiceGeneratorDeps.js';
+import { resolveInvoiceRecipient, readProfileRecipientAttributes } from '../../utils/invoiceRecipientHelpers.js';
 import { mongoEq } from '../../utils/securityHelpers.js';
 import { warn } from '../../utils/logger.js';
-
-const CLIENT_PARTICIPANT = 'client_participant';
-const BILLING_CONTACT = 'billing_contact';
 
 // How many same-named profiles we are willing to look at before giving up on
 // disambiguating. Duplicates are a data-entry problem, not a query problem.
@@ -106,45 +112,35 @@ function classifyAddress(address, source, emptyReason) {
 }
 
 /**
- * Judgement call, stated once here:
+ * Case A/AA/B (KAN-272), for mailbox selection only:
  *
- * `billing_contact` means the Billing Email. When that is blank we fall back to
- * the participant's own Email *only if* no Billing Contact is named — that is
- * the self-managed participant, who is their own billing contact, and their own
- * invoice is already addressed to them. When a Billing Contact *is* named but
- * carries no address, we refuse: sending to the participant there would deliver
- * to a person the configuration deliberately did not choose. The fallback is
- * logged at warn by the caller so it is visible in a run, not silent.
+ * A Billing Email on the profile is always the mailbox (Case A/AA — printed
+ * name/address may fall back to the participant's own, but the address this
+ * module resolves is the Billing Email either way). When there is no Billing
+ * Email (Case B) we fall back to the participant's own Email — unconditionally,
+ * even when a Billing Contact is named without an address of their own: that
+ * named-but-addressless case used to refuse, back when a manual "Recipient"
+ * setting could deliberately choose "Billing Contact" and a fallback to the
+ * participant would have delivered to a person the configuration did not
+ * choose. There is no such choice any more, so the fallback always applies —
+ * `billingContactNamed` only changes the *source* label (and so whether the
+ * caller logs it at warn), not the outcome, so an incomplete billing setup
+ * stays visible without changing where the mail goes.
+ *
+ * Pure: profile item in, outcome out. No I/O, no logging — which is what
+ * makes every branch testable on its own.
  */
-function selectBillingAddress(profileItem) {
-  const billingEmail = readValue(profileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_EMAIL);
-  if (billingEmail) {
-    return classifyAddress(billingEmail, 'profile_billing_email', 'no_address_on_profile');
+export function selectProfileAddress(profileItem) {
+  const recipient = resolveInvoiceRecipient(readProfileRecipientAttributes(profileItem, readValue, ''));
+  if (recipient.billingEmail) {
+    return classifyAddress(recipient.billingEmail, 'profile_billing_email', 'no_address_on_profile');
   }
-  if (readValue(profileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT)) {
-    return { address: null, reason: 'billing_contact_has_no_address' };
-  }
+  const billingContactNamed = Boolean(readValue(profileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT));
   return classifyAddress(
     readValue(profileItem, REF_ATTRIBUTE_NAMES.PROFILE_EMAIL),
-    'profile_email_billing_fallback',
+    billingContactNamed ? 'profile_email_billing_contact_unaddressed' : 'profile_email_billing_fallback',
     'no_address_on_profile',
   );
-}
-
-/**
- * Pure: profile item plus recipient type in, outcome out. No I/O, no logging —
- * which is what makes every branch above testable on its own.
- */
-export function selectProfileAddress(profileItem, recipientType) {
-  if (recipientType === CLIENT_PARTICIPANT) {
-    return classifyAddress(
-      readValue(profileItem, REF_ATTRIBUTE_NAMES.PROFILE_EMAIL),
-      'profile_email',
-      'no_address_on_profile',
-    );
-  }
-  if (recipientType === BILLING_CONTACT) return selectBillingAddress(profileItem);
-  return { address: null, reason: 'unsupported_recipient_type' };
 }
 
 // The address itself is deliberately absent from the log line: nothing in
@@ -153,6 +149,16 @@ export function selectProfileAddress(profileItem, recipientType) {
 function logOutcome(outcome, context) {
   if (outcome.source === 'profile_email_billing_fallback') {
     warn('Email-Recipients', 'No Billing Email and no named Billing Contact — using the participant Email', context);
+    return;
+  }
+  if (outcome.source === 'profile_email_billing_contact_unaddressed') {
+    // KAN-272: this used to refuse outright (billing_contact_has_no_address),
+    // back when a manual "Recipient" setting could deliberately choose
+    // Billing Contact and a fallback would have delivered to a person the
+    // configuration did not choose. There is no such choice any more, so this
+    // now sends — but a Billing Contact named without an address is still an
+    // incomplete profile worth a run seeing.
+    warn('Email-Recipients', 'Billing Contact named but no Billing Email — using the participant Email', context);
     return;
   }
   if (outcome.address === null) {
@@ -165,16 +171,15 @@ function logOutcome(outcome, context) {
  * @param {string} params.workspaceId
  * @param {string} [params.boardId] tie-breaker only; the lookup is workspace-wide
  * @param {string|null} params.participant display name, null for an unattributable group
- * @param {string} params.recipientType 'billing_contact' | 'client_participant'
  * @returns {Promise<{address: string, source: string} | {address: null, reason: string}>}
  *
- * `source` is one of `profile_email`, `profile_billing_email`,
- * `profile_email_billing_fallback`. `reason` is one of `no_participant_name`,
- * `unsupported_recipient_type`, `profile_not_found`, `no_address_on_profile`,
- * `billing_contact_has_no_address`, `malformed_address`.
+ * `source` is one of `profile_billing_email`, `profile_email_billing_fallback`,
+ * `profile_email_billing_contact_unaddressed`. `reason` is one of
+ * `no_participant_name`, `profile_not_found`, `no_address_on_profile`,
+ * `malformed_address`.
  */
-export async function resolveRecipient({ workspaceId, boardId = null, participant, recipientType }) {
-  const context = { workspaceId, boardId, recipientType };
+export async function resolveRecipient({ workspaceId, boardId = null, participant }) {
+  const context = { workspaceId, boardId };
   const name = normalizeName(participant);
   if (!name) {
     const outcome = { address: null, reason: 'no_participant_name' };
@@ -189,7 +194,7 @@ export async function resolveRecipient({ workspaceId, boardId = null, participan
     return outcome;
   }
 
-  const outcome = selectProfileAddress(profileItem, recipientType);
+  const outcome = selectProfileAddress(profileItem);
   logOutcome(outcome, { ...context, participant: name, profileItemId: profileItem.itemId });
   return outcome;
 }

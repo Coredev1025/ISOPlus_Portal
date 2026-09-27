@@ -16,7 +16,6 @@ export type AutomationBlock = {
   runAt: string;
   startDate: string | null;
   sendMethod: "isoplus" | "accounting";
-  recipient: "billing_contact" | "client_participant";
   sendCopyTo: string;
   replyTo: string;
   emailFrom: string;
@@ -108,7 +107,6 @@ export const DEFAULT_BLOCK: AutomationBlock = Object.freeze({
   runAt: "09:00",
   startDate: null,
   sendMethod: "isoplus",
-  recipient: "billing_contact",
   sendCopyTo: "",
   replyTo: "",
   emailFrom: "",

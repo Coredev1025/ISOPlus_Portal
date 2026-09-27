@@ -3,7 +3,6 @@ import mongoose from 'mongoose';
 import { AUTOMATION_UNITS } from '../constants/automation.js';
 
 export const SEND_METHODS = ['isoplus', 'accounting'];
-export const RECIPIENTS = ['billing_contact', 'client_participant'];
 
 // runOn is Mixed because its type changes with the unit: a weekday name for
 // week, a day number for month, and {month, day} for quarter/year. The
@@ -20,7 +19,11 @@ const blockSchema = new mongoose.Schema(
     runAt: { type: String, required: true, default: '09:00' },
     startDate: { type: Date, default: null },
     sendMethod: { type: String, required: true, default: 'isoplus', enum: SEND_METHODS },
-    recipient: { type: String, required: true, default: 'billing_contact', enum: RECIPIENTS },
+    // recipient removed (KAN-272): the manual "Recipient" setting
+    // (billing_contact | client_participant) is gone — recipient/address
+    // resolution is now derived purely from ISO+ profile data (Case A/AA/B,
+    // see utils/invoiceRecipientHelpers.js). A pre-existing stored document
+    // may still carry a stale recipient string; nothing reads it any more.
     sendCopyTo: { type: String, default: '' },
     replyTo: { type: String, default: '' },
     // emailFrom removed (KAN-270): Email From is application-level
