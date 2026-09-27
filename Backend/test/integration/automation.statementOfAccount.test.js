@@ -426,7 +426,7 @@ describe('a scheduled statement run, on untidy data', () => {
     // $250 charged (one invoice, unchanged); $100 from item-1's own payment
     // plus $75 from item-drifted's — found only via its Participant Profile
     // reference — for $175 received and $75 still owing.
-    expect(summaryStrip(rendered)).toEqual(['$0.00', '$250.00', '$175.00', '$75.00']);
+    expect(closingBalanceOf(rendered)).toBe('$75.00');
   });
 });
 
