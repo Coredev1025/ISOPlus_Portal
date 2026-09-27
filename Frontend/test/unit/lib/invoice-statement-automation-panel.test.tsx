@@ -432,8 +432,10 @@ describe('InvoiceStatementAutomationPanel', () => {
     fetchMock.mockResolvedValue(settings({ enabled: true }));
     await renderPanel();
 
+    // Email From was removed (KAN-269): it becomes an application-level
+    // setting rather than a per-workspace field.
     const invoice = within(invoiceSection());
-    for (const label of [/send a copy to/i, /reply-to email/i, /email from/i]) {
+    for (const label of [/send a copy to/i, /reply-to email/i]) {
       expect(invoice.getByLabelText(label)).toHaveAttribute('type', 'email');
     }
     // The non-address fields stay plain text.
@@ -914,5 +916,63 @@ describe('the email template defaults', () => {
     expect(payload.invoice.emailSubject).toBe(DEFAULT_EMAIL_SUBJECT.invoice);
     expect(payload.statement.emailSubject).toBe(DEFAULT_EMAIL_SUBJECT.statement);
     expect(payload.invoice.emailMessage).toContain('Please find attached invoice');
+  });
+});
+
+/**
+ * KAN-269. Email From becomes an application-level configuration (KAN-270),
+ * not a per-workspace field, so it is removed from both automation sections.
+ * Email Subject takes its place in the array-driven layout and gains its own
+ * reset control, distinct from Email Message's.
+ */
+describe('the Email From removal (KAN-269)', () => {
+  const enabled = () => settings({ enabled: true }, { enabled: true });
+
+  it('does not render an Email From field on either section', async () => {
+    fetchMock.mockResolvedValue(enabled());
+    await renderPanel();
+
+    expect(screen.queryByLabelText(/email from/i)).not.toBeInTheDocument();
+  });
+
+  it('offers a distinct reset control for the email subject on each block', async () => {
+    fetchMock.mockResolvedValue(enabled());
+    await renderPanel();
+
+    expect(
+      within(invoiceSection()).getByRole('button', { name: /reset subject to default/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(statementSection()).getByRole('button', { name: /reset subject to default/i }),
+    ).toBeInTheDocument();
+
+    // Still exactly one "reset to default" match per section: the message
+    // reset button. The subject's own reset has a distinct accessible name so
+    // the two never collide.
+    expect(
+      within(invoiceSection()).getByRole('button', { name: /^reset to default$/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('resets the email subject to its own default without touching the message', async () => {
+    fetchMock.mockResolvedValue(
+      settings(
+        { enabled: true, emailSubject: 'Custom subject line', emailMessage: '<p>my own words</p>' },
+        {},
+      ),
+    );
+    const user = userEvent.setup();
+    await renderPanel();
+
+    await user.click(
+      within(invoiceSection()).getByRole('button', { name: /reset subject to default/i }),
+    );
+
+    expect(
+      within(invoiceSection()).getByLabelText(/email subject/i),
+    ).toHaveValue(DEFAULT_EMAIL_SUBJECT.invoice);
+    // The message reset is a separate control; resetting the subject must not
+    // also revert the message.
+    expect(within(invoiceSection()).getByText(/my own words/i)).toBeInTheDocument();
   });
 });

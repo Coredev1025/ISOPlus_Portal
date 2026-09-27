@@ -1,10 +1,12 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   DEFAULT_EMAIL_MESSAGE,
+  DEFAULT_EMAIL_SUBJECT,
   EMAIL_MESSAGE_FIELD,
   EMAIL_TEMPLATE_VARIABLE_HINT,
   EMAIL_TEXT_FIELDS,
@@ -42,6 +44,19 @@ type EmailTextFieldProps = Readonly<{
   /** The field takes several comma-separated addresses rather than one. */
   allowsList?: boolean;
   onChange: (next: string) => void;
+  /**
+   * Only Email Subject carries this (KAN-269): a per-field "Reset to default"
+   * icon button beside the input, distinct from Email Message's own reset so
+   * the two never share an accessible name in the same section.
+   */
+  onReset?: () => void;
+  /**
+   * The reset button's accessible name. Deliberately *not* built from `label`
+   * ("Email Subject"): `getByLabelText` also matches on `aria-label`, so a
+   * name containing the field's own label text would make the input and the
+   * reset button indistinguishable to that query.
+   */
+  resetLabel?: string;
 }>;
 
 function EmailTextField({
@@ -51,6 +66,8 @@ function EmailTextField({
   isEmail,
   allowsList,
   onChange,
+  onReset,
+  resetLabel,
 }: EmailTextFieldProps) {
   // Send a Copy To takes several addresses; every other address field names
   // one mailbox. Matches the Save gate and the API.
@@ -60,14 +77,29 @@ function EmailTextField({
 
   return (
     <AutomationField id={id} label={label}>
-      <Input
-        id={id}
-        value={value}
-        aria-invalid={invalid || undefined}
-        aria-describedby={invalid ? errorId : undefined}
-        type={isEmail ? "email" : undefined}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      <div className="flex items-center gap-2">
+        <Input
+          id={id}
+          value={value}
+          aria-invalid={invalid || undefined}
+          aria-describedby={invalid ? errorId : undefined}
+          type={isEmail ? "email" : undefined}
+          onChange={(event) => onChange(event.target.value)}
+          className={onReset ? "flex-1" : undefined}
+        />
+        {onReset ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 shrink-0 text-muted-foreground"
+            aria-label={resetLabel ?? "Reset field to default"}
+            onClick={onReset}
+          >
+            <RotateCcw className="h-4 w-4" />
+          </Button>
+        ) : null}
+      </div>
       {invalid ? (
         <p id={errorId} className="text-[11px] text-destructive">
           Enter a valid email address.
@@ -135,6 +167,12 @@ export function AutomationEmailBlock({
           isEmail={field.isEmail}
           allowsList={field.allowsList}
           onChange={setText(field.key)}
+          onReset={
+            field.key === "emailSubject"
+              ? () => setText(field.key)(DEFAULT_EMAIL_SUBJECT[kind])
+              : undefined
+          }
+          resetLabel={field.key === "emailSubject" ? "Reset subject to default" : undefined}
         />
       ))}
 
