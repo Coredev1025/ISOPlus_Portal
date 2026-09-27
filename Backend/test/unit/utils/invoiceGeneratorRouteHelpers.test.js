@@ -8,6 +8,7 @@ import {
   ATTRIBUTE_NAMES,
   REF_ATTRIBUTE_NAMES,
 } from '../../../src/constants/monthlyStatementAttributes.js';
+import { NDIS_MASTERPLAN_ATTR } from '../../../src/utils/ndisServiceRecords.js';
 import { clearCache, setCachedTransform } from '../../../src/utils/transformCache.js';
 import Item from '../../../src/models/Item.js';
 import InvoiceNumber from '../../../src/models/InvoiceNumber.js';
@@ -163,14 +164,22 @@ function makeDeps(overrides = {}) {
   };
 }
 
-/** A Shift Planning row exactly as the sync writes it into Mongo. */
+/**
+ * A Shift Planning row exactly as the sync writes it into Mongo.
+ *
+ * Defaults Timesheet Approval to 'Approved' (KAN-271's gate in
+ * getInvoiceGeneratorData) so every pre-existing fixture here keeps
+ * characterizing the filter it was written for, rather than tripping the
+ * approval gate incidentally. A test can still override it explicitly, as the
+ * approval-gate tests below do.
+ */
 function shiftDoc(itemId, data, overrides = {}) {
   return {
     workspaceId: 'ws_1',
     boardId: 'bd_1',
     folderId: 'fld_shift',
     itemId,
-    data,
+    data: { [NDIS_MASTERPLAN_ATTR.TIMESHEET_APPROVAL]: 'Approved', ...data },
     createdAt: new Date('2025-03-01T00:00:00.000Z'),
     updatedAt: new Date('2025-03-02T00:00:00.000Z'),
     ...overrides,
@@ -880,5 +889,31 @@ describe('getInvoiceGeneratorData', () => {
     );
 
     expect(result.items.map((row) => row.id)).toEqual(['itm_string_profile']);
+  });
+
+  // KAN-271: SaH boards carry the same Timesheet Approval attribute NDIS
+  // boards gate on (confirmed live, workspace 55369, 2026-09-28), but this
+  // list previously had no approval check at all — only Transaction Status.
+  // A row pending approval must not appear here, since this same list feeds
+  // both the manual Invoice Generator and automated SaH invoicing
+  // (services/automation/generateDocuments.js's generateAgeCareGeneratorInvoices).
+  it('excludes an item pending timesheet approval even when its transaction status qualifies', async () => {
+    await seedShifts([
+      shiftDoc('itm_pending_approval', {
+        [ATTRIBUTE_NAMES.SCHEDULED_START]: '2025-03-01T09:00:00Z',
+        [ATTRIBUTE_NAMES.TRANSACTION_STATUS]: 'Delivered - To be claimed and invoiced.',
+        [NDIS_MASTERPLAN_ATTR.TIMESHEET_APPROVAL]: 'Pending',
+      }),
+      shiftDoc('itm_approved', {
+        [ATTRIBUTE_NAMES.SCHEDULED_START]: '2025-03-02T09:00:00Z',
+        [ATTRIBUTE_NAMES.TRANSACTION_STATUS]: 'Delivered - To be claimed and invoiced.',
+        [NDIS_MASTERPLAN_ATTR.TIMESHEET_APPROVAL]: 'Approved',
+      }),
+    ]);
+
+    const result = await getInvoiceGeneratorData({ ...baseQueryArgs, query: {} }, makeDeps());
+
+    expect(result.items.map((row) => row.id)).toEqual(['itm_approved']);
+    expect(result.total).toBe(1);
   });
 });

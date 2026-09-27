@@ -2,6 +2,7 @@ import { parseListPagination, matchesStatusFilter } from './itemsRouteHelpers.js
 import { getCachedTransform, setCachedTransform } from './transformCache.js';
 import { toRequiredQueryString, mongoEq } from './securityHelpers.js';
 import { spellingVariants } from './invoiceSelectionFields.js';
+import { isApprovedTimesheet } from './ndisServiceRecords.js';
 
 function getValueFromItem(item, attributeName) {
   if (!item.data) return null;
@@ -544,6 +545,12 @@ export async function getInvoiceGeneratorData({ workspaceId, boardId, query, req
       error: { status: 500, body: { message: 'Error fetching invoice generator data', error: dbErr.message } },
     };
   }
+
+  // KAN-271: gate on Timesheet Approval before anything else sees these rows.
+  // This is the one list both the manual Invoice Generator page and automated
+  // SaH invoicing (generateAgeCareGeneratorInvoices) read, so filtering here
+  // covers both without either caller needing its own check.
+  allItems = allItems.filter((item) => isApprovedTimesheet(item));
 
   const processedItems = await processInvoiceGeneratorItems(
     allItems,
