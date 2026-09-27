@@ -130,16 +130,18 @@ beforeEach(async () => {
 });
 
 /**
- * The summary strip, as the four separate `text` fields the template now
- * carries. It was a one-row table until the statement adopted the supplied
- * design; the values and their order are unchanged.
+ * The closing balance, as the template still renders it.
+ *
+ * KAN-276 removed the Opening Balance / Charges / Payments / Closing Balance
+ * summary strip these tests used to read via a `summaryStrip` helper — the
+ * reference statements (Purple Lotus, Westpoint Group) never carried it — so
+ * `openingBalance`/`totalCharges`/`totalPayments`/`closingBalance` are no
+ * longer among the inputs handed to the template at all. `amountDue` is the
+ * one figure of that group still rendered ("BALANCE DUE AUD"), and every case
+ * below was really asserting on the closing balance regardless of cadence,
+ * board isolation or invoice dedup — so it remains the discriminating check.
  */
-const summaryStrip = (inputs) => [
-  inputs.openingBalance,
-  inputs.totalCharges,
-  inputs.totalPayments,
-  inputs.closingBalance,
-];
+const closingBalanceOf = (inputs) => inputs.amountDue;
 
 describe('a scheduled statement run', () => {
   it('writes a statement of account alongside the monthly statement', async () => {
@@ -164,7 +166,7 @@ describe('a scheduled statement run', () => {
     expect(rows).toHaveLength(2);
     expect(rows.some((row) => row.includes('INV-1205'))).toBe(true);
     // $250 charged, $100 received, so $150 closes the period.
-    expect(summaryStrip(rendered)).toEqual(['$0.00', '$250.00', '$100.00', '$150.00']);
+    expect(closingBalanceOf(rendered)).toBe('$150.00');
   });
 
   /**
@@ -202,7 +204,7 @@ describe('a scheduled statement run', () => {
     expect(backdated).toBeDefined();
     expect(backdated[0]).toBe('20/08/2026');
     // $250 + $400 charged against the $100 received.
-    expect(summaryStrip(rendered)).toEqual(['$0.00', '$650.00', '$100.00', '$550.00']);
+    expect(closingBalanceOf(rendered)).toBe('$550.00');
   });
 
   it('replays without producing a second statement of account', async () => {
@@ -244,7 +246,7 @@ describe('a scheduled statement run', () => {
 
     const rendered = statementRender();
     expect(rendered).toBeDefined();
-    expect(summaryStrip(rendered)).toEqual(['$0.00', '$250.00', '$100.00', '$150.00']);
+    expect(closingBalanceOf(rendered)).toBe('$150.00');
   });
 
   // Section 4.5. Nothing invoiced, nothing owing, nothing to say.
@@ -292,7 +294,7 @@ describe('a scheduled statement run, on untidy data', () => {
     expect(rendered).toBeDefined();
     const rows = JSON.parse(rendered.transactions);
     expect(rows.some((row) => row.includes('Payment received'))).toBe(true);
-    expect(summaryStrip(rendered)).toEqual(['$0.00', '$250.00', '$100.00', '$150.00']);
+    expect(closingBalanceOf(rendered)).toBe('$150.00');
   });
 
   // ISO+ lets the amount and the received date be entered separately.
@@ -305,7 +307,7 @@ describe('a scheduled statement run, on untidy data', () => {
     expect(rendered).toBeDefined();
     // Netted onto the invoice's row rather than given a dated one.
     expect(JSON.parse(rendered.transactions)).toHaveLength(1);
-    expect(summaryStrip(rendered)).toEqual(['$0.00', '$250.00', '$100.00', '$150.00']);
+    expect(closingBalanceOf(rendered)).toBe('$150.00');
   });
 
   // Payments are read per board; the invoices must be too, or an invoice
@@ -327,7 +329,7 @@ describe('a scheduled statement run, on untidy data', () => {
     await run();
 
     const rendered = statementRender();
-    expect(summaryStrip(rendered)).toEqual(['$0.00', '$250.00', '$100.00', '$150.00']);
+    expect(closingBalanceOf(rendered)).toBe('$150.00');
   });
 
   // A payment recorded against an invoice the ledger has no row for — one
@@ -473,7 +475,7 @@ describe('a scheduled statement run, on a multi-item invoice', () => {
     const rendered = statementRender();
     expect(rendered).toBeDefined();
     expect(JSON.parse(rendered.transactions)).toHaveLength(1);
-    expect(summaryStrip(rendered)).toEqual(['$0.00', '$250.00', '$0.00', '$250.00']);
+    expect(closingBalanceOf(rendered)).toBe('$250.00');
   });
 
   it('charges a prior-period multi-item invoice once, not once per row', async () => {
@@ -490,7 +492,7 @@ describe('a scheduled statement run, on a multi-item invoice', () => {
     const rendered = statementRender();
     expect(rendered).toBeDefined();
     expect(JSON.parse(rendered.transactions)).toHaveLength(1);
-    expect(summaryStrip(rendered)).toEqual(['$0.00', '$250.00', '$0.00', '$250.00']);
+    expect(closingBalanceOf(rendered)).toBe('$250.00');
   });
 });
 
