@@ -37,11 +37,11 @@
         "type": "text",
         "content": "Sample Care Services Pty Ltd\nABN: 00 000 000 000\n12 Example Street\nSampleton\nVictoria 3000\nAustralia",
         "position": {
-          "x": 126,
-          "y": 12
+          "x": 148,
+          "y": 29
         },
         "width": 50,
-        "height": 26,
+        "height": 24,
         "fontSize": 8,
         "lineHeight": 1.4,
         "alignment": "right",
@@ -53,7 +53,7 @@
         "type": "line",
         "position": {
           "x": 12,
-          "y": 41
+          "y": 55
         },
         "width": 186,
         "height": 0.7,
@@ -66,7 +66,7 @@
         "content": "STATEMENT TO",
         "position": {
           "x": 12,
-          "y": 46
+          "y": 60
         },
         "width": 60,
         "height": 4,
@@ -82,7 +82,7 @@
         "content": "SAMPLE PARTICIPANT\n34 Placeholder Road\nExampleville VIC 3001",
         "position": {
           "x": 12,
-          "y": 51
+          "y": 65
         },
         "width": 85,
         "height": 16,
@@ -97,7 +97,7 @@
         "content": "Statement number\nStatement date\nPeriod\nAccount number",
         "position": {
           "x": 112,
-          "y": 46
+          "y": 60
         },
         "width": 42,
         "height": 22,
@@ -114,7 +114,7 @@
         "content": "STM-2026-08-0001\n31/08/2026\n01/07/2026 to 31/08/2026\nACC-00000",
         "position": {
           "x": 156,
-          "y": 46
+          "y": 60
         },
         "width": 42,
         "height": 22,
@@ -129,7 +129,7 @@
         "type": "table",
         "position": {
           "x": 12,
-          "y": 78
+          "y": 92
         },
         "width": 186,
         "height": 45,
@@ -222,7 +222,7 @@
         "type": "line",
         "position": {
           "x": 12,
-          "y": 133
+          "y": 147
         },
         "width": 186,
         "height": 0.3,
@@ -235,7 +235,7 @@
         "content": "BANK ACCOUNT",
         "position": {
           "x": 12,
-          "y": 137
+          "y": 151
         },
         "width": 60,
         "height": 4,
@@ -251,7 +251,7 @@
         "content": "Account name\nBank\nBSB\nAccount number\nReference",
         "position": {
           "x": 12,
-          "y": 142
+          "y": 156
         },
         "width": 30,
         "height": 22,
@@ -267,7 +267,7 @@
         "content": "Sample Care Services Pty Ltd\nExample Bank\n000-000\n00000000\nACC-00000",
         "position": {
           "x": 45,
-          "y": 142
+          "y": 156
         },
         "width": 65,
         "height": 22,
@@ -282,7 +282,7 @@
         "content": "BALANCE DUE AUD",
         "position": {
           "x": 138,
-          "y": 137
+          "y": 151
         },
         "width": 60,
         "height": 4,
@@ -299,7 +299,7 @@
         "content": "$2,085.53",
         "position": {
           "x": 138,
-          "y": 142
+          "y": 156
         },
         "width": 60,
         "height": 10,
@@ -313,7 +313,7 @@
         "type": "line",
         "position": {
           "x": 12,
-          "y": 172
+          "y": 186
         },
         "width": 186,
         "height": 0.4,
@@ -326,7 +326,7 @@
         "content": "PAYMENT ADVICE",
         "position": {
           "x": 12,
-          "y": 176
+          "y": 190
         },
         "width": 90,
         "height": 7,
@@ -342,7 +342,7 @@
         "content": "To: Sample Care Services Pty Ltd\nABN: 00 000 000 000\n12 Example Street, Sampleton, Victoria 3000, Australia",
         "position": {
           "x": 12,
-          "y": 184
+          "y": 198
         },
         "width": 90,
         "height": 17,
@@ -357,7 +357,7 @@
         "content": "Customer",
         "position": {
           "x": 112,
-          "y": 184
+          "y": 198
         },
         "width": 26,
         "height": 4,
@@ -373,7 +373,7 @@
         "content": "Sample Participant",
         "position": {
           "x": 140,
-          "y": 183.5
+          "y": 197.5
         },
         "width": 46,
         "height": 5,
@@ -387,7 +387,7 @@
         "content": "Overdue",
         "position": {
           "x": 112,
-          "y": 192
+          "y": 206
         },
         "width": 26,
         "height": 7,
@@ -402,7 +402,7 @@
         "content": "Current",
         "position": {
           "x": 146,
-          "y": 192
+          "y": 206
         },
         "width": 26,
         "height": 7,
@@ -417,7 +417,7 @@
         "content": "Total AUD Due",
         "position": {
           "x": 174,
-          "y": 192
+          "y": 206
         },
         "width": 24,
         "height": 7,
@@ -433,7 +433,7 @@
         "content": "$0.00",
         "position": {
           "x": 112,
-          "y": 200
+          "y": 214
         },
         "width": 26,
         "height": 5,
@@ -447,7 +447,7 @@
         "content": "$0.00",
         "position": {
           "x": 146,
-          "y": 200
+          "y": 214
         },
         "width": 26,
         "height": 5,
@@ -461,7 +461,7 @@
         "content": "$0.00",
         "position": {
           "x": 174,
-          "y": 200
+          "y": 214
         },
         "width": 24,
         "height": 5,
@@ -475,7 +475,7 @@
         "content": "Amount Enclosed\nEnter the amount you are paying above",
         "position": {
           "x": 12,
-          "y": 209
+          "y": 223
         },
         "width": 160,
         "height": 7,

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { PDFDocument, PDFName, PDFRawStream } from '@pdfme/pdf-lib';
+import { PT_TO_MM_RATIO } from '@pdfme/common';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -522,16 +523,100 @@ describe('the committed statement of account template', () => {
       const logo = template.schemas.flat().find((field) => field.name === 'logo');
       expect(logo.width * logo.height).toBeLessThan(18 * 18);
     });
+  });
 
-    // providerBlock right-aligns its text to its own box, so its rightmost
-    // glyph always sits at providerBlock.x + providerBlock.width regardless
-    // of content length — the logo must not sit to the left of that edge.
-    it('does not overlap the provider identity block', async () => {
+  /**
+   * KAN-278 follow-up: once the logo moved to its own row above
+   * providerBlock, a live template preview showed providerBlock's text
+   * sitting short of the page's right margin — flush with where the logo
+   * used to be (176mm), not with the logo's new position, the transaction
+   * table's own right edge, or the page margin, all three of which land at
+   * the same 198mm (basePdf.width 210 - the 12mm right padding). The result
+   * reads as misaligned: the reference statements (Purple Lotus, Westpoint
+   * Group) show the letterhead, the address block, and the ledger table all
+   * sharing one right-aligned column.
+   */
+  describe('KAN-278 follow-up: shared right margin', () => {
+    it('right-aligns the logo, providerBlock and the transaction table to the same edge', async () => {
+      const template = JSON.parse(await readFile(TEMPLATE_PATH, 'utf8'));
+      const [, right] = template.basePdf.padding;
+      const pageRightMargin = template.basePdf.width - right;
+      const fields = template.schemas.flat();
+      const logo = fields.find((field) => field.name === 'logo');
+      const providerBlock = fields.find((field) => field.name === 'providerBlock');
+      const table = fields.find((field) => field.name === 'transactions');
+
+      expect(table.position.x + table.width).toBe(pageRightMargin);
+      expect(logo.position.x + logo.width).toBe(pageRightMargin);
+      expect(providerBlock.position.x + providerBlock.width).toBe(pageRightMargin);
+    });
+  });
+
+  /**
+   * KAN-278: KAN-276 placed the logo beside providerBlock at the same y,
+   * which only ruled out *horizontal* overlap — providerBlock right-aligns
+   * its text to x + width, and that edge sat just short of the logo's left
+   * edge. Neither field's *vertical* extent was ever checked, and a short
+   * (1-2 line) business address never grew tall enough for it to matter.
+   *
+   * A 3-line address does: the reported statement (SOA-3, workspace 55369)
+   * showed the name/ABN/address text running directly behind the logo,
+   * because both fields start at the same y and providerBlock simply grows
+   * downward with however many lines the address takes. The fix stacks the
+   * two fields — logo on its own row, providerBlock's box moved down to
+   * clear it — so the two boxes cannot occupy the same vertical space
+   * regardless of how many lines the address wraps to.
+   */
+  describe('KAN-278 logo does not overlap a multi-line business identity block', () => {
+    it('places providerBlock entirely below the logo, with a gap', async () => {
       const template = JSON.parse(await readFile(TEMPLATE_PATH, 'utf8'));
       const fields = template.schemas.flat();
       const logo = fields.find((field) => field.name === 'logo');
       const providerBlock = fields.find((field) => field.name === 'providerBlock');
-      expect(providerBlock.position.x + providerBlock.width).toBeLessThanOrEqual(logo.position.x);
+      const logoBottom = logo.position.y + logo.height;
+      expect(providerBlock.position.y).toBeGreaterThan(logoBottom);
+      expect(providerBlock.position.y - logoBottom).toBeGreaterThanOrEqual(2);
+    });
+
+    // The concrete failure case from the ticket: a 3-line business address
+    // (name + ABN + a 3-line street address = 5 rendered lines). The
+    // required height is computed from the same font metrics pdfme renders
+    // with (fontSize * lineHeight, converted pt->mm), not eyeballed, so this
+    // fails for real if providerBlock's box is too short for the content —
+    // it must hold for this line count, not just the 1-2 line case KAN-276
+    // was built against.
+    it('sizes providerBlock tall enough for a 3-line business address, and keeps it clear of the header rule', async () => {
+      const template = JSON.parse(await readFile(TEMPLATE_PATH, 'utf8'));
+      const fields = template.schemas.flat();
+      const logo = fields.find((field) => field.name === 'logo');
+      const providerBlock = fields.find((field) => field.name === 'providerBlock');
+      const headerRule = fields.find((field) => field.name === 'headerRule');
+
+      const statement = statementWith([], []);
+      statement.provider = {
+        name: 'Dev-Test111',
+        abn: '11122233344',
+        address: '15 Serpells Ave\nTemplestowe\nVictoria 3106, Australia',
+        logo: '',
+      };
+      const inputs = buildStatementInputs(statement, TZ);
+      const lineCount = inputs.providerBlock.split('\n').length;
+      expect(lineCount).toBe(5); // name, ABN, and the 3-line address
+
+      const requiredHeightMm = lineCount * providerBlock.fontSize
+        * providerBlock.lineHeight * PT_TO_MM_RATIO;
+      const providerBlockBottom = providerBlock.position.y + providerBlock.height;
+      const logoBottom = logo.position.y + logo.height;
+
+      // providerBlock's own declared box is tall enough for the content...
+      expect(requiredHeightMm).toBeLessThanOrEqual(providerBlock.height);
+      // ...its box never starts above the logo's bottom edge...
+      expect(providerBlock.position.y).toBeGreaterThan(logoBottom);
+      // ...and the actual rendered text (not just the box) still clears the
+      // rule below, regardless of the box's own declared height.
+      expect(providerBlock.position.y + requiredHeightMm)
+        .toBeLessThanOrEqual(headerRule.position.y);
+      expect(providerBlockBottom).toBeLessThanOrEqual(headerRule.position.y);
     });
   });
 });
