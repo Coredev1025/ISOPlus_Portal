@@ -7,6 +7,8 @@ import {
   isCompletedShiftStatus,
   isHourUnitLabel,
 } from './ndisServiceRecords.js';
+import { REF_ATTRIBUTE_NAMES } from '../constants/monthlyStatementAttributes.js';
+import { resolveInvoiceRecipient } from './invoiceRecipientHelpers.js';
 
 const SYDNEY_TIME_ZONE = 'Australia/Sydney';
 
@@ -141,14 +143,23 @@ export function buildNdisInvoicePdfClientDetails({
     getParticipantDisplayName(participantProfileItem),
   );
 
-  const contact = firstNonEmpty(
+  // KAN-272: Billing Contact/Address are only PRINTED (via
+  // resolveInvoiceRecipient below) when a Billing Email is also on the
+  // profile — see invoiceRecipientHelpers.js for the Case A/AA/B rule.
+  // `billingContactRaw` itself stays ungated: 'Participant Name' below has
+  // always cross-filled from whatever contact name was on file when the
+  // participant's own name was unknown, independent of billing routing.
+  const billingContactRaw = firstNonEmpty(
     participantProfile.billingContact,
     readDataFields(data, 'Billing Contact', 'Invoice To', 'Plan Manager'),
     api.billingContact,
-    participantName,
   );
-
-  const billingAddress = firstNonEmpty(
+  const billingEmail = firstNonEmpty(
+    participantProfile.billingEmail,
+    api.billingEmail,
+    readDataFields(data, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_EMAIL),
+  );
+  const billingAddressRaw = firstNonEmpty(
     participantProfile.billingAddress,
     api.billingAddress,
     readDataFields(data, 'Billing Address', 'Invoice Address'),
@@ -157,13 +168,22 @@ export function buildNdisInvoicePdfClientDetails({
   const suburb = firstNonEmpty(participantProfile.suburb, api.suburb, readDataFields(data, 'Suburb'));
   const state = firstNonEmpty(participantProfile.state, api.state, readDataFields(data, 'State'));
   const postcode = firstNonEmpty(participantProfile.postcode, api.postcode, readDataFields(data, 'Postcode', 'Post Code'));
-  const address = billingAddress || [street, suburb, [state, postcode].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  const recipient = resolveInvoiceRecipient({
+    billingEmail,
+    billingContact: billingContactRaw,
+    billingAddress: billingAddressRaw,
+    fullName: participantName,
+    address: street,
+    suburb,
+    state,
+    postcode,
+  });
   const ndisNumber = firstNonEmpty(getParticipantNdisNumber(participantProfileItem), readDataFields(data, 'NDIS Number', 'NDISNumber'));
 
   return {
-    Contact: contact || ' ',
-    Address: address || ' ',
-    'Participant Name': participantName || contact || ' ',
+    Contact: recipient.recipientName || ' ',
+    Address: recipient.addressLines.join(', ') || ' ',
+    'Participant Name': participantName || billingContactRaw || ' ',
     'NDIS Number': ndisNumber || ' ',
   };
 }

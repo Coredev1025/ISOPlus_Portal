@@ -47,13 +47,8 @@ import {
   buildParticipantTaxLineItems,
   resolveParticipantTaxDueDate,
 } from '../utils/xeroParticipantTaxHelpers.js';
-
-const REF_ATTRIBUTE_NAMES = {
-  PROFILE_EMAIL_ADDRESS: 'Email',
-  PROFILE_BILLING_EMAIL: 'Billing Email',
-  PROFILE_BILLING_CONTACT: 'Billing Contact',
-  PROFILE_BILLING_ADDRESS: 'Billing Address',
-};
+import { REF_ATTRIBUTE_NAMES } from '../constants/monthlyStatementAttributes.js';
+import { resolveInvoiceRecipient, readProfileRecipientAttributes } from '../utils/invoiceRecipientHelpers.js';
 
 const DEFAULT_XERO_TIMEZONE = 'Australia/Sydney';
 const NDIS_SALES_MAPPING_OPTIONS = { unmappedTaxFreeType: 'EXEMPTOUTPUT' };
@@ -149,15 +144,24 @@ async function setupParticipantTaxXeroAuth(workspaceId, boardId, items) {
   ]);
 }
 
+/**
+ * KAN-272: `receiverName`/`billingAddressBase` are Case A/AA/B resolved — the
+ * Billing Contact/Address are used as the recipient only when a Billing
+ * Email is also on the profile; otherwise the participant's own name and
+ * address are used instead of "Unknown Participant". See
+ * invoiceRecipientHelpers.js for the shared rule.
+ */
 function getParticipantTaxBillingDetails(participantProfileItem) {
-  const receiverName = (getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || '').trim() || '';
-  const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || '';
-  const participantEmail = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_EMAIL_ADDRESS) || '';
+  const fullName = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_FULL_NAME) || '';
+  const recipient = resolveInvoiceRecipient(
+    readProfileRecipientAttributes(participantProfileItem, getValueFromFlatData, fullName),
+  );
+  const participantEmail = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_EMAIL) || '';
   return {
-    receiverName,
-    billingAddressBase,
+    receiverName: recipient.recipientName,
+    billingAddressBase: recipient.addressLines.join(', '),
     participantEmail,
-    effectiveParticipantName: receiverName || 'Unknown Participant',
+    effectiveParticipantName: recipient.recipientName || 'Unknown Participant',
   };
 }
 

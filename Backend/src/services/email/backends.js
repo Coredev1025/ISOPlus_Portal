@@ -159,14 +159,13 @@ export const sesBackend = {
     // address entirely, so a deployment can be verified end to end without a
     // message reaching a participant. Logged at warn every time, and never
     // defaulted: it only applies when a tick explicitly asked for it.
+    //
+    // KAN-272: no `recipientType` any more — resolveRecipient derives the
+    // mailbox itself from the participant's own profile (Case A/AA/B), so
+    // there is nothing left for this backend to pass in.
     const recipient = bypassEmail?.length
       ? { address: bypassEmail.join(', '), source: 'bypass_email' }
-      : await resolveRecipient({
-        workspaceId,
-        boardId,
-        participant: recipientKey,
-        recipientType: block?.recipient,
-      });
+      : await resolveRecipient({ workspaceId, boardId, participant: recipientKey });
 
     if (bypassEmail?.length) {
       warn(LOG_SCOPE, 'bypassEmail is set; sending to the override address instead of the participant', {

@@ -295,9 +295,7 @@ export const DELIVERY_REFUSAL_MESSAGES = {
   no_participant_name: 'This document has no client on it, so there was no profile to read an address from.',
   profile_not_found: "The client's profile could not be found in the Intake Register.",
   no_address_on_profile: "The client's profile has no email address on it.",
-  billing_contact_has_no_address: 'The billing contact named on this profile has no email address.',
   malformed_address: 'The email address on file is not a valid address.',
-  unsupported_recipient_type: 'The Recipient setting is not one this workspace can send to.',
   // KAN-266: states the fact and names both candidates. The old wording
   // asserted the recipient was at fault, but this reason is raised for any
   // 403 — and SES authorises on the SENDING identity, so a Email From

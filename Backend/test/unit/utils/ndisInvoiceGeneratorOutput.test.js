@@ -201,6 +201,12 @@ describe('buildNdisInvoicePdfClientDetails', () => {
     const details = buildNdisInvoicePdfClientDetails({
       participantProfile: {
         fullName: 'Jane Doe',
+        // KAN-272: Contact/Address only print the Billing Contact/Address
+        // when a Billing Email is also present — see the Case A/AA/B tests
+        // below. This test is about precedence between the prepared profile,
+        // the stored item and the API values, so it supplies one to stay a
+        // Case A fixture.
+        billingEmail: 'plan@partners.example.com',
         billingContact: 'Plan Partners',
         billingAddress: '12 Ledger Rd, Sydney NSW 2000',
       },
@@ -283,9 +289,13 @@ describe('buildNdisInvoicePdfClientDetails', () => {
   });
 
   // Breaks if the billing address stops short-circuiting the composed one.
+  // KAN-272: that short-circuit only happens in Case A — Billing Email and
+  // Billing Contact both present too — so both are supplied here.
   it('uses the billing address instead of the composed address when present', () => {
     const details = buildNdisInvoicePdfClientDetails({
       participantProfile: {
+        billingEmail: 'plan@partners.example.com',
+        billingContact: 'Plan Partners',
         billingAddress: 'PO Box 55, Newtown NSW 2042',
         address: '4/12 Smith St',
         suburb: 'Newtown',
@@ -325,6 +335,58 @@ describe('buildNdisInvoicePdfClientDetails', () => {
     expect(buildNdisInvoicePdfClientDetails({
       participantProfile: { billingContact: 'Plan Partners' },
     })['Participant Name']).toBe('Plan Partners');
+  });
+
+  /**
+   * KAN-272. Contact/Address now gate on Billing Email — Case A/AA/B — rather
+   * than using a Billing Contact/Address that was set but never checked
+   * against whether there was a Billing Email to route to.
+   */
+  describe('Case A/AA/B recipient resolution', () => {
+    const fullProfile = {
+      fullName: 'Jane Doe',
+      billingEmail: 'nora@plan-manager.example.com',
+      billingContact: 'Plan Partners',
+      billingAddress: '12 Ledger Rd, Sydney NSW 2000',
+      address: '4/12 Smith St',
+      suburb: 'Newtown',
+      state: 'NSW',
+      postcode: '2042',
+    };
+
+    it('Case A: prints the Billing Contact and Billing Address when Billing Email is present', () => {
+      const details = buildNdisInvoicePdfClientDetails({ participantProfile: fullProfile });
+
+      expect(details.Contact).toBe('Plan Partners');
+      expect(details.Address).toBe('12 Ledger Rd, Sydney NSW 2000');
+    });
+
+    it('Case AA: prints the participant\'s own name and address when Billing Contact is blank', () => {
+      const details = buildNdisInvoicePdfClientDetails({
+        participantProfile: { ...fullProfile, billingContact: '' },
+      });
+
+      expect(details.Contact).toBe('Jane Doe');
+      expect(details.Address).toBe('4/12 Smith St, Newtown, NSW 2042');
+    });
+
+    it('Case AA: prints the participant\'s own name and address when Billing Address is blank', () => {
+      const details = buildNdisInvoicePdfClientDetails({
+        participantProfile: { ...fullProfile, billingAddress: '' },
+      });
+
+      expect(details.Contact).toBe('Jane Doe');
+      expect(details.Address).toBe('4/12 Smith St, Newtown, NSW 2042');
+    });
+
+    it('Case B: prints the participant\'s own name and address when Billing Email is blank, even with a Billing Contact on file', () => {
+      const details = buildNdisInvoicePdfClientDetails({
+        participantProfile: { ...fullProfile, billingEmail: '' },
+      });
+
+      expect(details.Contact).toBe('Jane Doe');
+      expect(details.Address).toBe('4/12 Smith St, Newtown, NSW 2042');
+    });
   });
 });
 

@@ -131,13 +131,16 @@ describe('sesBackend', () => {
     expect(await EmailSend.countDocuments({})).toBe(0);
   });
 
-  it('resolves the recipient type to a real address and sends', async () => {
+  it('resolves the participant to a real address and sends', async () => {
     const result = await sesBackend.deliver(MESSAGE);
 
     expect(result.delivered).toBe(true);
+    // KAN-272: no recipientType any more — resolveRecipient derives the
+    // mailbox itself from the participant's own profile.
     expect(resolveRecipient).toHaveBeenCalledWith(
-      expect.objectContaining({ workspaceId: '55390', participant: 'Jane Smith', recipientType: 'billing_contact' }),
+      expect.objectContaining({ workspaceId: '55390', participant: 'Jane Smith' }),
     );
+    expect(resolveRecipient.mock.calls[0][0]).not.toHaveProperty('recipientType');
     const sent = sendEmail.mock.calls[0][0];
     // KAN-270: Email From is application-level configuration now — sendEmail
     // is not given a per-workspace From at all, only sesTransport.js (env +

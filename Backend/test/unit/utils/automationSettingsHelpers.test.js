@@ -16,7 +16,6 @@ const validBlock = {
   runAt: '09:00',
   startDate: '2026-03-01',
   sendMethod: 'isoplus',
-  recipient: 'billing_contact',
   sendCopyTo: 'a@b.com',
   replyTo: 'c@d.com',
 };
@@ -219,11 +218,16 @@ describe('parseAutomationSettingsBody', () => {
     expect(result.error).toMatch(/^statement: .*sendMethod/);
   });
 
-  it('rejects an invalid recipient', () => {
+  // KAN-272: the manual "Recipient" setting is removed — recipient/address
+  // resolution is now derived purely from ISO+ profile data (Case A/AA/B,
+  // see Backend/src/utils/invoiceRecipientHelpers.js), so there is nothing
+  // left here to validate. An extra `recipient` key in the request body is
+  // silently ignored rather than rejected.
+  it('ignores an unrecognised recipient field rather than rejecting it', () => {
     const result = parseAutomationSettingsBody({
       invoice: { ...validBlock, recipient: 'nobody' },
     });
-    expect(result.error).toMatch(/recipient/);
+    expect(result.error).toBeUndefined();
   });
 
   it('ignores runOn for a day-unit block', () => {

@@ -61,9 +61,11 @@ export function activeEmailBackendName() {
  * Deliver a composed automation email.
  *
  * `block` is the email half of an AutomationSettings block, already validated
- * by parseAutomationSettingsBody. The recipient is stored as a *type*
- * (billing_contact | client_participant); the SES backend resolves it to a
- * real address, and the offline one records the type it would resolve.
+ * by parseAutomationSettingsBody. The recipient mailbox is not configured on
+ * the block at all (KAN-272 removed the manual "Recipient" setting) — the SES
+ * backend resolves it per participant from the profile's own data (Case
+ * A/AA/B, see utils/invoiceRecipientHelpers.js), and the offline backend
+ * writes a preview rather than resolving anything.
  */
 export async function deliverEmail(message) {
   registerBuiltInEmailBackends();

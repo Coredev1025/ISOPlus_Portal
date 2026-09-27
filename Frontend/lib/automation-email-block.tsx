@@ -10,7 +10,6 @@ import {
   EMAIL_MESSAGE_FIELD,
   EMAIL_TEMPLATE_VARIABLE_HINT,
   EMAIL_TEXT_FIELDS,
-  RECIPIENT_OPTIONS,
   type AutomationKind,
 } from "@/constants/automation";
 import { EMAIL_PATTERN, isEmailAddressList } from "@/constants/validation";
@@ -134,18 +133,9 @@ export function AutomationEmailBlock({
 
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-      <AutomationField id={`${idPrefix}-recipient`} label="Recipient">
-        <OptionSelect
-          id={`${idPrefix}-recipient`}
-          ariaLabel="Recipient"
-          value={value.recipient}
-          options={RECIPIENT_OPTIONS}
-          onValueChange={(next) =>
-            set({ recipient: next as AutomationBlock["recipient"] })
-          }
-        />
-      </AutomationField>
-
+      {/* KAN-272: the manual "Recipient" selector (Billing Contact |
+          Client/Participant) is removed — recipient/address resolution is
+          now derived purely from ISO+ profile data (Case A/AA/B). */}
       <AutomationField id={`${idPrefix}-send-method`} label="Send Method">
         <OptionSelect
           id={`${idPrefix}-send-method`}

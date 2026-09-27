@@ -52,6 +52,49 @@ describe('buildStatementDocument', () => {
     expect(doc.recipient.address).toBe('');
   });
 
+  /**
+   * KAN-272. Recipient/address resolution is now Case A/AA/B, derived from
+   * Billing Email/Billing Contact/Billing Address rather than always the
+   * participant's own profile address.
+   */
+  describe('Case A/AA/B recipient resolution', () => {
+    it('Case A: addresses the Billing Contact when Billing Email, Contact and Address are all present', () => {
+      const doc = buildStatementDocument({
+        ...base,
+        profile: {
+          data: {
+            'Billing Email': 'nora@plan-manager.example.com',
+            'Billing Contact': 'Nominee Nora',
+            'Billing Address': 'PO Box 1, Sydney NSW 2000',
+            Address: '5 Client Rd', Suburb: 'Newtown', State: 'NSW', Postcode: '2042',
+          },
+        },
+      });
+
+      expect(doc.recipient).toEqual({ name: 'Nominee Nora', address: 'PO Box 1, Sydney NSW 2000' });
+    });
+
+    it('Case AA: falls back to the participant\'s own name and address when Billing Contact is blank', () => {
+      const doc = buildStatementDocument({
+        ...base,
+        participant: 'Masoud Test',
+        profile: {
+          data: {
+            'Billing Email': 'nora@plan-manager.example.com',
+            'Billing Address': 'PO Box 1, Sydney NSW 2000',
+            Address: '5 Client Rd', Suburb: 'Newtown', State: 'NSW', Postcode: '2042',
+          },
+        },
+      });
+
+      expect(doc.recipient).toEqual({ name: 'Masoud Test', address: '5 Client Rd, Newtown, NSW 2042' });
+    });
+
+    // Case B (no Billing Email at all) is already covered above — the
+    // original fixture profile carries no billing fields, and the recipient
+    // is the participant under their own name and address.
+  });
+
   it('carries the statement number and the period into the meta block', () => {
     const doc = buildStatementDocument(base);
     expect(doc.meta.statementNumber).toBe('STMT-1026');

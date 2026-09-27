@@ -16,6 +16,7 @@ import { extractRefId as extractNdisRefId } from '../utils/ndisServiceRecords.js
 import { mongoEq } from '../utils/securityHelpers.js';
 import { invoicePeriodSuffix } from '../utils/invoicePeriodSuffix.js';
 import { isMissingPaymentDetails, missingDocumentBranding } from '../utils/businessDocumentReadiness.js';
+import { resolveInvoiceRecipient, readProfileRecipientAttributes } from '../utils/invoiceRecipientHelpers.js';
 import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
 import {
   GENERATED_DOCUMENT_PUBLIC_READ,
@@ -62,11 +63,16 @@ export function collectParticipantTaxReferenceIds(dbItems, getValueFromFlatData,
   return { participantProfileIds, servicePlanIds };
 }
 
+/**
+ * KAN-272: `receiverName`/`receiverAddress` are Case A/AA/B resolved — the
+ * Billing Contact/Address print only when a Billing Email is also on the
+ * profile; otherwise the participant's own name and address print instead of
+ * a blank field. See invoiceRecipientHelpers.js for the shared rule.
+ */
 export function resolveParticipantTaxReceiverDetails(dbItems, refItemsMap, helpers) {
   const {
     getValueFromFlatData,
     attributeNames,
-    refAttributeNames,
     getParticipantNameFromProfile,
   } = helpers;
 
@@ -90,9 +96,11 @@ export function resolveParticipantTaxReceiverDetails(dbItems, refItemsMap, helpe
   }
 
   participantName = getParticipantNameFromProfile(participantProfileItem) || ' ';
-  receiverName = getValueFromFlatData(participantProfileItem, refAttributeNames.PROFILE_BILLING_CONTACT) || ' ';
-  const billingAddressBase = getValueFromFlatData(participantProfileItem, refAttributeNames.PROFILE_BILLING_ADDRESS) || ' ';
-  receiverAddress = billingAddressBase.trim() || ' ';
+  const recipient = resolveInvoiceRecipient(
+    readProfileRecipientAttributes(participantProfileItem, getValueFromFlatData, participantName),
+  );
+  receiverName = recipient.recipientName || ' ';
+  receiverAddress = recipient.addressLines.join(', ') || ' ';
   return { participantName, receiverName, receiverAddress };
 }
 
