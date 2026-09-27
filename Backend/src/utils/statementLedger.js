@@ -28,7 +28,34 @@ import {
 import { buildAgeingSummary } from './statementAgeing.js';
 import { buildRunningBalance, roundMoney } from './statementTransactions.js';
 import { readField } from './invoiceSelectionFields.js';
+import { startOfDayInstant } from './automationScheduleHelpers.js';
 import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
+
+/** A bare `YYYY-MM-DD` date, with no time or offset of its own. */
+const BARE_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * `value` as a comparable instant, in `tz`.
+ *
+ * `Invoice Received Date` (KAN-277) is entered through a date picker as a bare
+ * `YYYY-MM-DD`, with no time component. Parsed directly, that is implicit UTC
+ * midnight — mid-morning in `tz` — so a payment dated "today" reads as still
+ * hours in the future for the first part of every business day, and gets
+ * excluded by a same-moment `raisedBy`/`asAtCutoff` check that should include
+ * it. Anchoring it on local midnight in `tz` instead (the same technique
+ * `startOfDayInstant` already uses for schedule boundaries) means the payment
+ * counts as raised from the moment its calendar day begins, matching how a
+ * human reads "28/09/2026" on a payment: it happened sometime that day, and
+ * that day has necessarily started by the time anyone is checking.
+ *
+ * A full ISO instant (invoice `createdAt`, which already carries its own
+ * offset per `invoiceSelectionFields.js`) does not match and is parsed as-is.
+ */
+function toComparableInstant(value, tz) {
+  return BARE_DATE.test(String(value ?? '').trim())
+    ? startOfDayInstant(value, tz)
+    : new Date(value);
+}
 
 /**
  * A dollar amount that may arrive as a number or as a formatted string.
@@ -79,9 +106,13 @@ const isDated = (payment) => !Number.isNaN(new Date(payment.date).getTime());
  * An unusable date is excluded rather than kept, unlike `asAtCutoff`: a
  * payment with no date must not get a row of its own here, it is netted onto
  * its invoice instead (see `chargeRows`).
+ *
+ * `tz` only affects a bare `YYYY-MM-DD` date (KAN-277) — see
+ * `toComparableInstant`. A full ISO instant, which is what every other date
+ * this file compares already is, parses the same regardless.
  */
-const raisedBy = (value, asAt) => {
-  const at = new Date(value).getTime();
+const raisedBy = (value, asAt, tz) => {
+  const at = toComparableInstant(value, tz).getTime();
   if (Number.isNaN(at)) return false;
   return at <= new Date(asAt).getTime();
 };
@@ -109,10 +140,10 @@ const paidAgainst = (payments, invoiceNumber) => roundMoney(
  * its invoice's date, because that is the earliest it can have been made and
  * the one date the ageing already knows it by.
  */
-function chargeRows(invoices, payments, asAt, datedPayments) {
+function chargeRows(invoices, payments, asAt, datedPayments, tz) {
   const netted = datedPayments ? payments.filter((p) => !isDated(p)) : payments;
   return invoices
-    .filter((inv) => raisedBy(inv.createdAt, asAt))
+    .filter((inv) => raisedBy(inv.createdAt, asAt, tz))
     .map((inv, index) => ({
       date: inv.createdAt,
       reference: inv.invoiceNumber,
@@ -135,9 +166,9 @@ function chargeRows(invoices, payments, asAt, datedPayments) {
  * period, so a payment scoped to only the current one would leave an older,
  * already-settled invoice looking outstanding again on this statement.
  */
-function paymentRows(payments, asAt) {
+function paymentRows(payments, asAt, tz) {
   return payments
-    .filter((p) => raisedBy(p.date, asAt))
+    .filter((p) => raisedBy(p.date, asAt, tz))
     .map((p, index) => ({
       date: p.date,
       reference: p.invoiceNumber,
@@ -164,10 +195,10 @@ function paymentRows(payments, asAt) {
  * kept here and dropped there, a single undated payment made section 4.3's
  * check throw, which failed the whole board's run.
  */
-function asAtCutoff(invoices, payments, asAt) {
+function asAtCutoff(invoices, payments, asAt, tz) {
   const at = new Date(asAt).getTime();
   const notAfter = (value) => {
-    const when = new Date(value).getTime();
+    const when = toComparableInstant(value, tz).getTime();
     return Number.isNaN(when) || when <= at;
   };
   return {
@@ -230,12 +261,12 @@ export function buildStatementLedger({
 }) {
   const payments = collectPayments(items);
   const rows = [
-    ...chargeRows(invoices, payments, asAt, datedPayments),
-    ...(datedPayments ? paymentRows(payments, asAt) : []),
+    ...chargeRows(invoices, payments, asAt, datedPayments, timezone),
+    ...(datedPayments ? paymentRows(payments, asAt, timezone) : []),
   ];
 
   const ledger = buildRunningBalance(openingBalance, rows);
-  const settled = asAtCutoff(invoices, payments, asAt);
+  const settled = asAtCutoff(invoices, payments, asAt, timezone);
   const ageing = buildAgeingSummary(
     outstandingByInvoice(settled.invoices, settled.payments), asAt, timezone,
   );

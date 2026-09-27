@@ -221,6 +221,37 @@ describe('buildStatementLedger — an invoice raised the day after the period cl
   });
 });
 
+/**
+ * KAN-277: a payment dated "today" — a bare YYYY-MM-DD from the date picker —
+ * checked a few hours into that same calendar day in the business timezone.
+ *
+ * `new Date('2026-09-28')` parses as UTC midnight, which is 10:00am in
+ * Melbourne (AEST, UTC+10 — DST does not start until the first Sunday of
+ * October 2026). Naive UTC comparison then treats the payment as still hours
+ * in the future for the first part of every Melbourne business day, and
+ * `raisedBy` wrongly excludes it — confirmed live on 2026-09-27/28.
+ */
+describe('buildStatementLedger — a payment dated today, checked early the same day (KAN-277)', () => {
+  it('includes a payment dated today when asAt is only a few hours into that Melbourne day', () => {
+    const invoices = [invoice('INV-1', '2026-09-01T00:00:00.000+10:00', 500, '2026-09-15')];
+    const items = [paidItem('INV-1', 500, '2026-09-28')];
+    const { ledger } = buildStatementLedger({
+      invoices,
+      items,
+      period: PERIOD,
+      openingBalance: 0,
+      timezone: 'Australia/Melbourne',
+      // 2:34am Melbourne on the 28th — still 16:34 UTC on the 27th, the exact
+      // shape of the live reproduction.
+      asAt: '2026-09-28T02:34:00.000+10:00',
+    });
+    const paymentRow = ledger.rows.find((r) => r.payment > 0);
+    expect(paymentRow).toBeDefined();
+    expect(paymentRow?.date).toBe('2026-09-28');
+    expect(ledger.closingBalance).toBe(0);
+  });
+});
+
 describe('hasStatementActivity (section 4.5)', () => {
   it('is false when there was no activity and nothing is owing', () => {
     const { ledger } = buildStatementLedger({
