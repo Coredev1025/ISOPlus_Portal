@@ -24,6 +24,7 @@ import {
   PDFLINK_TYPE_NDIS_INVOICE,
   PDFLINK_TYPE_STATEMENT_OF_ACCOUNT,
 } from '../../constants/automation.js';
+import { ATTRIBUTE_NAMES } from '../../constants/monthlyStatementAttributes.js';
 import {
   GENERATED_DOCUMENT_PUBLIC_READ,
   GENERATED_PDF_URL_EXPIRY_SECONDS,
@@ -82,18 +83,72 @@ async function participantInvoices(workspaceId, boardId, participant) {
 }
 
 /**
+ * Service records whose own reference chain resolves to `participant`, found
+ * via `Participant Profile` rather than the shift's free-text name copy.
+ *
+ * KAN-275: `data[nameField]` is a free-text field an operator can hand-edit on
+ * the shift itself, independent of who the shift is actually for — live data
+ * showed it drifted to a stale fragment ("Maso") of the real name while the
+ * shift's own `Participant Profile` reference still correctly pointed at the
+ * real participant. That reference is the same one already used, successfully,
+ * to resolve a shift's true participant elsewhere — NDIS invoice generation
+ * (`ndisInvoiceGeneratorRouteHelpers.js`), the Age Care invoice generator
+ * (`invoiceGeneratorRouteHelpers.js`) and the monthly statement
+ * (`monthlyStatementRouteHelpers.js`) all read it, and it is populated the same
+ * way regardless of board type. `Service Plan` was the other candidate chain
+ * (Master Plan item -> Service Plan -> its own `Participant Intake Form`
+ * reference), but it is NDIS-specific — Age Care items carry no `Service Plan`
+ * at all — and adds a second, independently-optional hop: a Service Plan
+ * record with no `Participant Intake Form` reference resolves to null rather
+ * than throwing, so the chain can go missing even when the Master Plan item's
+ * own `Participant Profile` is intact.
+ *
+ * `findParticipantProfile` resolves `participant` to their profile item the
+ * same way the statement's own recipient lookup already does, so a shift and
+ * the statement it appears on can never disagree about which profile record
+ * is authoritative. No profile found means no items can be found via the
+ * reference chain — the caller still has whatever the free-text match above
+ * returned.
+ */
+async function participantPaymentItemsByProfile(workspaceId, boardId, participant) {
+  const profile = await findParticipantProfile(String(workspaceId), String(boardId), String(participant));
+  if (!profile) return [];
+  const profileId = mongoEq(profile.itemId);
+  const profileField = `data.${ATTRIBUTE_NAMES.PARTICIPANT_PROFILE}`;
+  return Item.find({
+    workspaceId: mongoEq(String(workspaceId)),
+    boardId: mongoEq(String(boardId)),
+    // The reference is stored as either an array of plain ids or an array of
+    // `{ id }` objects (see `extractRefId` in ndisServiceRecords.js) —
+    // matched here rather than resolved in application code so the lookup
+    // stays a single indexed-scope query instead of a full board scan.
+    $or: [{ [profileField]: profileId }, { [`${profileField}.id`]: profileId }],
+  }).select('data invoicedBy').lean();
+}
+
+/**
  * The service records that may carry a payment.
  *
  * Board-scoped rather than workspace-scoped, matching the run: a statement is
  * generated per board, and money entered on another board belongs to that
  * board's statement.
+ *
+ * Two independent ways in, unioned: the shift's own free-text copy of the
+ * name (cheap, and still correct for the common case where it was never
+ * hand-edited after sync) and the reference chain (KAN-275, above), which
+ * catches a shift whose free text has drifted. `uniqBy` guards a shift that
+ * matches both — its payment must be counted once, not twice.
  */
 async function participantPaymentItems(workspaceId, boardId, participant, nameField) {
-  return Item.find({
-    workspaceId: mongoEq(String(workspaceId)),
-    boardId: mongoEq(String(boardId)),
-    [`data.${nameField}`]: mongoEq(String(participant)),
-  }).select('data invoicedBy').lean();
+  const [byText, byProfile] = await Promise.all([
+    Item.find({
+      workspaceId: mongoEq(String(workspaceId)),
+      boardId: mongoEq(String(boardId)),
+      [`data.${nameField}`]: mongoEq(String(participant)),
+    }).select('data invoicedBy').lean(),
+    participantPaymentItemsByProfile(workspaceId, boardId, participant),
+  ]);
+  return uniqBy([...byText, ...byProfile], (item) => String(item._id));
 }
 
 /**
