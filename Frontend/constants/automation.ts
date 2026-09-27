@@ -71,8 +71,12 @@ export const READ_ONLY_BLOCK_FIELDS = [
 
 /**
  * The one-line free-text fields of the email block, in render order. `isEmail`
- * is what selects a field for `EMAIL_PATTERN`; the three address-valued fields
- * are the same three the backend validates in `parseAutomationSettingsBody`.
+ * is what selects a field for `EMAIL_PATTERN`; the two address-valued fields
+ * here are two of the three the backend validates in
+ * `parseAutomationSettingsBody` — `emailFrom` is no longer editable in this
+ * UI (KAN-269, it becomes an application-level setting) but the field still
+ * exists on `AutomationBlock` and is validated server-side until KAN-270
+ * removes it there too.
  *
  * Touchpoints: lib/automation-email-block.tsx (renders the fields and validates
  * per keystroke), lib/automation-helpers.ts (derives the Save gate's key list).
@@ -82,7 +86,6 @@ export const EMAIL_TEXT_FIELDS = [
   // The only address field that takes several, comma separated.
   { key: "sendCopyTo", id: "send-copy-to", label: "Send a Copy To", isEmail: true, allowsList: true },
   { key: "replyTo", id: "reply-to", label: "Reply-to Email", isEmail: true, allowsList: false },
-  { key: "emailFrom", id: "email-from", label: "Email From", isEmail: true, allowsList: false },
   { key: "emailSubject", id: "email-subject", label: "Email Subject", isEmail: false, allowsList: false },
 ] as const;
 
