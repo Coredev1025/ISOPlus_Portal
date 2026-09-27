@@ -86,6 +86,7 @@ A design that has shipped is not deleted or silently rewritten. Mark its status,
 - **Tickets are required** and validated as `PREFIX-NUMBER`. Note this is a *new* convention — no existing branch or commit carries a ticket, so do not expect to find them in history.
 - **Base branches**: `feature/` and `bugfix/` branch from `origin/develop`; `hotfix/` from `origin/main`. PRs target `develop` except hotfixes.
 - **Commit messages** follow the loose convention already in use: `feat:`, `fix:`, `refactor:`. Include the ticket in the PR title or body.
+- **Never push directly to `develop` or `main`.** Every change, including a docs-only or single-line fix, goes through a branch and a PR. There is no size or risk threshold that excuses a direct push — this repo deploys automatically on merge, and a direct push skips the one review step that catches a bad merge before it ships.
 
 Be aware the repository's actual history diverges from this: of the last 40 merges into `main`, only 9 came from `develop` — 31 were topic branches merged straight to production. `main` and `develop` have drifted apart. Prefer the documented flow; flag it rather than copying the drift.
 

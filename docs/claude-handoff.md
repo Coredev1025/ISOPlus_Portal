@@ -123,3 +123,11 @@ things this repo controls.
   automation-timezone bug). Their boards and item data are real test fixtures,
   not synthetic — dates on them drift into the past relative to "today" as
   time passes, which is exactly what caused the KAN-267 investigation.
+
+## Process note
+
+The commit adding this Reference section was originally pushed straight to
+`develop` with no branch or PR (2026-09-27, commit `12401aa5`). That was
+wrong and got reverted (`e687e970`) and redone here via a branch and PR
+instead. **Never push directly to `develop`** — branch and open a PR, even
+for docs-only changes.
