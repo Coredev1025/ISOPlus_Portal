@@ -36,6 +36,13 @@ vi.mock('../../src/utils/uploadS3.js', () => ({
   getS3File: vi.fn(async () => Buffer.from('logo')),
 }));
 
+// Calls straight through; only here so a test can see what was warned about.
+vi.mock('../../src/utils/logger.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, warn: vi.fn(actual.warn) };
+});
+
+const { warn } = await import('../../src/utils/logger.js');
 const { getS3File } = await import('../../src/utils/uploadS3.js');
 const { default: Board } = await import('../../src/models/Board.js');
 const { default: Business } = await import('../../src/models/Business.js');
@@ -310,6 +317,44 @@ describe('a scheduled statement run, on untidy data', () => {
     // nor given a row of its own.
     expect(JSON.parse(rendered.transactions)).toHaveLength(1);
     expect(closingBalanceOf(rendered)).toBe('$250.00');
+  });
+
+  // KAN-286: a payment recorded against an invoice number the participant has
+  // no record of has nothing to be applied to. Left on, it gave the ledger a
+  // row the ageing never counted and the statement's own reconciliation check
+  // threw while rendering.
+  it('states the account without a payment that refers to an unknown invoice', async () => {
+    await Item.create({
+      itemId: 'item-ghost',
+      workspaceId: WORKSPACE,
+      boardId: BOARD,
+      folderId: 'folder-1',
+      invoicedBy: 'INV-GHOST',
+      data: {
+        'Participant Full Name': PARTICIPANT,
+        'Amount Received($)': '100',
+        'Payment Received Date': '2026-08-21T00:00:00.000Z',
+      },
+    });
+
+    await run();
+
+    const rendered = statementRender();
+    expect(rendered).toBeDefined();
+    const rows = JSON.parse(rendered.transactions);
+    // The invoice and its own $100 payment; nothing for INV-GHOST.
+    expect(rows).toHaveLength(2);
+    expect(rows.some((row) => row.includes('INV-GHOST'))).toBe(false);
+    expect(closingBalanceOf(rendered)).toBe('$150.00');
+    // The omission is reported, not silent.
+    expect(warn).toHaveBeenCalledWith(
+      'Automation',
+      'Payments left off the statement: no matching invoice for this participant',
+      expect.objectContaining({
+        participant: PARTICIPANT,
+        payments: [{ invoiceNumber: 'INV-GHOST', amount: 100 }],
+      }),
+    );
   });
 
   // Payments are read per board; the invoices must be too, or an invoice

@@ -5,6 +5,7 @@ import {
   collectPayments,
   hasStatementActivity,
 } from '../../../src/utils/statementLedger.js';
+import { assertAgeingReconciles } from '../../../src/utils/statementAgeing.js';
 
 /**
  * Turning invoices and payments into the settled statement the renderer takes.
@@ -427,6 +428,93 @@ describe('buildStatementLedger — a payment with no date', () => {
     expect(ledger.rows[0].payment).toBe(0);
     expect(ledger.closingBalance).toBe(250);
     expect(ageing.d90plus).toBe(250);
+  });
+});
+
+/**
+ * A payment recorded against an invoice number that is not among the
+ * participant's invoices (KAN-286). There is nothing to apply it to, so it is
+ * left off, like a record with no `invoicedBy`. Left on, it gave the ledger a
+ * payment row the ageing never counted, the two totals disagreed, and the
+ * statement's own reconciliation check threw while the PDF was rendered.
+ */
+describe('buildStatementLedger — a payment against an unknown invoice', () => {
+  const asAt = '2026-08-31T00:00:00.000+10:00';
+  const bucketSum = (ageing) => Object.values(ageing).reduce((sum, v) => sum + v, 0);
+
+  it('gets no payment row, and the ledger still agrees with the ageing', () => {
+    const invoices = [invoice('INV-1', '2026-08-05', 250, '2026-08-19')];
+    const items = [paidItem('INV-GHOST', 100, '2026-08-20')];
+    const { ledger, ageing } = buildStatementLedger({
+      invoices, items, period: PERIOD, openingBalance: 0, timezone: TZ, asAt,
+    });
+    expect(ledger.rows.map((r) => [r.description, r.payment])).toEqual([['Services invoiced', 0]]);
+    expect(ledger.closingBalance).toBe(250);
+    expect(bucketSum(ageing)).toBe(ledger.closingBalance);
+    expect(() => assertAgeingReconciles(ageing, ledger.closingBalance)).not.toThrow();
+  });
+
+  it('still counts a real payment on a known invoice next to the unknown one', () => {
+    const invoices = [invoice('INV-1', '2026-08-05', 250, '2026-08-19')];
+    const items = [paidItem('INV-GHOST', 100, '2026-08-20'), paidItem('INV-1', 50, '2026-08-21')];
+    const { ledger, ageing } = buildStatementLedger({
+      invoices, items, period: PERIOD, openingBalance: 0, timezone: TZ, asAt,
+    });
+    expect(ledger.rows.map((r) => [r.description, r.payment])).toEqual([
+      ['Services invoiced', 0],
+      ['Payment received', 50],
+    ]);
+    expect(ledger.closingBalance).toBe(200);
+    expect(bucketSum(ageing)).toBe(200);
+  });
+
+  // Review finding: a "known" invoice that is dated after the statement's
+  // as-at has no charge row and is dropped from the ageing, so a payment against
+  // it must be left off too, or the statement throws again.
+  it('leaves off a payment against an invoice that is not raised yet as at the statement date', () => {
+    const invoices = [invoice('INV-FUTURE', '2026-10-15', 250, '2026-10-29')];
+    const items = [paidItem('INV-FUTURE', 100, '2026-08-20')];
+    const { ledger, ageing, unmatchedPayments } = buildStatementLedger({
+      invoices, items, period: PERIOD, openingBalance: 0, timezone: TZ, asAt,
+    });
+    expect(ledger.rows).toHaveLength(0);
+    expect(ledger.closingBalance).toBe(0);
+    expect(bucketSum(ageing)).toBe(ledger.closingBalance);
+    expect(() => assertAgeingReconciles(ageing, ledger.closingBalance)).not.toThrow();
+    expect(unmatchedPayments).toHaveLength(1);
+  });
+
+  // The real stored format carries a suffix on both sides.
+  it('matches on the full stored invoice number, suffix included', () => {
+    const invoices = [invoice('INV-24 (ISO+™)', '2026-08-05', 171.25, '2026-08-19')];
+    const items = [paidItem('INV-24 (ISO+™)', 5, '2026-08-20'), paidItem('INV-24', 10, '2026-08-20')];
+    const { ledger, unmatchedPayments } = buildStatementLedger({
+      invoices, items, period: PERIOD, openingBalance: 0, timezone: TZ, asAt,
+    });
+    expect(ledger.rows.map((r) => r.payment)).toEqual([0, 5]);
+    expect(unmatchedPayments.map((p) => [p.invoiceNumber, p.amount])).toEqual([['INV-24', 10]]);
+  });
+
+  it('reports each payment it left off, so the caller can say so', () => {
+    const invoices = [invoice('INV-1', '2026-08-05', 250, '2026-08-19')];
+    const items = [paidItem('INV-GHOST', 100, '2026-08-20'), paidItem('INV-1', 50, '2026-08-21')];
+    const { unmatchedPayments } = buildStatementLedger({
+      invoices, items, period: PERIOD, openingBalance: 0, timezone: TZ, asAt,
+    });
+    expect(unmatchedPayments).toEqual([
+      { invoiceNumber: 'INV-GHOST', amount: 100, date: '2026-08-20' },
+    ]);
+  });
+
+  it('is left off in the non-dated mode as well', () => {
+    const invoices = [invoice('INV-1', '2026-08-05', 250, '2026-08-19')];
+    const items = [paidItem('INV-GHOST', 100, '2026-08-20')];
+    const { ledger } = buildStatementLedger({
+      invoices, items, period: PERIOD, openingBalance: 0, timezone: TZ, asAt, datedPayments: false,
+    });
+    expect(ledger.rows).toHaveLength(1);
+    expect(ledger.rows[0].payment).toBe(0);
+    expect(ledger.closingBalance).toBe(250);
   });
 });
 
