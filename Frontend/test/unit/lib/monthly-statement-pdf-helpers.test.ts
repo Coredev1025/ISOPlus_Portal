@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
-import { server } from '../../msw/server';
 
 import {
   downloadMonthlyStatementPdf,
@@ -38,13 +36,6 @@ beforeEach(() => {
   (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = revokeObjectURL;
   warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
   errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-  server.use(
-    http.get(`${PDF_HOST}/statements/*`, () =>
-      HttpResponse.text('%PDF-1.4 pretend bytes', {
-        headers: { 'Content-Type': 'application/pdf' },
-      }),
-    ),
-  );
 });
 
 afterEach(() => {
@@ -125,16 +116,30 @@ describe('validateMonthlyStatementPdfPrerequisites', () => {
 });
 
 describe('downloadMonthlyStatementPdf', () => {
-  it('anchors the fetched blob under the requested filename and clicks it', async () => {
+  it('anchors the proxied blob under the requested filename and clicks it', async () => {
     const clicks: string[] = [];
     const clickSpy = vi
       .spyOn(HTMLAnchorElement.prototype, 'click')
       .mockImplementation(function (this: HTMLAnchorElement) {
         clicks.push(`${this.href}|${this.download}|${this.style.display}`);
       });
+    const post = vi.fn(async () => ({
+      data: new Blob(['%PDF'], { type: 'application/pdf' }),
+      status: 200,
+    }));
 
-    await downloadMonthlyStatementPdf(FILE_URL, 'march-2026-margaret.pdf');
+    await downloadMonthlyStatementPdf(
+      FILE_URL,
+      'march-2026-margaret.pdf',
+      'ws-77',
+      { post } as never,
+    );
 
+    expect(post).toHaveBeenCalledWith(
+      'undefined/api/pdf-links/file',
+      { fileUrl: FILE_URL, workspaceId: 'ws-77', filename: 'march-2026-margaret.pdf' },
+      { responseType: 'blob', headers: { Accept: 'application/pdf' } },
+    );
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(clicks).toEqual(['blob:statement-1|march-2026-margaret.pdf|none']);
     clickSpy.mockRestore();
@@ -147,17 +152,30 @@ describe('downloadMonthlyStatementPdf', () => {
       .mockImplementation(function (this: HTMLAnchorElement) {
         downloadAttr = this.download;
       });
+    const post = vi.fn(async () => ({
+      data: new Blob(['%PDF'], { type: 'application/pdf' }),
+      status: 200,
+    }));
 
-    await downloadMonthlyStatementPdf(FILE_URL);
+    await downloadMonthlyStatementPdf(FILE_URL, undefined, 'ws-77', { post } as never);
 
     expect(downloadAttr).toBe('monthly-statement.pdf');
+    expect(post.mock.calls[0][1]).toEqual({
+      fileUrl: FILE_URL,
+      workspaceId: 'ws-77',
+      filename: 'monthly-statement.pdf',
+    });
     clickSpy.mockRestore();
   });
 
   it('leaves the anchor in the document until the 100ms cleanup timer fires', async () => {
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const post = vi.fn(async () => ({
+      data: new Blob(['%PDF'], { type: 'application/pdf' }),
+      status: 200,
+    }));
 
-    await downloadMonthlyStatementPdf(FILE_URL, 'x.pdf');
+    await downloadMonthlyStatementPdf(FILE_URL, 'x.pdf', 'ws-77', { post } as never);
 
     expect(document.querySelectorAll('a[download="x.pdf"]')).toHaveLength(1);
     expect(revokeObjectURL).not.toHaveBeenCalled();
@@ -299,9 +317,14 @@ describe('executeMonthlyStatementPdfAction', () => {
 
   function makeArgs(overrides: Record<string, unknown> = {}) {
     const toasts = makeToasts();
-    const post = vi.fn(async () => ({
-      data: { fileUrl: FILE_URL, filename: 'march-2026-margaret.pdf' },
-    }));
+    const post = vi.fn(async (url: string) => {
+      if (String(url).includes('/pdf-links/file')) {
+        return { data: new Blob(['%PDF'], { type: 'application/pdf' }), status: 200 };
+      }
+      return {
+        data: { fileUrl: FILE_URL, filename: 'march-2026-margaret.pdf' },
+      };
+    });
 
     return {
       toasts,
@@ -343,7 +366,7 @@ describe('executeMonthlyStatementPdfAction', () => {
     const fileUrl = await executeMonthlyStatementPdfAction(args);
 
     expect(fileUrl).toBe(FILE_URL);
-    expect(post).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledTimes(2);
     expect(post.mock.calls[0][0]).toBe('undefined/api/pdf/ws-77/board-9/monthly-statement');
     expect(post.mock.calls[0][1]).toEqual({
       statementData: {
@@ -364,6 +387,12 @@ describe('executeMonthlyStatementPdfAction', () => {
         Accept: 'application/json',
         'X-User-Action': 'Generate Monthly Statement PDF',
       },
+    });
+    expect(post.mock.calls[1][0]).toBe('undefined/api/pdf-links/file');
+    expect(post.mock.calls[1][1]).toEqual({
+      fileUrl: FILE_URL,
+      workspaceId: 'ws-77',
+      filename: 'march-2026-margaret.pdf',
     });
     expect(toasts.showSuccessToast).toHaveBeenCalledWith(
       'Monthly statement PDF downloaded successfully',

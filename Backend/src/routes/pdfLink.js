@@ -4,8 +4,13 @@ import PDFLink from '../models/PDFLink.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { GENERATED_DOCUMENT_PUBLIC_READ, GENERATED_PDF_URL_EXPIRY_SECONDS } from '../constants/storage.js';
 import { s3ObjectKeyFromUrl } from '../utils/s3ObjectKey.js';
-import { getS3FileUrl } from '../utils/uploadS3.js';
+import { getS3FileUrl, getS3File } from '../utils/uploadS3.js';
 import { requireWorkspaceMember } from '../utils/workspaceAccessHelpers.js';
+import {
+  assertGeneratedDocumentKeyForWorkspace,
+  filenameFromObjectKey,
+  safeAttachmentFilename,
+} from '../utils/pdfFileDownloadHelpers.js';
 import { info, warn, error } from '../utils/logger.js';
 import { toRequiredQueryString } from '../utils/securityHelpers.js';
 
@@ -60,6 +65,61 @@ router.get('/download/:id', authenticateToken, async (req, res) => {
       pdfLinkId: req.params.id, error: err.message,
     }, req ?? null);
     return res.status(502).json({ message: 'Could not prepare the document for download' });
+  }
+});
+
+/**
+ * Stream a generated PDF through the API so the browser never fetches S3.
+ *
+ * Monthly Statement and Invoice Generator used to `fetch(presignedS3Url)` so
+ * they could attach a download filename. That fails without bucket CORS; the
+ * UI then fell back to opening the URL in a new tab ("Download failed, opened
+ * PDF in new tab instead."). This route reads the object server-side and
+ * returns the bytes with Content-Disposition, so the download works without
+ * any S3 CORS change.
+ *
+ * Body: { fileUrl, workspaceId, filename? }. Authenticated and workspace-
+ * scoped; the object key must sit under output/<workspaceId>/.
+ */
+router.post('/file', authenticateToken, async (req, res) => {
+  try {
+    const fileUrl = toRequiredQueryString(req.body?.fileUrl);
+    const workspaceId = toRequiredQueryString(req.body?.workspaceId);
+    if (!fileUrl || !workspaceId) {
+      return res.status(400).json({ message: 'fileUrl and workspaceId are required' });
+    }
+
+    if (!(await requireWorkspaceMember(req, res, workspaceId))) return;
+
+    const key = s3ObjectKeyFromUrl(fileUrl);
+    if (!assertGeneratedDocumentKeyForWorkspace(key, workspaceId)) {
+      return res.status(400).json({ message: 'Document does not belong to this workspace' });
+    }
+
+    const filename = safeAttachmentFilename(
+      toRequiredQueryString(req.body?.filename) || filenameFromObjectKey(key),
+    );
+
+    let bytes;
+    try {
+      bytes = await getS3File(key, GENERATED_DOCUMENT_PUBLIC_READ);
+    } catch (err) {
+      warn('PDFLink-Service', 'Generated document missing for proxy download', {
+        workspaceId, key, error: err.message,
+      }, req ?? null);
+      return res.status(404).json({ message: 'Document not found' });
+    }
+
+    info('PDFLink-Service', 'Streamed a generated document for download', {
+      workspaceId, key, filename, bytes: bytes.length,
+    }, req ?? null);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.status(200).send(bytes);
+  } catch (err) {
+    error('PDFLink-Service', 'Failed to stream generated document', { err }, req);
+    return res.status(500).json({ message: 'Could not download the document' });
   }
 });
 

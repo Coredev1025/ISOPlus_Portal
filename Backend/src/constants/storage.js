@@ -21,7 +21,7 @@
  * Touchpoints: services/automation/ndisInvoiceGeneratorPdf.js,
  * utils/webhookMonthlyStatementPdfHelpers.js,
  * utils/webhookParticipantTaxPdfHelpers.js, utils/webhookNdisPdfHandlers.js,
- * routes/webhook.js.
+ * routes/webhook.js, routes/pdfLink.js (POST /file streams via getS3File).
  */
 export const GENERATED_DOCUMENT_PUBLIC_READ = false;
 

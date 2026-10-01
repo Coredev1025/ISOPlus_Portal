@@ -1,7 +1,8 @@
 // The stored object key behind a document URL — the inverse of
-// utils/s3OutputKey.js's buildOutputKey, for the two places that have a URL and
-// need the object it points at: the SES backend, which attaches the bytes, and
-// the PDF download route, which re-signs a link that has expired.
+// utils/s3OutputKey.js's buildOutputKey, for the places that have a URL and
+// need the object it points at: the SES backend, which attaches the bytes, the
+// PDF re-sign redirect, and the same-origin file stream used by browser
+// downloads (POST /api/pdf-links/file).
 //
 // One implementation, because the two must agree: a key that reads back for the
 // email but not for the download (or the reverse) is a bug nobody would look

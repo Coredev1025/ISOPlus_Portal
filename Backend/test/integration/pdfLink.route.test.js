@@ -1,8 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import PDFLink from '../../src/models/PDFLink.js';
 import { authenticatedAgent } from '../helpers/auth.js';
+import { saveLocalFile } from '../../src/utils/localFileStore.js';
 
 const app = createApp();
 
@@ -151,5 +155,111 @@ describe('GET /api/pdf-links/download/:id', () => {
 
     expect(res.status).toBe(302);
     expect(res.headers.location).toContain('/api/local-files/');
+  });
+});
+
+/**
+ * Browser-side fetch(S3 URL) fails without bucket CORS. Monthly Statement and
+ * Invoice Generator therefore POST the stored fileUrl here; the API streams
+ * the bytes same-origin so the download attribute works without touching S3
+ * CORS configuration.
+ */
+describe('POST /api/pdf-links/file', () => {
+  const WS = 'ws-file-proxy';
+  const KEY = `output/${WS}/board-a/monthly-statements/Jane_January_2026_Statement.pdf`;
+  const PDF_BYTES = Buffer.from('%PDF-1.4 monthly-statement-proxy-test');
+  const saved = {};
+  let fileRoot;
+
+  beforeEach(async () => {
+    for (const key of ['ISOPLUS_OFFLINE', 'LOCAL_FILE_ROOT', 'JWT_SECRET', 'PERSONAL_ACCESS_TOKEN']) {
+      saved[key] = process.env[key];
+    }
+    process.env.JWT_SECRET = 'test-jwt-secret';
+    process.env.PERSONAL_ACCESS_TOKEN = 'test-pat';
+    process.env.ISOPLUS_OFFLINE = '1';
+    fileRoot = mkdtempSync(join(tmpdir(), 'pdf-link-file-'));
+    process.env.LOCAL_FILE_ROOT = fileRoot;
+    await saveLocalFile(KEY, PDF_BYTES);
+  });
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(fileRoot, { recursive: true, force: true });
+  });
+
+  it('requires a session', async () => {
+    const res = await request(app).post('/api/pdf-links/file').send({
+      fileUrl: `http://localhost:4001/api/local-files/${KEY}`,
+      workspaceId: WS,
+    });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('streams the PDF with an attachment disposition', async () => {
+    const { agent } = await authenticatedAgent(app, { role: 'support_admin' });
+
+    const res = await agent.post('/api/pdf-links/file').send({
+      fileUrl: `http://localhost:4001/api/local-files/${encodeURI(KEY).replace(/\+/g, '%2B')}`,
+      workspaceId: WS,
+      filename: 'Jane_January_2026_Statement.pdf',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/application\/pdf/);
+    expect(res.headers['content-disposition']).toBe(
+      'attachment; filename="Jane_January_2026_Statement.pdf"',
+    );
+    expect(Buffer.from(res.body).equals(PDF_BYTES)).toBe(true);
+  });
+
+  it('derives the filename from the object key when none is supplied', async () => {
+    const { agent } = await authenticatedAgent(app, { role: 'support_admin' });
+
+    const res = await agent.post('/api/pdf-links/file').send({
+      fileUrl: `http://localhost:4001/api/local-files/${KEY}`,
+      workspaceId: WS,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-disposition']).toBe(
+      'attachment; filename="Jane_January_2026_Statement.pdf"',
+    );
+  });
+
+  it('400s when fileUrl or workspaceId is missing', async () => {
+    const { agent } = await authenticatedAgent(app, { role: 'support_admin' });
+
+    expect((await agent.post('/api/pdf-links/file').send({ workspaceId: WS })).status).toBe(400);
+    expect((await agent.post('/api/pdf-links/file').send({
+      fileUrl: `http://localhost:4001/api/local-files/${KEY}`,
+    })).status).toBe(400);
+  });
+
+  it('400s when the URL key is not under the claimed workspace', async () => {
+    const { agent } = await authenticatedAgent(app, { role: 'support_admin' });
+
+    const res = await agent.post('/api/pdf-links/file').send({
+      fileUrl: 'http://localhost:4001/api/local-files/output/other-ws/board/x.pdf',
+      workspaceId: WS,
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/does not belong/i);
+  });
+
+  it('404s when the object is missing', async () => {
+    const { agent } = await authenticatedAgent(app, { role: 'support_admin' });
+
+    const res = await agent.post('/api/pdf-links/file').send({
+      fileUrl: `http://localhost:4001/api/local-files/output/${WS}/board-a/monthly-statements/missing.pdf`,
+      workspaceId: WS,
+    });
+
+    expect(res.status).toBe(404);
   });
 });

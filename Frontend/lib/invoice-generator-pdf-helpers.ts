@@ -1,20 +1,19 @@
 import type { AxiosInstance } from 'axios';
+import { downloadGeneratedPdfViaBackend } from '@/lib/pdf-download-helpers';
 
-export async function downloadInvoicePdf(fileUrl: string, invoiceNumber: string, participantName: string) {
-  const pdfResponse = await fetch(fileUrl);
-  const pdfBlob = await pdfResponse.blob();
-  const pdfUrl = URL.createObjectURL(pdfBlob);
-  const link = document.createElement('a');
-  link.href = pdfUrl;
-  link.download = `Invoice_${invoiceNumber}_${participantName.replace(/\s+/g, '_')}.pdf`;
-  link.style.display = 'none';
-  document.body.appendChild(link);
-  link.click();
-
-  setTimeout(() => {
-    document.body.removeChild(link);
-    URL.revokeObjectURL(pdfUrl);
-  }, 100);
+export async function downloadInvoicePdf(
+  fileUrl: string,
+  invoiceNumber: string,
+  participantName: string,
+  workspaceId: string,
+  axios: AxiosInstance,
+) {
+  await downloadGeneratedPdfViaBackend({
+    fileUrl,
+    filename: `Invoice_${invoiceNumber}_${participantName.replace(/\s+/g, '_')}.pdf`,
+    workspaceId,
+    axios,
+  });
 }
 
 export async function updateLegacyInvoiceStatuses({
@@ -99,7 +98,7 @@ export async function finalizePdfInvoiceGeneration({
 
   if (fileUrl) {
     try {
-      await downloadInvoicePdf(fileUrl, invoiceNumber, participantName);
+      await downloadInvoicePdf(fileUrl, invoiceNumber, participantName, id, axios);
     } catch (downloadErr) {
       console.error('Error downloading PDF:', downloadErr);
       window.open(fileUrl, '_blank');
