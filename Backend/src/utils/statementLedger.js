@@ -70,11 +70,21 @@ function parseAmount(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+/** Whether a payment carries a date the ledger can place it by. */
+const isDated = (payment) => !Number.isNaN(new Date(payment.date).getTime());
+
 /**
  * Every payment recorded against an invoice, one entry per service record.
  *
  * A record with no `invoicedBy` has never been billed, so money against it
  * cannot be applied to any invoice — it is skipped rather than guessed at.
+ *
+ * KAN-285: a record with an amount but no usable Payment Received Date is bad
+ * data and is skipped as well. The statement cannot say when that money
+ * arrived, so it must not reduce what the participant is shown as owing — and
+ * because every figure (charge rows, payment rows, closing balance, ageing)
+ * reads the payments collected here, leaving it out in one place leaves it out
+ * of all of them, so the ledger and the ageing still agree.
  */
 export function collectPayments(items) {
   const payments = [];
@@ -83,17 +93,11 @@ export function collectPayments(items) {
     if (!invoiceNumber) continue;
     const amount = roundMoney(parseAmount(readField(item, STATEMENT_AMOUNT_RECEIVED)));
     if (amount === 0) continue;
-    payments.push({
-      invoiceNumber,
-      amount,
-      date: readField(item, STATEMENT_PAYMENT_DATE),
-    });
+    const payment = { invoiceNumber, amount, date: readField(item, STATEMENT_PAYMENT_DATE) };
+    if (isDated(payment)) payments.push(payment);
   }
   return payments;
 }
-
-/** Whether a payment carries a date the ledger can place it by. */
-const isDated = (payment) => !Number.isNaN(new Date(payment.date).getTime());
 
 /**
  * Whether `value` is a usable date at or before `asAt`.
@@ -103,9 +107,9 @@ const isDated = (payment) => !Number.isNaN(new Date(payment.date).getTime());
  * line item regardless of which period it belongs to, so the only boundary
  * left is the one `asAtCutoff` already applies to ageing — a document raised
  * after the statement was struck is not on it, because it did not exist yet.
- * An unusable date is excluded rather than kept, unlike `asAtCutoff`: a
- * payment with no date must not get a row of its own here, it is netted onto
- * its invoice instead (see `chargeRows`).
+ * An unusable date is excluded rather than kept, unlike `asAtCutoff`. In
+ * practice a payment never reaches here without a date: `collectPayments`
+ * drops those (KAN-285).
  *
  * `tz` only affects a bare `YYYY-MM-DD` date (KAN-277) — see
  * `toComparableInstant`. A full ISO instant, which is what every other date
@@ -134,14 +138,13 @@ const paidAgainst = (payments, invoiceNumber) => roundMoney(
  * brand new invoice invisible on the very next statement, visible only in the
  * running balance and ageing figures.
  *
- * When payments cannot be dated, the payment is netted onto the charge row
- * rather than given a row of its own — see `buildStatementLedger`. In dated
- * mode the same happens to the individual payment that has no date: it takes
- * its invoice's date, because that is the earliest it can have been made and
- * the one date the ageing already knows it by.
+ * When the statement is not showing dated payment rows
+ * (`datedPayments: false`), each payment is netted onto its charge row rather
+ * than given a row of its own — see `buildStatementLedger`. A payment with no
+ * date never gets here: `collectPayments` leaves it out (KAN-285).
  */
 function chargeRows(invoices, payments, asAt, datedPayments, tz) {
-  const netted = datedPayments ? payments.filter((p) => !isDated(p)) : payments;
+  const netted = datedPayments ? [] : payments;
   return invoices
     .filter((inv) => raisedBy(inv.createdAt, asAt, tz))
     .map((inv, index) => ({
@@ -189,11 +192,11 @@ function paymentRows(payments, asAt, tz) {
  * against a closing balance of $400.50, which section 4.3's check rightly
  * refused to render.
  *
- * A payment with no usable date is kept, on its invoice's date: `chargeRows`
- * nets it onto the same invoice, and `openingBalanceBefore` counts it from the
- * same date, so the ledger and the ageing agree on it. They did not always —
- * kept here and dropped there, a single undated payment made section 4.3's
- * check throw, which failed the whole board's run.
+ * A payment with no usable date never reaches this point: `collectPayments`
+ * leaves it out (KAN-285), so the ledger and the ageing both work from the
+ * same set. When they did not — kept in one and dropped from the other — a
+ * single undated payment made section 4.3's check throw, which failed the
+ * whole board's run.
  */
 function asAtCutoff(invoices, payments, asAt, tz) {
   const at = new Date(asAt).getTime();
@@ -246,9 +249,8 @@ function outstandingByInvoice(invoices, payments) {
  *
  * The two must not be mixed. Netting a payment onto its charge row *and*
  * giving it a row of its own would count it twice, so the flag is threaded
- * through both row builders from one place. The one exception is a payment
- * with no date: dated mode has no row to give it, so it is netted onto its
- * invoice instead, and `paymentRows` never sees it.
+ * through both row builders from one place. A payment with no date is in
+ * neither: it is bad data and `collectPayments` leaves it out (KAN-285).
  */
 export function buildStatementLedger({
   invoices = [],

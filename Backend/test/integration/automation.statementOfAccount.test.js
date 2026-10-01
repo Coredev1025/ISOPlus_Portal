@@ -297,17 +297,19 @@ describe('a scheduled statement run, on untidy data', () => {
     expect(closingBalanceOf(rendered)).toBe('$150.00');
   });
 
-  // ISO+ lets the amount and the received date be entered separately.
-  it('still states the account when a payment has no received date', async () => {
+  // ISO+ lets the amount and the received date be entered separately. An
+  // amount with no Payment Received Date is bad data and is left off (KAN-285).
+  it('still states the account, without the payment, when a payment has no received date', async () => {
     await Item.updateOne({ itemId: 'item-1' }, { $unset: { 'data.Payment Received Date': '' } });
 
     await run();
 
     const rendered = statementRender();
     expect(rendered).toBeDefined();
-    // Netted onto the invoice's row rather than given a dated one.
+    // Only the invoice's row: the undated payment is neither netted onto it
+    // nor given a row of its own.
     expect(JSON.parse(rendered.transactions)).toHaveLength(1);
-    expect(closingBalanceOf(rendered)).toBe('$150.00');
+    expect(closingBalanceOf(rendered)).toBe('$250.00');
   });
 
   // Payments are read per board; the invoices must be too, or an invoice
