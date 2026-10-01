@@ -4,12 +4,13 @@ import PDFLink from '../models/PDFLink.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { GENERATED_DOCUMENT_PUBLIC_READ, GENERATED_PDF_URL_EXPIRY_SECONDS } from '../constants/storage.js';
 import { s3ObjectKeyFromUrl } from '../utils/s3ObjectKey.js';
-import { getS3FileUrl, getS3File } from '../utils/uploadS3.js';
+import { getS3FileUrl } from '../utils/uploadS3.js';
 import { requireWorkspaceMember } from '../utils/workspaceAccessHelpers.js';
 import {
   assertGeneratedDocumentKeyForWorkspace,
   filenameFromObjectKey,
-  safeAttachmentFilename,
+  contentDispositionAttachment,
+  readGeneratedDocumentBytes,
 } from '../utils/pdfFileDownloadHelpers.js';
 import { info, warn, error } from '../utils/logger.js';
 import { toRequiredQueryString } from '../utils/securityHelpers.js';
@@ -79,7 +80,10 @@ router.get('/download/:id', authenticateToken, async (req, res) => {
  * any S3 CORS change.
  *
  * Body: { fileUrl, workspaceId, filename? }. Authenticated and workspace-
- * scoped; the object key must sit under output/<workspaceId>/.
+ * scoped; the object key must sit under output/<workspaceId>/. Does not rename
+ * S3 keys. The client-supplied filename (origin Invoice_/Statement naming) is
+ * preserved via Content-Disposition filename*=; older public-bucket objects
+ * are still readable when the private lookup misses.
  */
 router.post('/file', authenticateToken, async (req, res) => {
   try {
@@ -96,13 +100,14 @@ router.post('/file', authenticateToken, async (req, res) => {
       return res.status(400).json({ message: 'Document does not belong to this workspace' });
     }
 
-    const filename = safeAttachmentFilename(
-      toRequiredQueryString(req.body?.filename) || filenameFromObjectKey(key),
-    );
+    // Keep the origin download name exactly as the client built it (e.g.
+    // Invoice_INV-14 (ISO+™)_Jane_Smith.pdf). Do not rewrite S3 keys.
+    const filename =
+      toRequiredQueryString(req.body?.filename) || filenameFromObjectKey(key);
 
     let bytes;
     try {
-      bytes = await getS3File(key, GENERATED_DOCUMENT_PUBLIC_READ);
+      bytes = await readGeneratedDocumentBytes(key, fileUrl);
     } catch (err) {
       warn('PDFLink-Service', 'Generated document missing for proxy download', {
         workspaceId, key, error: err.message,
@@ -115,7 +120,7 @@ router.post('/file', authenticateToken, async (req, res) => {
     }, req ?? null);
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Disposition', contentDispositionAttachment(filename));
     return res.status(200).send(bytes);
   } catch (err) {
     error('PDFLink-Service', 'Failed to stream generated document', { err }, req);

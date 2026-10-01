@@ -211,8 +211,8 @@ describe('POST /api/pdf-links/file', () => {
 
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/application\/pdf/);
-    expect(res.headers['content-disposition']).toBe(
-      'attachment; filename="Jane_January_2026_Statement.pdf"',
+    expect(res.headers['content-disposition']).toContain(
+      'filename="Jane_January_2026_Statement.pdf"',
     );
     expect(Buffer.from(res.body).equals(PDF_BYTES)).toBe(true);
   });
@@ -226,8 +226,8 @@ describe('POST /api/pdf-links/file', () => {
     });
 
     expect(res.status).toBe(200);
-    expect(res.headers['content-disposition']).toBe(
-      'attachment; filename="Jane_January_2026_Statement.pdf"',
+    expect(res.headers['content-disposition']).toContain(
+      'filename="Jane_January_2026_Statement.pdf"',
     );
   });
 
@@ -261,5 +261,50 @@ describe('POST /api/pdf-links/file', () => {
     });
 
     expect(res.status).toBe(404);
+  });
+
+  // Participant Tax Invoice numbers carry "(ISO+™)". Putting that trademark
+  // straight into Content-Disposition made Node throw ERR_INVALID_CHAR → 500
+  // → "Download failed, opened PDF in new tab instead."
+  it('streams successfully when the filename contains the ISO+ trademark', async () => {
+    const { agent } = await authenticatedAgent(app, { role: 'support_admin' });
+
+    const res = await agent.post('/api/pdf-links/file').send({
+      fileUrl: `http://localhost:4001/api/local-files/${KEY}`,
+      workspaceId: WS,
+      filename: 'Invoice_INV-14 (ISO+™)_Jane_Smith.pdf',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-disposition']).toContain(
+      'filename="Invoice_INV-14 (ISO+)_Jane_Smith.pdf"',
+    );
+    expect(decodeURIComponent(
+      res.headers['content-disposition'].split("filename*=UTF-8''")[1],
+    )).toBe('Invoice_INV-14 (ISO+™)_Jane_Smith.pdf');
+    expect(Buffer.from(res.body).equals(PDF_BYTES)).toBe(true);
+  });
+
+  // Production keys encode "+" and "™" in the path (ISO%2B%E2%84%A2). The
+  // proxy must decode back to the stored key or GetObject 404s.
+  it('resolves a presigned-style URL whose key encodes ISO+™', async () => {
+    const trademarkKey = `output/${WS}/board-a/Participant-invoices/INV-14-ISO+™-Jane-Smith.pdf`;
+    await saveLocalFile(trademarkKey, PDF_BYTES);
+    const { agent } = await authenticatedAgent(app, { role: 'support_admin' });
+
+    const encodedPath = trademarkKey
+      .split('/')
+      .map(encodeURIComponent)
+      .join('/');
+    const res = await agent.post('/api/pdf-links/file').send({
+      fileUrl:
+        `https://isoplus-portal-dev.s3.ap-southeast-2.amazonaws.com/${encodedPath}`
+        + '?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=deadbeef',
+      workspaceId: WS,
+      filename: 'Invoice_INV-14 (ISO+™)_Jane_Smith.pdf',
+    });
+
+    expect(res.status).toBe(200);
+    expect(Buffer.from(res.body).equals(PDF_BYTES)).toBe(true);
   });
 });

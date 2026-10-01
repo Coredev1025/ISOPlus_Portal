@@ -79,6 +79,17 @@ describe('downloadInvoicePdf', () => {
     expect(blob.size).toBe('%PDF-1.4 fake invoice'.length);
   });
 
+  it('keeps the ISO+™ invoice suffix in the download name (origin generate naming)', async () => {
+    const post = makeDownloadPost(true);
+
+    await downloadInvoicePdf(PDF_URL, 'INV-14 (ISO+™)', 'Jane Smith', 'ws-1', {
+      post,
+    } as unknown as AxiosInstance);
+
+    expect(post.mock.calls[0][1].filename).toBe('Invoice_INV-14 (ISO+™)_Jane_Smith.pdf');
+    expect(clicked[0].download).toBe('Invoice_INV-14 (ISO+™)_Jane_Smith.pdf');
+  });
+
   it('detaches the link and revokes the object URL after the download settles', async () => {
     const post = makeDownloadPost(true);
 
