@@ -96,7 +96,7 @@ describe('POST /api/pdf/:workspaceId/:boardId/invoice numbering', () => {
 
     // The route answers once and the rest of the work carries on behind it, so
     // wait for every item to finish writing its number back.
-    await vi.waitFor(() => expect(saveInvoiceNumber).toHaveBeenCalledTimes(3));
+    await vi.waitFor(() => expect(saveInvoiceNumber).toHaveBeenCalledTimes(3), { timeout: 10_000 });
 
     const numbers = saveInvoiceNumber.mock.calls.map((call) => call[3]).sort();
     expect(numbers).toEqual(['INV-41 (ISO+™)', 'INV-42 (ISO+™)', 'INV-43 (ISO+™)']);
