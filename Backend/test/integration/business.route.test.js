@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createApp } from '../../src/app.js';
 import Business from '../../src/models/Business.js';
 import ScheduledJob from '../../src/models/ScheduledJob.js';
 import { upsertSchedule, disableSchedule } from '../../src/services/scheduler/schedules.js';
 import { authenticatedAgent } from '../helpers/auth.js';
+import { claimDocumentNumber } from '../../src/utils/documentNumberAllocator.js';
 
 const app = createApp();
 
@@ -83,7 +84,9 @@ describe('Business routes', () => {
       );
 
     expect(res.status).toBe(200);
-    expect(res.body.documentNumbering.invoice.nextNumber).toBe(11);
+    // KAN-290: the next number is read-only through the form, so the 11 the page
+    // sent is ignored and the live counter (10) stays.
+    expect(res.body.documentNumbering.invoice.nextNumber).toBe(10);
     expect(res.body.documentNumbering.statementOfAccount).toEqual({
       prefix: 'SOA-',
       nextNumber: 27,
@@ -108,7 +111,138 @@ describe('Business routes', () => {
     expect(stored.bankDetails.bsb).toBe('062000');
   });
 
-  it('persists statementOfAccount when it is included in documentNumbering', async () => {
+  // KAN-290. The numbering sequence is read-only through the profile form: a
+  // save may change a prefix but never a counter. Before, the route read the
+  // business, merged the stored numbering with what the page sent, and wrote the
+  // WHOLE numbering object back, so a number claimed between the read and the
+  // write was overwritten with the old value and later invoices reused issued
+  // numbers.
+  it('does not wind back a counter that moves between reading the profile and saving it', async () => {
+    await Business.create({
+      workspaceId: 'ws-counter-race',
+      name: 'Race Co',
+      documentNumbering: {
+        invoice: { prefix: 'INV-', nextNumber: 41 },
+        quote: { prefix: 'QT-', nextNumber: 30 },
+      },
+    });
+    const original = Business.findOne.bind(Business);
+    const spy = vi.spyOn(Business, 'findOne').mockImplementation(async (...args) => {
+      const doc = await original(...args);
+      // Invoices are issued after the route has read the profile (the logo
+      // handling between the read and the write makes this window real).
+      if (doc?.workspaceId === 'ws-counter-race') {
+        await Business.updateOne(
+          { _id: doc._id },
+          { $set: { 'documentNumbering.invoice.nextNumber': 46 } },
+        );
+      }
+      return doc;
+    });
+
+    try {
+      const { agent } = await authenticatedAgent(app);
+      const res = await agent
+        .put('/api/business/profile')
+        .field('name', 'Race Co')
+        .field('workspaceId', 'ws-counter-race')
+        .field('documentNumbering', JSON.stringify({
+          invoice: { prefix: 'INV-', nextNumber: 41 },
+          quote: { prefix: 'QUO-', nextNumber: 31 },
+        }));
+      expect(res.status).toBe(200);
+    } finally {
+      spy.mockRestore();
+    }
+
+    const stored = await Business.findOne({ workspaceId: 'ws-counter-race' }).lean();
+    // The invoice counter kept the value the live system gave it.
+    expect(stored.documentNumbering.invoice.nextNumber).toBe(46);
+    // A prefix can still change; the quote counter was not taken from the page.
+    expect(stored.documentNumbering.quote).toMatchObject({ prefix: 'QUO-', nextNumber: 30 });
+  });
+
+  it('ignores a next number sent for an existing business, for every series', async () => {
+    await Business.create({
+      workspaceId: 'ws-counter-readonly',
+      name: 'Readonly Co',
+      documentNumbering: {
+        invoice: { prefix: 'INV-', nextNumber: 46 },
+        purchaseOrder: { prefix: 'PO-', nextNumber: 20 },
+        quote: { prefix: 'QT-', nextNumber: 30 },
+        statementOfAccount: { prefix: 'SOA-', nextNumber: 27 },
+      },
+    });
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent
+      .put('/api/business/profile')
+      .field('name', 'Readonly Co')
+      .field('workspaceId', 'ws-counter-readonly')
+      .field('documentNumbering', JSON.stringify({
+        invoice: { prefix: 'INV-', nextNumber: 1 },
+        purchaseOrder: { prefix: 'PO-', nextNumber: 1 },
+        quote: { prefix: 'QT-', nextNumber: 1 },
+        statementOfAccount: { prefix: 'SOA-', nextNumber: 1000 },
+      }));
+
+    expect(res.status).toBe(200);
+    expect(res.body.documentNumbering.invoice.nextNumber).toBe(46);
+    expect(res.body.documentNumbering.purchaseOrder.nextNumber).toBe(20);
+    expect(res.body.documentNumbering.quote.nextNumber).toBe(30);
+    expect(res.body.documentNumbering.statementOfAccount.nextNumber).toBe(27);
+  });
+
+  // KAN-290 / KAN-292. A new workspace starts every counter at 1, automatically.
+  // The numbering sequence is read-only, so a starting number cannot be chosen
+  // through the profile save either: prefixes are taken, counters are not.
+  it('starts every counter at 1 for a brand-new workspace, whatever the request sends', async () => {
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent
+      .put('/api/business/profile')
+      .field('name', 'Brand New Co')
+      .field('workspaceId', 'ws-counter-new')
+      .field('documentNumbering', JSON.stringify({
+        invoice: { prefix: 'TAX-', nextNumber: 1000 },
+        purchaseOrder: { prefix: 'PO-', nextNumber: 500 },
+        quote: { prefix: 'QT-', nextNumber: 42 },
+        statementOfAccount: { prefix: 'SOA-', nextNumber: 77 },
+      }));
+
+    expect(res.status).toBe(200);
+    const stored = await Business.findOne({ workspaceId: 'ws-counter-new' }).lean();
+    expect(stored.documentNumbering.invoice).toEqual({ prefix: 'TAX-', nextNumber: 1 });
+    expect(stored.documentNumbering.purchaseOrder.nextNumber).toBe(1);
+    expect(stored.documentNumbering.quote.nextNumber).toBe(1);
+    expect(stored.documentNumbering.statementOfAccount.nextNumber).toBe(1);
+    expect(stored.documentNumbering.statement.nextNumber).toBe(1);
+  });
+
+  it('starts at 1 when the new workspace\'s request sends no numbering at all', async () => {
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent
+      .put('/api/business/profile')
+      .field('name', 'No Numbering Co')
+      .field('workspaceId', 'ws-counter-none');
+
+    expect(res.status).toBe(200);
+    const stored = await Business.findOne({ workspaceId: 'ws-counter-none' }).lean();
+    expect(stored.documentNumbering.invoice).toEqual({ prefix: 'INV-', nextNumber: 1 });
+    expect(stored.documentNumbering.statementOfAccount.nextNumber).toBe(1);
+  });
+
+  it('issues INV-1 then INV-2 as the first invoice numbers of a brand-new workspace', async () => {
+    const { agent } = await authenticatedAgent(app);
+    await agent
+      .put('/api/business/profile')
+      .field('name', 'First Invoice Co')
+      .field('workspaceId', 'ws-counter-first')
+      .field('documentNumbering', JSON.stringify({ invoice: { prefix: 'INV-', nextNumber: 900 } }));
+
+    expect(await claimDocumentNumber('ws-counter-first', 'invoice')).toBe('INV-1');
+    expect(await claimDocumentNumber('ws-counter-first', 'invoice')).toBe('INV-2');
+  });
+
+  it('applies the statementOfAccount prefix but not its next number (KAN-290)', async () => {
     await Business.create({
       workspaceId: 'ws-soa-set',
       name: 'SOA Set Co',
@@ -128,12 +262,12 @@ describe('Business routes', () => {
           purchaseOrder: { prefix: 'PO-', nextNumber: 1 },
           quote: { prefix: 'QT-', nextNumber: 1 },
           statement: { prefix: 'STM-', nextNumber: 1 },
-          statementOfAccount: { prefix: 'SOA-', nextNumber: 27 },
+          statementOfAccount: { prefix: 'SOAC-', nextNumber: 27 },
         })
       );
 
     expect(res.status).toBe(200);
-    expect(res.body.documentNumbering.statementOfAccount.nextNumber).toBe(27);
+    expect(res.body.documentNumbering.statementOfAccount).toEqual({ prefix: 'SOAC-', nextNumber: 1 });
   });
 
   it('does not expose POST /api/business/xero/connect', async () => {

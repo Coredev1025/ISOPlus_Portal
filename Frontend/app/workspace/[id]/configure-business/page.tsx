@@ -524,9 +524,9 @@ export default function ConfigureBusinessPage() {
         invoice: invoiceSequence,
         purchaseOrder: purchaseOrderSequence,
         quote: quoteSequence,
-        // Omit statement (STM-): this page does not edit it. mergeDocumentNumbering
-        // keeps the live monthly-statement automation counter. Sending clone
-        // defaults would overwrite nextNumber (e.g. 1000 → 1).
+        // Omit statement (STM-): this page does not edit it. The server never
+        // takes a nextNumber from this form for an existing business (KAN-290),
+        // so the live counters are untouched.
         statementOfAccount: statementOfAccountSequence,
       }));
 

@@ -60,4 +60,31 @@ test.describe("business configuration logos", () => {
       ),
     ).toBeVisible();
   });
+
+  // KAN-290: the numbering sequence is read-only. The next number of each
+  // document type is shown, grayed out, and cannot be edited; a counter is
+  // advanced only by the generators that issue the numbers.
+  test("Finance Settings shows the document next numbers read-only", async ({
+    page,
+  }) => {
+    await page.goto(`/workspace/${WORKSPACE}/finance-settings?tab=financial`);
+    await expect(
+      page.getByRole("heading", { name: "Document Number Configuration" }),
+    ).toBeVisible();
+
+    for (const id of [
+      "invoice-next",
+      "po-next",
+      "quote-next",
+      "statement-of-account-next",
+    ]) {
+      const next = page.locator(`#${id}`);
+      await expect(next).toBeVisible();
+      await expect(next).toBeDisabled();
+      await expect(next).toHaveAttribute("readonly", "");
+    }
+
+    // The prefix next to it is still editable.
+    await expect(page.locator("#invoice-prefix")).toBeEditable();
+  });
 });

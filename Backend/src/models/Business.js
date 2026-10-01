@@ -158,8 +158,9 @@ const businessSchema = new mongoose.Schema({
       }
     },
     // Monthly budget statements claim this series (STM-). Hidden from Finance /
-    // Business Settings UIs. Clients omit it on PUT; mergeDocumentNumbering
-    // keeps the stored counter. SOA uses statementOfAccount below.
+    // Business Settings UIs. Clients omit it on PUT, and a profile save never
+    // writes a nextNumber for an existing business (KAN-290). SOA uses
+    // statementOfAccount below.
     statement: {
       prefix: {
         type: String,

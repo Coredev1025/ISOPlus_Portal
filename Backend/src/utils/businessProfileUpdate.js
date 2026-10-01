@@ -1,6 +1,7 @@
 import path from 'path';
 import { deleteFileFromS3, uploadFileToS3 } from './uploadS3.js';
 import { setLogo } from '../services/isoplus.js';
+import { DOCUMENT_SERIES } from '../constants/documentNumbering.js';
 
 const LOGO_UPLOADS = [
   { field: 'defaultLogo', pathPrefix: 'default-logo', syncToIsoplus: null },
@@ -76,6 +77,53 @@ export function mergeDocumentNumbering(existing, incoming = {}) {
   const plain =
     typeof existing.toObject === 'function' ? existing.toObject() : existing;
   return { ...plain, ...incoming };
+}
+
+/**
+ * The numbering fields a profile save may write for an EXISTING business: each
+ * series' prefix, as its own database path, and nothing else.
+ *
+ * KAN-290: the numbering sequence is read-only through the profile form. A
+ * counter is advanced only by the generators that issue the numbers; invoices,
+ * statements and statements of account claim theirs atomically (quotes and
+ * purchase orders still read-then-increment, see KAN-291). The save used to
+ * read the business, merge the stored
+ * numbering with whatever the page sent, and write the whole object back; a page
+ * opened before invoices were issued then wound the counter back to the number
+ * it had loaded, and later invoices reused numbers already on issued invoices.
+ * A `nextNumber` in the request is therefore ignored here, and writing each
+ * prefix on its own path means a counter that moved while the save was in
+ * flight is never rewritten.
+ *
+ * (A brand-new business takes its prefixes only and starts every counter at 1:
+ * see documentNumberingForNewBusiness and the create branch in routes/business.js.)
+ */
+export function documentNumberingSetPaths(incoming) {
+  const paths = {};
+  if (!incoming || typeof incoming !== 'object') return paths;
+  for (const series of DOCUMENT_SERIES) {
+    const fields = incoming[series];
+    if (!fields || typeof fields !== 'object' || Array.isArray(fields)) continue;
+    if (fields.prefix !== undefined) {
+      paths[`documentNumbering.${series}.prefix`] = fields.prefix;
+    }
+  }
+  return paths;
+}
+
+/**
+ * The numbering a BRAND-NEW business is created with: each series' prefix, and no
+ * counter. The schema default of 1 then applies, so every new workspace starts
+ * every series at 1 automatically (KAN-290, KAN-292). The numbering sequence is
+ * read-only, so a starting number cannot be chosen at creation either.
+ */
+export function documentNumberingForNewBusiness(incoming) {
+  const numbering = {};
+  for (const [series, fields] of Object.entries(documentNumberingSetPaths(incoming))) {
+    const [, name] = series.split('.');
+    numbering[name] = { prefix: fields };
+  }
+  return numbering;
 }
 
 /** Drop undefined entries so findByIdAndUpdate does not persist empty nests as {}. */
