@@ -18,7 +18,8 @@ export const DEFAULT_DOCUMENT_NEXT_NUMBER = 1;
  * The numbering series a business has. A profile save writes a series by name
  * into a database path, so only these names are accepted (KAN-290).
  *
- * Touchpoints: utils/businessProfileUpdate.js (documentNumberingSetPaths).
+ * Touchpoints: utils/businessProfileUpdate.js (documentNumberingSetPaths,
+ * documentNumberingForNewBusiness).
  */
 export const DOCUMENT_SERIES = [
   'invoice',

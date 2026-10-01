@@ -17,6 +17,7 @@ import {
   buildBusinessUpdateData,
   mergeDocumentNumbering,
   documentNumberingSetPaths,
+  documentNumberingForNewBusiness,
   parseLogoRemovals,
 } from '../../../src/utils/businessProfileUpdate.js';
 
@@ -447,5 +448,33 @@ describe('documentNumberingSetPaths', () => {
     expect(
       documentNumberingSetPaths({ invoice: { prefix: 'INV-', nextNumber: 9, $set: { x: 1 }, other: 2 } }),
     ).toEqual({ 'documentNumbering.invoice.prefix': 'INV-' });
+  });
+});
+
+// KAN-290 / KAN-292: a new workspace starts every counter at 1. The request may
+// choose prefixes; it cannot choose a starting number.
+describe('documentNumberingForNewBusiness', () => {
+  it('keeps each prefix and drops every nextNumber, so the schema default of 1 applies', () => {
+    expect(
+      documentNumberingForNewBusiness({
+        invoice: { prefix: 'TAX-', nextNumber: 1000 },
+        quote: { prefix: 'QT-', nextNumber: 5 },
+      }),
+    ).toEqual({
+      invoice: { prefix: 'TAX-' },
+      quote: { prefix: 'QT-' },
+    });
+  });
+
+  it('gives nothing for a series with only a number, or for no numbering at all', () => {
+    expect(documentNumberingForNewBusiness({ invoice: { nextNumber: 9 } })).toEqual({});
+    expect(documentNumberingForNewBusiness(undefined)).toEqual({});
+    expect(documentNumberingForNewBusiness({})).toEqual({});
+  });
+
+  it('only accepts known series names', () => {
+    expect(
+      documentNumberingForNewBusiness({ notASeries: { prefix: 'X-' }, quote: { prefix: 'QT-' } }),
+    ).toEqual({ quote: { prefix: 'QT-' } });
   });
 });

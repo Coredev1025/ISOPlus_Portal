@@ -4,6 +4,7 @@ import Business from '../../src/models/Business.js';
 import ScheduledJob from '../../src/models/ScheduledJob.js';
 import { upsertSchedule, disableSchedule } from '../../src/services/scheduler/schedules.js';
 import { authenticatedAgent } from '../helpers/auth.js';
+import { claimDocumentNumber } from '../../src/utils/documentNumberAllocator.js';
 
 const app = createApp();
 
@@ -191,7 +192,10 @@ describe('Business routes', () => {
     expect(res.body.documentNumbering.statementOfAccount.nextNumber).toBe(27);
   });
 
-  it('still takes the starting numbers when a new business is created', async () => {
+  // KAN-290 / KAN-292. A new workspace starts every counter at 1, automatically.
+  // The numbering sequence is read-only, so a starting number cannot be chosen
+  // through the profile save either: prefixes are taken, counters are not.
+  it('starts every counter at 1 for a brand-new workspace, whatever the request sends', async () => {
     const { agent } = await authenticatedAgent(app);
     const res = await agent
       .put('/api/business/profile')
@@ -199,11 +203,43 @@ describe('Business routes', () => {
       .field('workspaceId', 'ws-counter-new')
       .field('documentNumbering', JSON.stringify({
         invoice: { prefix: 'TAX-', nextNumber: 1000 },
+        purchaseOrder: { prefix: 'PO-', nextNumber: 500 },
+        quote: { prefix: 'QT-', nextNumber: 42 },
+        statementOfAccount: { prefix: 'SOA-', nextNumber: 77 },
       }));
 
     expect(res.status).toBe(200);
     const stored = await Business.findOne({ workspaceId: 'ws-counter-new' }).lean();
-    expect(stored.documentNumbering.invoice).toMatchObject({ prefix: 'TAX-', nextNumber: 1000 });
+    expect(stored.documentNumbering.invoice).toEqual({ prefix: 'TAX-', nextNumber: 1 });
+    expect(stored.documentNumbering.purchaseOrder.nextNumber).toBe(1);
+    expect(stored.documentNumbering.quote.nextNumber).toBe(1);
+    expect(stored.documentNumbering.statementOfAccount.nextNumber).toBe(1);
+    expect(stored.documentNumbering.statement.nextNumber).toBe(1);
+  });
+
+  it('starts at 1 when the new workspace\'s request sends no numbering at all', async () => {
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent
+      .put('/api/business/profile')
+      .field('name', 'No Numbering Co')
+      .field('workspaceId', 'ws-counter-none');
+
+    expect(res.status).toBe(200);
+    const stored = await Business.findOne({ workspaceId: 'ws-counter-none' }).lean();
+    expect(stored.documentNumbering.invoice).toEqual({ prefix: 'INV-', nextNumber: 1 });
+    expect(stored.documentNumbering.statementOfAccount.nextNumber).toBe(1);
+  });
+
+  it('issues INV-1 then INV-2 as the first invoice numbers of a brand-new workspace', async () => {
+    const { agent } = await authenticatedAgent(app);
+    await agent
+      .put('/api/business/profile')
+      .field('name', 'First Invoice Co')
+      .field('workspaceId', 'ws-counter-first')
+      .field('documentNumbering', JSON.stringify({ invoice: { prefix: 'INV-', nextNumber: 900 } }));
+
+    expect(await claimDocumentNumber('ws-counter-first', 'invoice')).toBe('INV-1');
+    expect(await claimDocumentNumber('ws-counter-first', 'invoice')).toBe('INV-2');
   });
 
   it('applies the statementOfAccount prefix but not its next number (KAN-290)', async () => {

@@ -95,8 +95,8 @@ export function mergeDocumentNumbering(existing, incoming = {}) {
  * prefix on its own path means a counter that moved while the save was in
  * flight is never rewritten.
  *
- * (A brand-new business takes its starting numbers as sent: nothing has been
- * issued yet. See the create branch in routes/business.js.)
+ * (A brand-new business takes its prefixes only and starts every counter at 1:
+ * see documentNumberingForNewBusiness and the create branch in routes/business.js.)
  */
 export function documentNumberingSetPaths(incoming) {
   const paths = {};
@@ -109,6 +109,21 @@ export function documentNumberingSetPaths(incoming) {
     }
   }
   return paths;
+}
+
+/**
+ * The numbering a BRAND-NEW business is created with: each series' prefix, and no
+ * counter. The schema default of 1 then applies, so every new workspace starts
+ * every series at 1 automatically (KAN-290, KAN-292). The numbering sequence is
+ * read-only, so a starting number cannot be chosen at creation either.
+ */
+export function documentNumberingForNewBusiness(incoming) {
+  const numbering = {};
+  for (const [series, fields] of Object.entries(documentNumberingSetPaths(incoming))) {
+    const [, name] = series.split('.');
+    numbering[name] = { prefix: fields };
+  }
+  return numbering;
 }
 
 /** Drop undefined entries so findByIdAndUpdate does not persist empty nests as {}. */

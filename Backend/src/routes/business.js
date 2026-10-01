@@ -22,6 +22,7 @@ import { toRequiredQueryString } from '../utils/securityHelpers.js';
 import {
   applyBusinessLogoUpdates,
   buildBusinessUpdateData,
+  documentNumberingForNewBusiness,
   documentNumberingSetPaths,
   parseLogoRemovals,
 } from '../utils/businessProfileUpdate.js';
@@ -204,7 +205,8 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
     // KAN-290: the numbering sequence is read-only here. An existing business
     // takes only its series prefixes, each on its own path; the counters are
     // advanced by the generators that issue the numbers and are never taken from
-    // the form. A brand-new business takes its starting numbers as sent, below.
+    // the form. A brand-new business takes its prefixes and starts every counter
+    // at 1 (below).
     const updateData = buildBusinessUpdateData({
       ...req.body,
       workspaceId,
@@ -244,7 +246,10 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
         success: true
       });
     } else {
-      business = new Business({ ...updateData, documentNumbering: { ...incomingNumbering } });
+      business = new Business({
+        ...updateData,
+        documentNumbering: documentNumberingForNewBusiness(incomingNumbering),
+      });
       await business.save();
       info('Business-Service', 'New Business profile created', { businessName: business.name }, req ?? null);
       await logAuditTrail({
