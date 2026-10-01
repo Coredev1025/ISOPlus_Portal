@@ -389,7 +389,7 @@ describe('configure business page', () => {
 
     expect(
       within(wideCol!).getByText(
-        'Maximum file size: 1 MB. Recommended dimensions: 820 × 312 px, with the logo centred within the middle third of the image.',
+        'Recommended dimensions: 820 × 312 px, with the logo centred within the middle third of the image. Maximum file size: 1 MB',
       ),
     ).toBeInTheDocument();
     expect(
