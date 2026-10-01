@@ -22,7 +22,7 @@ import { toRequiredQueryString } from '../utils/securityHelpers.js';
 import {
   applyBusinessLogoUpdates,
   buildBusinessUpdateData,
-  mergeDocumentNumbering,
+  documentNumberingSetPaths,
   parseLogoRemovals,
 } from '../utils/businessProfileUpdate.js';
 import { repointWorkspaceSchedules } from '../services/scheduler/schedules.js';
@@ -201,15 +201,17 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
     }
 
     let business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
-    const documentNumbering = mergeDocumentNumbering(
-      business?.documentNumbering,
-      incomingNumbering
-    );
+    // KAN-290: the numbering sequence is read-only here. An existing business
+    // takes only its series prefixes, each on its own path; the counters are
+    // advanced by the generators that issue the numbers and are never taken from
+    // the form. A brand-new business takes its starting numbers as sent, below.
     const updateData = buildBusinessUpdateData({
       ...req.body,
       workspaceId,
-      documentNumbering,
+      // The request carries the numbering as a JSON string; it is applied below.
+      documentNumbering: undefined,
     });
+    if (business) Object.assign(updateData, documentNumberingSetPaths(incomingNumbering));
 
     const logoUpdates = await applyBusinessLogoUpdates({
       workspaceId,
@@ -242,7 +244,7 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
         success: true
       });
     } else {
-      business = new Business(updateData);
+      business = new Business({ ...updateData, documentNumbering: { ...incomingNumbering } });
       await business.save();
       info('Business-Service', 'New Business profile created', { businessName: business.name }, req ?? null);
       await logAuditTrail({
