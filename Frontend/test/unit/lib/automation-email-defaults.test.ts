@@ -108,6 +108,14 @@ describe("the default copy itself", () => {
     expect(DEFAULT_EMAIL_MESSAGE.statement).toContain("<p>Account Receivable Team</p>");
   });
 
+  // KAN-283: both defaults close with the same sign-off, each line its own
+  // paragraph because the editor is rich text.
+  it("ends both defaults with the Account Receivable Team and business name sign-off", () => {
+    const signOff = "<p>Kind regards,</p><p>Account Receivable Team</p><p>{{business_name}}</p>";
+    expect(DEFAULT_EMAIL_MESSAGE.invoice.endsWith(signOff)).toBe(true);
+    expect(DEFAULT_EMAIL_MESSAGE.statement.endsWith(signOff)).toBe(true);
+  });
+
   it("says a statement raises no new charges, so it does not read as a second bill", () => {
     expect(DEFAULT_EMAIL_MESSAGE.statement).toContain("not a tax invoice");
     expect(DEFAULT_EMAIL_MESSAGE.statement).toContain("does not raise any new charges");
