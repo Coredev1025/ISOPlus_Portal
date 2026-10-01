@@ -46,6 +46,9 @@ async function searchSyncedBoardsForItem(itemId) {
   if (!safeItemId) return null;
 
   const boards = await Board.find({ syncData: true }).select('workspaceId boardId currentSyncGUID').lean();
+  // A 404 from one board means the item is not on THAT board; it says nothing
+  // about the others. Only when no board has it do we report it as deleted.
+  let notFoundOn = null;
   for (const board of boards) {
     if (!board.workspaceId || !board.boardId) continue;
     try {
@@ -55,7 +58,8 @@ async function searchSyncedBoardsForItem(itemId) {
         safeItemId,
       );
       if (itemData === ITEM_DELETED) {
-        return { itemDeletedInIsoPlus: true, foundBoardId: board.boardId, foundWorkspaceId: board.workspaceId };
+        notFoundOn = notFoundOn ?? board;
+        continue;
       }
       if (itemData) {
         return {
@@ -68,6 +72,13 @@ async function searchSyncedBoardsForItem(itemId) {
     } catch {
       continue;
     }
+  }
+  if (notFoundOn) {
+    return {
+      itemDeletedInIsoPlus: true,
+      foundBoardId: notFoundOn.boardId,
+      foundWorkspaceId: notFoundOn.workspaceId,
+    };
   }
   return null;
 }
