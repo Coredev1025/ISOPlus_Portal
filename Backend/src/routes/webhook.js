@@ -33,6 +33,7 @@ import {
     OUTPUT_TYPE,
 } from '../constants/storage.js';
 import { buildOutputKey } from '../utils/s3OutputKey.js';
+import { claimInvoiceNumber } from '../utils/documentNumberAllocator.js';
 
 import {
     enrichNumericAggregateFields,
@@ -1338,7 +1339,6 @@ async function processWebhookInvoiceItem(req, res, workspaceId, boardId, busines
     enableRepeatHeadOnTables(template);
 
     const logoBase64 = await getLogoData(business);
-    const invoiceNumber = business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
     const invoiceValues = item.values;
     const invoiceDate = invoiceValues['Issue Date'] ? invoiceValues['Issue Date'].replace('Z', '') : '';
     const dueDate = invoiceValues['Due Date'] ? invoiceValues['Due Date'].replace('Z', '') : '';
@@ -1349,6 +1349,12 @@ async function processWebhookInvoiceItem(req, res, workspaceId, boardId, busines
     const subTotal = formatValue(subTotalRaw);
     const gstTotal = formatValue((subTotal * parseFloat(gst) / 100));
     const total = formatValue(parseFloat(subTotal) + parseFloat(gstTotal));
+
+    // Claimed here, just before the number is first used. Items in one request
+    // run at the same time against one shared `business`, so reading its counter
+    // gave every one of them the same number (KAN-288); the claim is a single
+    // database operation.
+    const invoiceNumber = await claimInvoiceNumber(workspaceId);
 
     const clientDetails = {
         Address: contactValues.address,
@@ -1410,8 +1416,6 @@ async function processWebhookInvoiceItem(req, res, workspaceId, boardId, busines
     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'Invoice', req, res);
     await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
     await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);
-    business.documentNumbering.invoice.nextNumber += 1;
-    await business.save();
 }
 
 router.post('/:workspaceId/:boardId/invoice', async (req, res) => {

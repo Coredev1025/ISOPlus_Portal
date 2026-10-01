@@ -25,6 +25,7 @@ import {
   OUTPUT_TYPE,
 } from '../constants/storage.js';
 import { buildOutputKey } from '../utils/s3OutputKey.js';
+import { claimInvoiceNumber } from '../utils/documentNumberAllocator.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -172,7 +173,6 @@ export async function processWebhookNdisInvoicePdfItem({
     enableRepeatHeadOnTables(template);
 
     const logoBase64 = await getLogoData(business);
-    const invoiceNumber = business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
     const invoiceValues = item.values;
     const invoiceDate = invoiceValues['Invoice Date'] ? invoiceValues['Invoice Date'].replace('Z', '') : '';
     const dueDate = invoiceValues['Due Date'] ? invoiceValues['Due Date'].replace('Z', '') : '';
@@ -206,6 +206,12 @@ export async function processWebhookNdisInvoicePdfItem({
     subTotal = formatValue(subTotal);
     const gstTotal = formatValue((parseFloat(subTotal) * parseFloat(gst)) / 100);
     const total = formatValue(parseFloat(subTotal) + parseFloat(gstTotal));
+
+    // Claimed here, once there is something to invoice and just before the
+    // number is first used. Items in one request run at the same time against
+    // one shared `business`, so reading its counter here gave every one of them
+    // the same number (KAN-288); the claim is a single database operation.
+    const invoiceNumber = await claimInvoiceNumber(workspaceId);
 
     const participantProfileItemForPdf = await fetchParticipantProfileItemForMasterPlan(workspaceId, boardId, item.id);
     const clientDetails = buildNdisInvoicePdfClientDetails({
@@ -276,8 +282,6 @@ export async function processWebhookNdisInvoicePdfItem({
     });
     await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
     await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);
-    business.documentNumbering.invoice.nextNumber += 1;
-    await business.save();
   } catch (err) {
     await handlePDFError(err, workspaceId, boardId, item.id, 'Generate PDF NDIS Invoice', req, res);
   }

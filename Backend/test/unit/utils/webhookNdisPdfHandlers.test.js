@@ -21,6 +21,7 @@ const { generate } = await import('@pdfme/generator');
 const isoplus = await import('../../../src/services/isoplus.js');
 const { buildNdisMasterPlanInvoiceLines } = await import('../../../src/utils/ndisMasterPlanLineHelpers.js');
 const Item = (await import('../../../src/models/Item.js')).default;
+const Business = (await import('../../../src/models/Business.js')).default;
 
 const {
   processWebhookNdisQuotePdfItem,
@@ -305,7 +306,52 @@ const MASTER_PLAN_REFS = [
   { fullName: 'Jane Roe', firstName: 'Jane', lastName: 'Roe', email: 'jane@example.com' },
 ];
 
+/**
+ * The invoice counter lives on the Business document and is claimed atomically
+ * (KAN-288). The business object the route hands the handler is only a copy for
+ * the letterhead and bank details; the number comes from the database.
+ */
+async function seedInvoiceCounter(nextNumber = 41) {
+  await Business.create({
+    workspaceId: 'ws_1',
+    name: 'Hills Grade Care',
+    documentNumbering: {
+      quote: { prefix: 'QT-', nextNumber: 7 },
+      invoice: { prefix: 'INV-', nextNumber },
+    },
+  });
+}
+
+const storedInvoiceCounter = async () => (
+  await Business.findOne({ workspaceId: 'ws_1' }).lean()
+).documentNumbering.invoice.nextNumber;
+
 describe('processWebhookNdisInvoicePdfItem', () => {
+  beforeEach(async () => { await seedInvoiceCounter(41); });
+
+  // KAN-288. The route fetches the business once and then runs every item in the
+  // request at the same time, so each of them used to read the same counter and
+  // put the same number on a different invoice.
+  it('gives each item processed at the same time its own invoice number', async () => {
+    isoplus.getNDISMasterPlanReferencedItems.mockResolvedValue(MASTER_PLAN_REFS);
+    buildNdisMasterPlanInvoiceLines.mockResolvedValue(NDIS_LINES);
+    const business = makeBusiness(); // one object, shared, as the route does
+    const first = makeHandlerArgs();
+    const second = makeHandlerArgs();
+    const third = makeHandlerArgs();
+
+    await Promise.all([
+      processWebhookNdisInvoicePdfItem({ ...first, business, item: invoiceItem({ id: 'itm_a' }) }),
+      processWebhookNdisInvoicePdfItem({ ...second, business, item: invoiceItem({ id: 'itm_b' }) }),
+      processWebhookNdisInvoicePdfItem({ ...third, business, item: invoiceItem({ id: 'itm_c' }) }),
+    ]);
+
+    const numbers = [first, second, third].map((args) => args.saveInvoiceNumber.mock.calls[0][3]);
+    expect([...numbers].sort()).toEqual(['INV-41 (ISO+™)', 'INV-42 (ISO+™)', 'INV-43 (ISO+™)']);
+    expect(new Set(numbers).size).toBe(3);
+    expect(await storedInvoiceCounter()).toBe(44);
+  });
+
   it('renders, uploads and records an NDIS invoice PDF', async () => {
     isoplus.getNDISMasterPlanReferencedItems.mockResolvedValue(MASTER_PLAN_REFS);
     buildNdisMasterPlanInvoiceLines.mockResolvedValue(NDIS_LINES);
@@ -374,8 +420,10 @@ describe('processWebhookNdisInvoicePdfItem', () => {
     expect(args.saveInvoiceNumber).toHaveBeenCalledWith(
       'ws_1', 'bd_1', 'itm_master_1', 'INV-41 (ISO+™)', 'PDF', 'https://s3.example.com/signed.pdf',
     );
-    expect(business.documentNumbering.invoice.nextNumber).toBe(42);
-    expect(business.save).toHaveBeenCalledTimes(1);
+    // The counter is claimed in the database (KAN-288); the in-memory business
+    // the route passes in is no longer written back.
+    expect(await storedInvoiceCounter()).toBe(42);
+    expect(business.save).not.toHaveBeenCalled();
   });
 
   it('builds the client block from the stored participant profile when one exists', async () => {
@@ -474,7 +522,8 @@ describe('processWebhookNdisInvoicePdfItem', () => {
     expect(args.res.json).toHaveBeenCalledWith({ message: 'There is nothing to invoice!' });
     expect(generate).not.toHaveBeenCalled();
     expect(args.uploadFileToS3).not.toHaveBeenCalled();
-    expect(business.documentNumbering.invoice.nextNumber).toBe(41);
+    // No number is claimed when there is nothing to invoice.
+    expect(await storedInvoiceCounter()).toBe(41);
   });
 
   it.each([
@@ -505,7 +554,10 @@ describe('processWebhookNdisInvoicePdfItem', () => {
     expect(args.saveInvoiceNumber).not.toHaveBeenCalled();
     expect(args.handlePDFError.mock.calls[0][0].message)
       .toBe('Upload of PDF failed, please provide correct information.');
-    expect(business.documentNumbering.invoice.nextNumber).toBe(41);
+    // The number is claimed before the PDF is built, so a failed upload leaves a
+    // gap in the sequence (KAN-288). A gap is cosmetic; the same number on two
+    // invoices is not, and that is what claiming first prevents.
+    expect(await storedInvoiceCounter()).toBe(42);
   });
 
   it('uses the scheduled shift start for a cancelled job', async () => {
@@ -566,6 +618,7 @@ describe('generated NDIS documents go to the non-public bucket', () => {
   });
 
   it('uploads and signs an NDIS invoice against the same, non-public bucket', async () => {
+    await seedInvoiceCounter(41);
     isoplus.getNDISMasterPlanReferencedItems.mockResolvedValue(MASTER_PLAN_REFS);
     buildNdisMasterPlanInvoiceLines.mockResolvedValue(NDIS_LINES);
     const args = makeHandlerArgs();
