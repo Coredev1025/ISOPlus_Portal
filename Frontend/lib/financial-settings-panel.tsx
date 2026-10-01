@@ -138,16 +138,6 @@ export function FinancialSettingsPanel({
     }));
   };
 
-  const handleSequenceNextChange = (
-    type: DocumentSequenceType,
-    value: number
-  ) => {
-    setSequences((prev) => ({
-      ...prev,
-      [type]: { ...prev[type], nextNumber: value },
-    }));
-  };
-
   const handleSave = async () => {
     try {
       setSaving(true);
@@ -253,7 +243,6 @@ export function FinancialSettingsPanel({
       showSuccess={showSuccess}
       onBankChange={handleBankChange}
       onSequencePrefixChange={handleSequencePrefixChange}
-      onSequenceNextChange={handleSequenceNextChange}
       onSave={handleSave}
     />
   );

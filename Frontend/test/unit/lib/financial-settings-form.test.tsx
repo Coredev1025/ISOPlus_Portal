@@ -38,7 +38,6 @@ function renderForm(
     showSuccess: false,
     onBankChange: vi.fn(),
     onSequencePrefixChange: vi.fn(),
-    onSequenceNextChange: vi.fn(),
     onSave: vi.fn(),
     ...overrides,
   };
@@ -106,201 +105,8 @@ describe('FinancialSettingsForm', () => {
     expect(onSave).toHaveBeenCalled();
   });
 
-  it('confirms before reducing a document next number', async () => {
-    const user = userEvent.setup();
-    const onSequenceNextChange = vi.fn();
-
-    function Harness() {
-      const [sequences, setSequences] = useState(SEQUENCES);
-      return (
-        <FinancialSettingsForm
-          bankDetails={BANK}
-          sequences={sequences}
-          loading={false}
-          errors={[]}
-          apiError=""
-          showSuccess={false}
-          onBankChange={vi.fn()}
-          onSequencePrefixChange={vi.fn()}
-          onSequenceNextChange={(type: DocumentSequenceType, value: number) => {
-            onSequenceNextChange(type, value);
-            setSequences((prev) => ({
-              ...prev,
-              [type]: { ...prev[type], nextNumber: value },
-            }));
-          }}
-          onSave={vi.fn()}
-        />
-      );
-    }
-
-    const { container } = render(<Harness />);
-    const invoiceNext = container.querySelector('#invoice-next') as HTMLInputElement;
-
-    fireEvent.focus(invoiceNext);
-    fireEvent.change(invoiceNext, { target: { value: '999' } });
-    fireEvent.blur(invoiceNext);
-
-    expect(
-      await screen.findByText(/reducing the next number may result in duplicate/i)
-    ).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: /continue/i }));
-    expect(invoiceNext).toHaveValue(999);
-    expect(onSequenceNextChange).toHaveBeenCalledWith('invoice', 999);
-  });
-
-  it('applies an increased next number without confirmation', () => {
-    const { container, onSequenceNextChange } = renderForm();
-    const invoiceNext = container.querySelector('#invoice-next') as HTMLInputElement;
-
-    fireEvent.focus(invoiceNext);
-    fireEvent.change(invoiceNext, { target: { value: '1001' } });
-    fireEvent.blur(invoiceNext);
-
-    expect(onSequenceNextChange).toHaveBeenCalledWith('invoice', 1001);
-    expect(
-      screen.queryByText(/reducing the next number may result in duplicate/i)
-    ).not.toBeInTheDocument();
-  });
-
-  // Typing "1081" over "1001" fires onChange("1") first. Confirming on that
-  // intermediate value silently commits 1 after Continue — a billing collision.
-  it('does not treat the first digit of a larger typed number as a reduction', async () => {
-    const user = userEvent.setup();
-    const onSequenceNextChange = vi.fn();
-    const initial: DocumentSequences = {
-      ...SEQUENCES,
-      purchaseOrder: { prefix: 'PO-', nextNumber: 1001 },
-    };
-
-    function Harness() {
-      const [sequences, setSequences] = useState(initial);
-      return (
-        <FinancialSettingsForm
-          bankDetails={BANK}
-          sequences={sequences}
-          loading={false}
-          errors={[]}
-          apiError=""
-          showSuccess={false}
-          onBankChange={vi.fn()}
-          onSequencePrefixChange={vi.fn()}
-          onSequenceNextChange={(type: DocumentSequenceType, value: number) => {
-            onSequenceNextChange(type, value);
-            setSequences((prev) => ({
-              ...prev,
-              [type]: { ...prev[type], nextNumber: value },
-            }));
-          }}
-          onSave={vi.fn()}
-        />
-      );
-    }
-
-    const { container } = render(<Harness />);
-    const poNext = container.querySelector('#po-next') as HTMLInputElement;
-
-    fireEvent.focus(poNext);
-    fireEvent.change(poNext, { target: { value: '1' } });
-    expect(onSequenceNextChange).not.toHaveBeenCalled();
-    expect(
-      screen.queryByText(/reducing the next number may result in duplicate/i)
-    ).not.toBeInTheDocument();
-
-    fireEvent.change(poNext, { target: { value: '1081' } });
-    fireEvent.blur(poNext);
-
-    expect(
-      screen.queryByText(/reducing the next number may result in duplicate/i)
-    ).not.toBeInTheDocument();
-    expect(onSequenceNextChange).toHaveBeenLastCalledWith('purchaseOrder', 1081);
-    expect(poNext).toHaveValue(1081);
-
-    fireEvent.focus(poNext);
-    fireEvent.change(poNext, { target: { value: '500' } });
-    fireEvent.blur(poNext);
-    expect(
-      await screen.findByText(/reducing the next number may result in duplicate/i)
-    ).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /cancel/i }));
-    expect(poNext).toHaveValue(1081);
-  });
-
-  // Keystroke updates must not reach parent state: Save after typing "1" of a
-  // longer number would otherwise persist 1 and collide with issued documents.
-  it('does not commit a mid-edit next number to parent state before blur', () => {
-    const onSequenceNextChange = vi.fn();
-    const { container } = renderForm({ onSequenceNextChange });
-    const invoiceNext = container.querySelector('#invoice-next') as HTMLInputElement;
-
-    fireEvent.focus(invoiceNext);
-    fireEvent.change(invoiceNext, { target: { value: '1' } });
-
-    expect(onSequenceNextChange).not.toHaveBeenCalled();
-    expect(invoiceNext).toHaveValue(1);
-  });
-
-  it('does not let Save persist an unconfirmed mid-edit reduction', async () => {
-    const onSave = vi.fn();
-    const onSequenceNextChange = vi.fn();
-    const initial: DocumentSequences = {
-      ...SEQUENCES,
-      purchaseOrder: { prefix: 'PO-', nextNumber: 1001 },
-    };
-
-    function Harness() {
-      const [sequences, setSequences] = useState(initial);
-      return (
-        <FinancialSettingsForm
-          bankDetails={BANK}
-          sequences={sequences}
-          loading={false}
-          errors={[]}
-          apiError=""
-          showSuccess={false}
-          onBankChange={vi.fn()}
-          onSequencePrefixChange={vi.fn()}
-          onSequenceNextChange={(type: DocumentSequenceType, value: number) => {
-            onSequenceNextChange(type, value);
-            setSequences((prev) => ({
-              ...prev,
-              [type]: { ...prev[type], nextNumber: value },
-            }));
-          }}
-          onSave={onSave}
-        />
-      );
-    }
-
-    const { container } = render(<Harness />);
-    const poNext = container.querySelector('#po-next') as HTMLInputElement;
-
-    fireEvent.focus(poNext);
-    fireEvent.change(poNext, { target: { value: '1' } });
-    fireEvent.blur(poNext);
-
-    expect(
-      await screen.findByText(/reducing the next number may result in duplicate/i)
-    ).toBeInTheDocument();
-    expect(onSequenceNextChange).not.toHaveBeenCalled();
-
-    const saveButton = screen.getByRole('button', {
-      name: /save changes/i,
-      hidden: true,
-    });
-    expect(saveButton).toBeDisabled();
-    expect(onSave).not.toHaveBeenCalled();
-    expect(onSequenceNextChange).not.toHaveBeenCalledWith('purchaseOrder', 1);
-  });
-
   it('wires remaining bank fields and sequence prefixes', () => {
-    const {
-      container,
-      onBankChange,
-      onSequencePrefixChange,
-      onSequenceNextChange,
-    } = renderForm();
+    const { container, onBankChange, onSequencePrefixChange } = renderForm();
 
     fireEvent.change(screen.getByLabelText('Account Name'), {
       target: { value: 'New Name' },
@@ -342,28 +148,46 @@ describe('FinancialSettingsForm', () => {
       'statementOfAccount',
       'SOA2-'
     );
-
-    fireEvent.change(container.querySelector('#po-next')!, { target: { value: '2001' } });
-    fireEvent.blur(container.querySelector('#po-next')!);
-    fireEvent.change(container.querySelector('#quote-next')!, { target: { value: '3001' } });
-    fireEvent.blur(container.querySelector('#quote-next')!);
-    fireEvent.change(container.querySelector('#statement-of-account-next')!, {
-      target: { value: '5001' },
-    });
-    fireEvent.blur(container.querySelector('#statement-of-account-next')!);
-    expect(onSequenceNextChange).toHaveBeenCalledWith('purchaseOrder', 2001);
-    expect(onSequenceNextChange).toHaveBeenCalledWith('quote', 3001);
-    expect(onSequenceNextChange).toHaveBeenCalledWith('statementOfAccount', 5001);
   });
 
-  it('allows a next number of 0 on invoice, PO, quote and SOA inputs', () => {
+  // KAN-290: the numbering sequence is read-only. The next number is shown,
+  // grayed out, and cannot be typed into: a counter is advanced only by the
+  // generators that issue the numbers.
+  it.each([
+    ['invoice', '#invoice-next', 1000],
+    ['purchase order', '#po-next', 2000],
+    ['quote', '#quote-next', 3000],
+    ['statement of account', '#statement-of-account-next', 5000],
+  ])('shows the %s next number read-only and grayed out', (_label, selector, value) => {
     const { container } = renderForm();
-    expect(container.querySelector('#invoice-next')).toHaveAttribute('min', '0');
-    expect(container.querySelector('#po-next')).toHaveAttribute('min', '0');
-    expect(container.querySelector('#quote-next')).toHaveAttribute('min', '0');
-    expect(container.querySelector('#statement-of-account-next')).toHaveAttribute(
-      'min',
-      '0'
-    );
+    const input = container.querySelector(selector) as HTMLInputElement;
+
+    expect(input).toBeInTheDocument();
+    expect(input.value).toBe(String(value));
+    expect(input).toBeDisabled();
+    expect(input).toHaveAttribute('readonly');
+    expect(input).toHaveAttribute('aria-readonly', 'true');
+    expect(input.className).toMatch(/\bbg-muted\b/);
+    expect(input.className).toMatch(/\btext-muted-foreground\b/);
+    expect(input.className).toMatch(/\bcursor-not-allowed\b/);
+  });
+
+  it('keeps the prefix editable next to the read-only number', () => {
+    const { container } = renderForm();
+    expect(container.querySelector('#invoice-prefix')).not.toBeDisabled();
+    expect(container.querySelector('#invoice-prefix')).not.toHaveAttribute('readonly');
+  });
+
+  it('says the next numbers are assigned automatically', () => {
+    renderForm();
+    expect(
+      screen.getByText(/next numbers are assigned automatically and cannot be edited/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText('Next: INV-1000')).toBeInTheDocument();
+  });
+
+  it('no longer offers the reduce-the-number warning', () => {
+    renderForm();
+    expect(screen.queryByText(/Reducing Number Sequence/i)).not.toBeInTheDocument();
   });
 });

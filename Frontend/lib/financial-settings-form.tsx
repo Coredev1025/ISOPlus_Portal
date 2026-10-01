@@ -1,21 +1,11 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
-import { AlertCircle, Hash, Landmark } from "lucide-react";
+import { type ReactNode } from "react";
+import { Hash, Landmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { type NumberSequence } from "@/lib/configure-business-helpers";
 
 export type DocumentSequenceType =
@@ -96,25 +86,23 @@ type SequenceFieldProps = Readonly<{
   prefixId: string;
   nextId: string;
   sequence: NumberSequence;
-  nextDisplayValue: string | number;
   hint: string;
   onPrefixChange?: (value: string) => void;
-  onNextChange?: (value: string) => void;
-  onNextFocus?: () => void;
-  onNextBlur?: (value: string) => void;
 }>;
 
+/**
+ * KAN-290: the next number is shown but cannot be edited. A counter is advanced
+ * only by the generators that issue the numbers; typing one here let an operator
+ * (or a page opened before invoices were issued) set it to a number already in
+ * use. The server ignores a next number for an existing business as well.
+ */
 function SequenceField({
   label,
   prefixId,
   nextId,
   sequence,
-  nextDisplayValue,
   hint,
   onPrefixChange,
-  onNextChange,
-  onNextFocus,
-  onNextBlur,
 }: SequenceFieldProps) {
   return (
     <Field id={prefixId} label={label} hint={hint}>
@@ -130,12 +118,12 @@ function SequenceField({
         <Input
           id={nextId}
           type="number"
-          value={nextDisplayValue}
-          onChange={(e) => onNextChange?.(e.target.value)}
-          onFocus={() => onNextFocus?.()}
-          onBlur={(e) => onNextBlur?.(e.target.value)}
-          min={0}
-          className="min-w-0 flex-1"
+          value={sequence.nextNumber}
+          readOnly
+          disabled
+          aria-readonly="true"
+          title="Assigned automatically; it cannot be edited here"
+          className="min-w-0 flex-1 cursor-not-allowed bg-muted text-muted-foreground"
         />
       </div>
     </Field>
@@ -151,7 +139,6 @@ type FinancialSettingsFormProps = Readonly<{
   showSuccess: boolean;
   onBankChange: (field: keyof BankDetailsForm, value: string) => void;
   onSequencePrefixChange: (type: DocumentSequenceType, value: string) => void;
-  onSequenceNextChange: (type: DocumentSequenceType, value: number) => void;
   onSave: () => void;
 }>;
 
@@ -164,99 +151,8 @@ export function FinancialSettingsForm({
   showSuccess,
   onBankChange,
   onSequencePrefixChange,
-  onSequenceNextChange,
   onSave,
 }: FinancialSettingsFormProps) {
-  const [alertDialog, setAlertDialog] = useState<{
-    isOpen: boolean;
-    type: DocumentSequenceType;
-    pendingValue: number;
-  }>({
-    isOpen: false,
-    type: "invoice",
-    pendingValue: 0,
-  });
-  // Draft while focused so mid-keystroke values never reach parent/Save state.
-  const [nextDrafts, setNextDrafts] = useState<
-    Partial<Record<DocumentSequenceType, string>>
-  >({});
-  const nextNumberBaseline = useRef<Partial<Record<DocumentSequenceType, number>>>(
-    {}
-  );
-  const keepReducedValueRef = useRef(false);
-  // Set synchronously on blur so a same-tick Save click cannot persist a
-  // pending reduction before React re-renders the disabled button.
-  const reduceDialogOpenRef = useRef(false);
-
-  const nextDisplayValue = (type: DocumentSequenceType) =>
-    nextDrafts[type] !== undefined
-      ? nextDrafts[type]!
-      : sequences[type].nextNumber;
-
-  const clearNextDraft = (type: DocumentSequenceType) => {
-    setNextDrafts((prev) => {
-      if (prev[type] === undefined) return prev;
-      const next = { ...prev };
-      delete next[type];
-      return next;
-    });
-  };
-
-  const handleNextNumberFocus = (type: DocumentSequenceType) => {
-    nextNumberBaseline.current[type] = sequences[type].nextNumber;
-    setNextDrafts((prev) => ({
-      ...prev,
-      [type]: String(sequences[type].nextNumber),
-    }));
-  };
-
-  const handleNextNumberChange = (
-    type: DocumentSequenceType,
-    value: string
-  ) => {
-    setNextDrafts((prev) => ({ ...prev, [type]: value }));
-  };
-
-  const handleNextNumberBlur = (type: DocumentSequenceType, value: string) => {
-    const newValue = Number.parseInt(value, 10);
-    if (!Number.isFinite(newValue)) {
-      clearNextDraft(type);
-      return;
-    }
-    const previousValue =
-      nextNumberBaseline.current[type] ?? sequences[type].nextNumber;
-    if (newValue < previousValue) {
-      reduceDialogOpenRef.current = true;
-      setAlertDialog({
-        isOpen: true,
-        type,
-        pendingValue: newValue,
-      });
-      return;
-    }
-    onSequenceNextChange(type, newValue);
-    clearNextDraft(type);
-  };
-
-  const closeReduceDialog = (keepReducedValue: boolean) => {
-    if (!alertDialog.isOpen) return;
-    const { type, pendingValue } = alertDialog;
-    if (keepReducedValue) {
-      onSequenceNextChange(type, pendingValue);
-    }
-    clearNextDraft(type);
-    keepReducedValueRef.current = false;
-    reduceDialogOpenRef.current = false;
-    setAlertDialog((prev) => ({ ...prev, isOpen: false }));
-  };
-
-  const reduceDialogOpen = alertDialog.isOpen;
-
-  const handleSaveClick = () => {
-    if (reduceDialogOpenRef.current || reduceDialogOpen) return;
-    onSave();
-  };
-
   return (
     <>
       <div className="space-y-[18px]">
@@ -337,7 +233,7 @@ export function FinancialSettingsForm({
           <CardHeaderBlock
             icon={<Hash className="h-4 w-4" />}
             title="Document Number Configuration"
-            description="Configure prefixes and next numbers for financial documents."
+            description="Configure the prefix for each financial document. Next numbers are assigned automatically and cannot be edited."
           />
 
           <div
@@ -349,11 +245,7 @@ export function FinancialSettingsForm({
               prefixId="invoice-prefix"
               nextId="invoice-next"
               sequence={sequences.invoice}
-              nextDisplayValue={nextDisplayValue("invoice")}
               onPrefixChange={(v) => onSequencePrefixChange("invoice", v)}
-              onNextChange={(v) => handleNextNumberChange("invoice", v)}
-              onNextFocus={() => handleNextNumberFocus("invoice")}
-              onNextBlur={(v) => handleNextNumberBlur("invoice", v)}
               hint={`Next: ${sequences.invoice.prefix}${sequences.invoice.nextNumber}`}
             />
             <SequenceField
@@ -361,13 +253,9 @@ export function FinancialSettingsForm({
               prefixId="po-prefix"
               nextId="po-next"
               sequence={sequences.purchaseOrder}
-              nextDisplayValue={nextDisplayValue("purchaseOrder")}
               onPrefixChange={(v) =>
                 onSequencePrefixChange("purchaseOrder", v)
               }
-              onNextChange={(v) => handleNextNumberChange("purchaseOrder", v)}
-              onNextFocus={() => handleNextNumberFocus("purchaseOrder")}
-              onNextBlur={(v) => handleNextNumberBlur("purchaseOrder", v)}
               hint={`Next: ${sequences.purchaseOrder.prefix}${sequences.purchaseOrder.nextNumber}`}
             />
             <SequenceField
@@ -375,11 +263,7 @@ export function FinancialSettingsForm({
               prefixId="quote-prefix"
               nextId="quote-next"
               sequence={sequences.quote}
-              nextDisplayValue={nextDisplayValue("quote")}
               onPrefixChange={(v) => onSequencePrefixChange("quote", v)}
-              onNextChange={(v) => handleNextNumberChange("quote", v)}
-              onNextFocus={() => handleNextNumberFocus("quote")}
-              onNextBlur={(v) => handleNextNumberBlur("quote", v)}
               hint={`Next: ${sequences.quote.prefix}${sequences.quote.nextNumber}`}
             />
             <SequenceField
@@ -387,16 +271,8 @@ export function FinancialSettingsForm({
               prefixId="statement-of-account-prefix"
               nextId="statement-of-account-next"
               sequence={sequences.statementOfAccount}
-              nextDisplayValue={nextDisplayValue("statementOfAccount")}
               onPrefixChange={(v) =>
                 onSequencePrefixChange("statementOfAccount", v)
-              }
-              onNextChange={(v) =>
-                handleNextNumberChange("statementOfAccount", v)
-              }
-              onNextFocus={() => handleNextNumberFocus("statementOfAccount")}
-              onNextBlur={(v) =>
-                handleNextNumberBlur("statementOfAccount", v)
               }
               hint={`Next: ${sequences.statementOfAccount.prefix}${sequences.statementOfAccount.nextNumber}`}
             />
@@ -434,47 +310,14 @@ export function FinancialSettingsForm({
           <div className="mt-4 flex justify-end gap-2.5">
             <Button
               type="button"
-              onClick={handleSaveClick}
-              disabled={loading || reduceDialogOpen}
+              onClick={onSave}
+              disabled={loading}
             >
               {loading ? "Saving..." : "Save Changes"}
             </Button>
           </div>
         </Card>
       </div>
-
-      <AlertDialog
-        open={alertDialog.isOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            closeReduceDialog(keepReducedValueRef.current);
-          }
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-destructive" />
-              Warning: Reducing Number Sequence
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Reducing the next number may result in duplicate document numbers
-              if previous numbers have been used. Are you sure you want to
-              continue?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                keepReducedValueRef.current = true;
-              }}
-            >
-              Continue
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }
