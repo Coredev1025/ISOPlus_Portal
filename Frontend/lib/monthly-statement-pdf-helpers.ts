@@ -1,22 +1,18 @@
 import type { AxiosInstance } from 'axios';
+import { downloadGeneratedPdfViaBackend } from '@/lib/pdf-download-helpers';
 
-export async function downloadMonthlyStatementPdf(fileUrl: string, filename?: string) {
-  const pdfResponse = await fetch(fileUrl);
-  const pdfBlob = await pdfResponse.blob();
-  const pdfObjectUrl = URL.createObjectURL(pdfBlob);
-  const link = document.createElement('a');
-  link.href = pdfObjectUrl;
-  link.download = filename || 'monthly-statement.pdf';
-  link.style.display = 'none';
-  document.body.appendChild(link);
-  link.click();
-
-  setTimeout(() => {
-    if (typeof document !== 'undefined' && link.parentNode) {
-      link.remove();
-    }
-    URL.revokeObjectURL(pdfObjectUrl);
-  }, 100);
+export async function downloadMonthlyStatementPdf(
+  fileUrl: string,
+  filename: string | undefined,
+  workspaceId: string,
+  axios: AxiosInstance,
+) {
+  await downloadGeneratedPdfViaBackend({
+    fileUrl,
+    filename: filename || 'monthly-statement.pdf',
+    workspaceId,
+    axios,
+  });
 }
 
 export function validateMonthlyStatementPdfPrerequisites(
@@ -76,11 +72,13 @@ async function deliverMonthlyStatementPdf(
   fileUrl: string,
   filename: string | undefined,
   action: 'generate' | 'export',
+  workspaceId: string,
+  axios: AxiosInstance,
   showSuccessToast: (message: string) => void,
   showInfoToast: (message: string, options?: { description?: string }) => void,
 ) {
   try {
-    await downloadMonthlyStatementPdf(fileUrl, filename);
+    await downloadMonthlyStatementPdf(fileUrl, filename, workspaceId, axios);
     showSuccessToast(
       action === 'generate'
         ? 'Monthly statement PDF downloaded successfully'
@@ -200,7 +198,15 @@ export async function executeMonthlyStatementPdfAction({
       return null;
     }
 
-    await deliverMonthlyStatementPdf(fileUrl, response.data?.filename, action, showSuccessToast, showInfoToast);
+    await deliverMonthlyStatementPdf(
+      fileUrl,
+      response.data?.filename,
+      action,
+      id,
+      axios,
+      showSuccessToast,
+      showInfoToast,
+    );
     return fileUrl;
   } catch (err) {
     console.error(`Error ${action === 'generate' ? 'generating' : 'exporting'} PDF:`, err);

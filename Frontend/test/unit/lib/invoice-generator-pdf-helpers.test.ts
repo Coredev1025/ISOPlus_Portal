@@ -1,8 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { http, HttpResponse } from 'msw';
 import type { AxiosInstance } from 'axios';
 
-import { server } from '../../msw/server';
 import {
   downloadInvoicePdf,
   updateLegacyInvoiceStatuses,
@@ -18,16 +16,19 @@ let clickSpy: ReturnType<typeof vi.spyOn>;
 let openSpy: ReturnType<typeof vi.spyOn>;
 let consoleError: ReturnType<typeof vi.spyOn>;
 
-function servePdf() {
-  server.use(
-    http.get(PDF_URL, () =>
-      HttpResponse.text('%PDF-1.4 fake invoice', { headers: { 'Content-Type': 'application/pdf' } }),
-    ),
-  );
-}
-
-function failPdf() {
-  server.use(http.get(PDF_URL, () => HttpResponse.error()));
+function makeDownloadPost(ok = true) {
+  if (!ok) {
+    return vi.fn().mockRejectedValue(new Error('Network Error'));
+  }
+  return vi.fn().mockImplementation(async (url: string) => {
+    if (String(url).includes('/pdf-links/file')) {
+      return {
+        data: new Blob(['%PDF-1.4 fake invoice'], { type: 'application/pdf' }),
+        status: 200,
+      };
+    }
+    return { status: 200, data: {} };
+  });
 }
 
 beforeEach(() => {
@@ -57,10 +58,21 @@ afterEach(() => {
 
 describe('downloadInvoicePdf', () => {
   it('downloads the PDF under an Invoice_<number>_<participant> file name', async () => {
-    servePdf();
+    const post = makeDownloadPost(true);
 
-    await downloadInvoicePdf(PDF_URL, 'INV-1001', 'Jane  Marie Doe');
+    await downloadInvoicePdf(PDF_URL, 'INV-1001', 'Jane  Marie Doe', 'ws-1', {
+      post,
+    } as unknown as AxiosInstance);
 
+    expect(post).toHaveBeenCalledWith(
+      'http://localhost:4001/api/pdf-links/file',
+      {
+        fileUrl: PDF_URL,
+        workspaceId: 'ws-1',
+        filename: 'Invoice_INV-1001_Jane_Marie_Doe.pdf',
+      },
+      { responseType: 'blob', headers: { Accept: 'application/pdf' } },
+    );
     expect(clicked).toEqual([{ download: 'Invoice_INV-1001_Jane_Marie_Doe.pdf', href: 'blob:mock-pdf-url' }]);
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     const blob = createObjectURL.mock.calls[0][0] as unknown as Blob;
@@ -68,9 +80,11 @@ describe('downloadInvoicePdf', () => {
   });
 
   it('detaches the link and revokes the object URL after the download settles', async () => {
-    servePdf();
+    const post = makeDownloadPost(true);
 
-    await downloadInvoicePdf(PDF_URL, 'INV-1001', 'Jane Doe');
+    await downloadInvoicePdf(PDF_URL, 'INV-1001', 'Jane Doe', 'ws-1', {
+      post,
+    } as unknown as AxiosInstance);
     expect(document.body.querySelectorAll('a[download]')).toHaveLength(1);
 
     vi.advanceTimersByTime(100);
@@ -80,8 +94,12 @@ describe('downloadInvoicePdf', () => {
   });
 
   it('rejects when the file cannot be fetched', async () => {
-    failPdf();
-    await expect(downloadInvoicePdf(PDF_URL, 'INV-1001', 'Jane Doe')).rejects.toThrow();
+    const post = makeDownloadPost(false);
+    await expect(
+      downloadInvoicePdf(PDF_URL, 'INV-1001', 'Jane Doe', 'ws-1', {
+        post,
+      } as unknown as AxiosInstance),
+    ).rejects.toThrow();
     expect(clicked).toHaveLength(0);
   });
 });
@@ -131,7 +149,7 @@ describe('updateLegacyInvoiceStatuses', () => {
   });
 });
 
-function makeFinalizeHarness(post = vi.fn().mockResolvedValue({ status: 200, data: {} })) {
+function makeFinalizeHarness(post = makeDownloadPost(true)) {
   const isGeneratingInvoiceRef = { current: true };
   const showErrorToast = vi.fn();
   const showInfoToast = vi.fn();
@@ -243,18 +261,21 @@ describe('finalizePdfInvoiceGeneration', () => {
   });
 
   it('downloads the PDF when the response carried a file URL', async () => {
-    servePdf();
     const h = makeFinalizeHarness();
 
     await finalizePdfInvoiceGeneration({ ...h.args, fileUrl: PDF_URL });
 
     expect(clicked).toEqual([{ download: 'Invoice_INV-1001_Jane_Doe.pdf', href: 'blob:mock-pdf-url' }]);
     expect(openSpy).not.toHaveBeenCalled();
+    expect(h.post).toHaveBeenCalledWith(
+      'http://localhost:4001/api/pdf-links/file',
+      expect.objectContaining({ fileUrl: PDF_URL, workspaceId: 'ws-1' }),
+      expect.any(Object),
+    );
   });
 
   it('opens the PDF in a new tab when the download fails', async () => {
-    failPdf();
-    const h = makeFinalizeHarness();
+    const h = makeFinalizeHarness(makeDownloadPost(false));
 
     await finalizePdfInvoiceGeneration({ ...h.args, fileUrl: PDF_URL });
 
