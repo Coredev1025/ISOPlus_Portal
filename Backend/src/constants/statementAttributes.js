@@ -34,7 +34,8 @@ export const STATEMENT_PAYMENT_STATUS = 'Payment Status';
 export const STATEMENT_AMOUNT_RECEIVED = 'Amount Received($)';
 
 /**
- * The date the payment is placed on.
+ * The date the payment is placed on: the ISO+ attribute "Payment Received
+ * Date" (KAN-284; it was called "Invoice Received Date" before ISO+ renamed it).
  *
  * Verified against the running product: the attribute is configured as a date
  * with format `31/03/2019` and "Include a Time Field" switched off, so it is
@@ -44,36 +45,12 @@ export const STATEMENT_AMOUNT_RECEIVED = 'Amount Received($)';
  * renders. And a day is the finest granularity a statement row can claim,
  * which matches the sample.
  *
- * **What it means is inferred, not confirmed.** The name reads as easily as
- * "the date the payer received the invoice" as "the date we received the
- * money", and nothing states which:
+ * A payment with an amount but no date here is bad data and is left off the
+ * statement entirely (KAN-285): see `collectPayments` in utils/statementLedger.js.
  *
- *   - ISO+ attributes carry no description. The edit dialog exposes name,
- *     format and the time toggle, and nothing else.
- *   - Every row on the Care Management shift board is empty for this field,
- *     with `Amount Received($)` at $0.00 throughout, so there is no behaviour
- *     to read it from.
- *   - The client's requirement documents do not mention payments at all.
- *
- * What does point one way: the field is **absent from the 5 August 2026
- * production dump**, which carries `Payment Status` throughout and no
- * occurrence of `Invoice Received` anywhere. So it was added to ISO+ during
- * this invoicing and statement work, sitting alongside `Amount Received($)`.
- * A date field introduced next to a payment amount while building payment
- * reporting is far more likely to record when the money arrived than when a
- * participant received a PDF.
- *
- * That is why it is the default here rather than a blocker. It is still an
- * inference: Masoud has been asked to confirm, and `datedPayments: false` is
- * the escape hatch if the answer is no.
- *
- * It is a single named constant precisely so that answer costs one line to
- * apply. If it turns out not to be the payment date, the fallback is
- * `buildStatementLedger` with `datedPayments: false`, which nets each payment
- * against its invoice and drops the dated payment rows and the running balance
- * — see the module for what that changes.
+ * Touchpoints: utils/statementLedger.js (collectPayments).
  */
-export const STATEMENT_PAYMENT_DATE = 'Invoice Received Date';
+export const STATEMENT_PAYMENT_DATE = 'Payment Received Date';
 
 /** Payment statuses that mean no more money is coming for this record. */
 export const PAYMENT_STATUS_WRITTEN_OFF = 'Written Off';

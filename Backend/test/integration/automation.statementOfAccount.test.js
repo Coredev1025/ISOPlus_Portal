@@ -93,7 +93,7 @@ async function seed() {
       'Full Name/Preferred Name': PARTICIPANT,
       'Participant Full Name': PARTICIPANT,
       'Amount Received($)': '100',
-      'Invoice Received Date': '2026-08-20T00:00:00.000Z',
+      'Payment Received Date': '2026-08-20T00:00:00.000Z',
       // Shift dates inside the August period, so the participant has services
       // to report and the budget statement is issued. Without them the run
       // now correctly issues no budget statement at all — an all-zero document
@@ -297,17 +297,19 @@ describe('a scheduled statement run, on untidy data', () => {
     expect(closingBalanceOf(rendered)).toBe('$150.00');
   });
 
-  // ISO+ lets the amount and the received date be entered separately.
-  it('still states the account when a payment has no received date', async () => {
-    await Item.updateOne({ itemId: 'item-1' }, { $unset: { 'data.Invoice Received Date': '' } });
+  // ISO+ lets the amount and the received date be entered separately. An
+  // amount with no Payment Received Date is bad data and is left off (KAN-285).
+  it('still states the account, without the payment, when a payment has no received date', async () => {
+    await Item.updateOne({ itemId: 'item-1' }, { $unset: { 'data.Payment Received Date': '' } });
 
     await run();
 
     const rendered = statementRender();
     expect(rendered).toBeDefined();
-    // Netted onto the invoice's row rather than given a dated one.
+    // Only the invoice's row: the undated payment is neither netted onto it
+    // nor given a row of its own.
     expect(JSON.parse(rendered.transactions)).toHaveLength(1);
-    expect(closingBalanceOf(rendered)).toBe('$150.00');
+    expect(closingBalanceOf(rendered)).toBe('$250.00');
   });
 
   // Payments are read per board; the invoices must be too, or an invoice
@@ -348,7 +350,7 @@ describe('a scheduled statement run, on untidy data', () => {
         'Full Name/Preferred Name': 'Aaron Test',
         'Participant Full Name': 'Aaron Test',
         'Amount Received($)': '50',
-        'Invoice Received Date': '2026-08-20T00:00:00.000Z',
+        'Payment Received Date': '2026-08-20T00:00:00.000Z',
         'Scheduled Shift Start Date & Time': '2026-08-16T09:00:00.000Z',
         'Actual Shift End Date & Time': '2026-08-16T11:00:00.000Z',
         'Total Amount ($)': '250.00',
@@ -405,7 +407,7 @@ describe('a scheduled statement run, on untidy data', () => {
         // The correct, undamaged reference chain.
         'Participant Profile': ['profile-masoud'],
         'Amount Received($)': '75',
-        'Invoice Received Date': '2026-08-21T00:00:00.000Z',
+        'Payment Received Date': '2026-08-21T00:00:00.000Z',
       },
     });
 

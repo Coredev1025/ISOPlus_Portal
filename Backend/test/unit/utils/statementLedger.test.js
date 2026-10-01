@@ -29,7 +29,7 @@ const paidItem = (invoicedBy, amount, date) => ({
   data: {
     'Payment Status': 'Paid',
     'Amount Received($)': amount,
-    'Invoice Received Date': date,
+    'Payment Received Date': date,
   },
 });
 
@@ -54,8 +54,28 @@ describe('collectPayments', () => {
     expect(collectPayments([paidItem('INV-1', 0, '2026-07-20')])).toEqual([]);
   });
 
+  // KAN-285: an amount with no Payment Received Date is bad data. It is not a
+  // payment the statement can place, so it is not collected at all.
+  it('ignores an amount received that has no Payment Received Date', () => {
+    expect(collectPayments([paidItem('INV-1', 100, undefined)])).toEqual([]);
+    expect(collectPayments([paidItem('INV-1', 100, '')])).toEqual([]);
+    expect(collectPayments([paidItem('INV-1', 100, null)])).toEqual([]);
+  });
+
+  it('ignores an amount received whose date cannot be read', () => {
+    expect(collectPayments([paidItem('INV-1', 100, 'not a date')])).toEqual([]);
+  });
+
+  it('keeps the dated payment and drops the undated one on the same invoice', () => {
+    const payments = collectPayments([
+      paidItem('INV-1', 10, undefined),
+      paidItem('INV-1', 5, '2026-09-30'),
+    ]);
+    expect(payments).toEqual([{ invoiceNumber: 'INV-1', amount: 5, date: '2026-09-30' }]);
+  });
+
   it('ignores a record that was never invoiced', () => {
-    const orphan = { itemId: 'x', data: { 'Amount Received($)': 100, 'Invoice Received Date': '2026-07-20' } };
+    const orphan = { itemId: 'x', data: { 'Amount Received($)': 100, 'Payment Received Date': '2026-07-20' } };
     expect(collectPayments([orphan])).toEqual([]);
   });
 
@@ -318,7 +338,7 @@ describe('buildStatementLedger — ageing stops at the statement date', () => {
       }],
       items: [{
         invoicedBy: 'INV-1',
-        data: { 'Amount Received($)': '100', 'Invoice Received Date': '2026-09-08T00:00:00.000Z' },
+        data: { 'Amount Received($)': '100', 'Payment Received Date': '2026-09-08T00:00:00.000Z' },
       }],
       period,
       openingBalance: 0,
@@ -331,48 +351,72 @@ describe('buildStatementLedger — ageing stops at the statement date', () => {
 });
 
 /**
- * A payment with an amount but no received date. ISO+ lets the two be entered
- * separately, so this arrives from real boards.
+ * A payment with an amount but no received date (KAN-285). ISO+ lets the two be
+ * entered separately, so this arrives from real boards.
  *
- * It has to land on the same side of every figure. Kept in the ageing and
- * dropped from the ledger, the buckets and the closing balance disagree and
- * section 4.3's check throws — which failed the whole board's run, not just
- * this participant's. So an undated payment takes its invoice's date: netted
- * onto the charge row, as the non-dated mode already does, and counted in
- * the ageing against the same invoice.
+ * It is bad data, and it is left off the statement entirely: not netted onto
+ * its invoice's row, not given a row of its own, not in the closing balance and
+ * not in the ageing. All of those read the same collected payments, so the
+ * ledger and the ageing still agree and section 4.3's check cannot throw.
+ * (Earlier it was netted onto its invoice, which silently reduced what the
+ * participant was shown as owing.)
  */
 describe('buildStatementLedger — a payment with no date', () => {
   const asAt = '2026-08-31T00:00:00.000+10:00';
+  const bucketSum = (ageing) => Object.values(ageing).reduce((sum, v) => sum + v, 0);
 
-  it('nets onto its invoice\'s charge row and still reconciles', () => {
+  it('is left off the statement: the invoice row shows no payment and the balance is the full amount', () => {
     const invoices = [invoice('INV-1', '2026-08-05', 250, '2026-08-19')];
     const items = [paidItem('INV-1', 100, undefined)];
     const { ledger, ageing } = buildStatementLedger({
       invoices, items, period: PERIOD, openingBalance: 0, timezone: TZ, asAt,
     });
     expect(ledger.rows).toHaveLength(1);
-    expect(ledger.rows[0].payment).toBe(100);
-    expect(ledger.closingBalance).toBe(150);
-    const bucketTotal = Object.values(ageing).reduce((sum, v) => sum + v, 0);
-    expect(bucketTotal).toBe(150);
+    expect(ledger.rows[0].payment).toBe(0);
+    expect(ledger.closingBalance).toBe(250);
+    expect(bucketSum(ageing)).toBe(250);
   });
 
-  it('is not given a dated row of its own as well', () => {
+  it('does not stop a dated payment on the same invoice getting its own row', () => {
     const invoices = [invoice('INV-1', '2026-08-05', 250, '2026-08-19')];
     const items = [paidItem('INV-1', 100, undefined), paidItem('INV-1', 50, '2026-08-20')];
+    const { ledger, ageing } = buildStatementLedger({
+      invoices, items, period: PERIOD, openingBalance: 0, timezone: TZ, asAt,
+    });
+    expect(ledger.rows.map((r) => [r.description, r.payment])).toEqual([
+      ['Services invoiced', 0],
+      ['Payment received', 50],
+    ]);
+    expect(ledger.closingBalance).toBe(200);
+    expect(bucketSum(ageing)).toBe(200);
+  });
+
+  // The live case from SOA-9: $10 with no date and $5 dated 30/09 against one
+  // invoice were shown combined as a single $15.00 payment.
+  it('does not combine an undated $10 with a dated $5 into $15', () => {
+    const invoices = [invoice('INV-24', '2026-08-05', 171.25, '2026-08-19')];
+    const items = [paidItem('INV-24', 10, undefined), paidItem('INV-24', 5, '2026-08-30')];
     const { ledger } = buildStatementLedger({
       invoices, items, period: PERIOD, openingBalance: 0, timezone: TZ, asAt,
     });
-    expect(ledger.rows.map((r) => r.payment)).toEqual([100, 50]);
-    expect(ledger.closingBalance).toBe(100);
+    expect(ledger.rows.map((r) => r.payment)).toEqual([0, 5]);
+    expect(ledger.closingBalance).toBe(166.25);
   });
 
-  // KAN-274: an invoice raised before the period is now its own charge row
-  // too, so the caller no longer supplies a non-zero opening balance for it —
-  // doing so would double-count it, once on the line and once in the opening
-  // figure. Passing 0 here is the contract `generateStatementOfAccount.js`
-  // now follows.
-  it('ages against an invoice raised before the period, as its own row', () => {
+  it('is left off in the non-dated mode as well', () => {
+    const invoices = [invoice('INV-1', '2026-08-05', 250, '2026-08-19')];
+    const items = [paidItem('INV-1', 100, undefined), paidItem('INV-1', 50, '2026-08-20')];
+    const { ledger } = buildStatementLedger({
+      invoices, items, period: PERIOD, openingBalance: 0, timezone: TZ, asAt, datedPayments: false,
+    });
+    expect(ledger.rows).toHaveLength(1);
+    expect(ledger.rows[0].payment).toBe(50);
+    expect(ledger.closingBalance).toBe(200);
+  });
+
+  // KAN-274: an invoice raised before the period is its own charge row, so the
+  // caller supplies an opening balance of 0 (see generateStatementOfAccount.js).
+  it('ages an invoice raised before the period at its full amount', () => {
     const invoices = [invoice('INV-OLD', '2026-03-01', 250, '2026-03-15')];
     const items = [paidItem('INV-OLD', 100, undefined)];
     const { ledger, ageing } = buildStatementLedger({
@@ -380,9 +424,9 @@ describe('buildStatementLedger — a payment with no date', () => {
     });
     expect(ledger.rows).toHaveLength(1);
     expect(ledger.rows[0].charge).toBe(250);
-    expect(ledger.rows[0].payment).toBe(100);
-    expect(ledger.closingBalance).toBe(150);
-    expect(ageing.d90plus).toBe(150);
+    expect(ledger.rows[0].payment).toBe(0);
+    expect(ledger.closingBalance).toBe(250);
+    expect(ageing.d90plus).toBe(250);
   });
 });
 
