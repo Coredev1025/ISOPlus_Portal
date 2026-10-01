@@ -319,6 +319,33 @@ describe('a scheduled statement run, on untidy data', () => {
     expect(closingBalanceOf(rendered)).toBe('$250.00');
   });
 
+  // KAN-288: two invoice documents carrying the same number are both charges,
+  // and the payment against that number is applied once. Applied to each, the
+  // ageing and the ledger disagreed and the statement did not render.
+  it('states the account when two invoice documents share a number', async () => {
+    await PDFLink.create({
+      workspaceId: WORKSPACE,
+      boardId: BOARD,
+      itemId: 'item-2',
+      participant: PARTICIPANT,
+      type: PDFLINK_TYPE_NDIS_INVOICE,
+      invoiceNumber: 'INV-1205',
+      invoiceTotal: 250,
+      periodKey: '20260801-2301',
+      pdfLink: 'https://s3.example/inv-1205-second.pdf',
+      createdAt: new Date('2026-08-06T00:00:00.000Z'),
+    });
+
+    await run();
+
+    const rendered = statementRender();
+    expect(rendered).toBeDefined();
+    // Both invoices and the one payment.
+    expect(JSON.parse(rendered.transactions)).toHaveLength(3);
+    // 250 + 250 - 100
+    expect(closingBalanceOf(rendered)).toBe('$400.00');
+  });
+
   // KAN-286: a payment recorded against an invoice number the participant has
   // no record of has nothing to be applied to. Left on, it gave the ledger a
   // row the ageing never counted and the statement's own reconciliation check

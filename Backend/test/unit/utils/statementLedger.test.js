@@ -519,6 +519,55 @@ describe('buildStatementLedger — a payment against an unknown invoice', () => 
 });
 
 /**
+ * Two invoice documents that share one invoice number (KAN-288). Both are real
+ * charges, so both stay on the statement; a payment recorded against that
+ * number is applied once. The ageing used to subtract it from each document, so
+ * it counted the payment twice, the two totals disagreed, and the statement's
+ * own reconciliation check threw while the PDF was rendered.
+ */
+describe('buildStatementLedger — two invoices with the same number', () => {
+  const asAt = '2026-08-31T00:00:00.000+10:00';
+  const bucketSum = (ageing) => Object.values(ageing).reduce((sum, v) => sum + v, 0);
+  const twin = [
+    invoice('INV-5', '2026-08-05', 200, '2026-08-19'),
+    invoice('INV-5', '2026-08-06', 200, '2026-08-20'),
+  ];
+
+  it('applies a payment once, so the ledger still agrees with the ageing', () => {
+    const items = [paidItem('INV-5', 200, '2026-08-21')];
+    const { ledger, ageing } = buildStatementLedger({
+      invoices: twin, items, period: PERIOD, openingBalance: 0, timezone: TZ, asAt,
+    });
+    expect(ledger.rows.map((r) => [r.description, r.charge, r.payment])).toEqual([
+      ['Services invoiced', 200, 0],
+      ['Services invoiced', 200, 0],
+      ['Payment received', 0, 200],
+    ]);
+    expect(ledger.closingBalance).toBe(200);
+    expect(bucketSum(ageing)).toBe(200);
+    expect(() => assertAgeingReconciles(ageing, ledger.closingBalance)).not.toThrow();
+  });
+
+  it('still reconciles with no payment at all', () => {
+    const { ledger, ageing } = buildStatementLedger({
+      invoices: twin, items: [], period: PERIOD, openingBalance: 0, timezone: TZ, asAt,
+    });
+    expect(ledger.closingBalance).toBe(400);
+    expect(bucketSum(ageing)).toBe(400);
+  });
+
+  it('applies the payment once in the non-dated mode as well', () => {
+    const items = [paidItem('INV-5', 200, '2026-08-21')];
+    const { ledger, ageing } = buildStatementLedger({
+      invoices: twin, items, period: PERIOD, openingBalance: 0, timezone: TZ, asAt, datedPayments: false,
+    });
+    expect(ledger.rows.map((r) => r.payment)).toEqual([200, 0]);
+    expect(ledger.closingBalance).toBe(200);
+    expect(bucketSum(ageing)).toBe(200);
+  });
+});
+
+/**
  * Three invoices on one statement, asked for by the client so the arithmetic
  * could be checked rather than taken on trust. Every figure below is written
  * out longhand in the assertion, so a reader can add it up by eye.

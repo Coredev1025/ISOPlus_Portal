@@ -158,6 +158,25 @@ const paidAgainst = (payments, invoiceNumber) => roundMoney(
 );
 
 /**
+ * For each invoice in the list, whether it is the first one carrying its number.
+ *
+ * KAN-288: two invoice documents can share an invoice number. Both are real
+ * charges and both stay on the statement, but a payment recorded against that
+ * number is one payment, so it is applied to the first of them only. Applied to
+ * each, the ageing subtracted it twice while the ledger counted it once, the
+ * two totals disagreed, and the statement's own reconciliation check threw
+ * while the PDF was rendered.
+ */
+function firstOfEachNumber(invoices) {
+  const seen = new Set();
+  return invoices.map((inv) => {
+    const first = !seen.has(inv.invoiceNumber);
+    seen.add(inv.invoiceNumber);
+    return first;
+  });
+}
+
+/**
  * Charge rows, one per invoice ever raised for the participant, as at `asAt`.
  *
  * KAN-274: every invoice is a line item here now, not only ones this
@@ -175,8 +194,9 @@ const paidAgainst = (payments, invoiceNumber) => roundMoney(
  */
 function chargeRows(invoices, payments, asAt, datedPayments, tz) {
   const netted = datedPayments ? [] : payments;
-  return invoices
-    .filter((inv) => raisedBy(inv.createdAt, asAt, tz))
+  const raised = invoices.filter((inv) => raisedBy(inv.createdAt, asAt, tz));
+  const takesPayment = firstOfEachNumber(raised);
+  return raised
     .map((inv, index) => ({
       date: inv.createdAt,
       reference: inv.invoiceNumber,
@@ -186,7 +206,7 @@ function chargeRows(invoices, payments, asAt, datedPayments, tz) {
       // invoice has none, so the renderer leaves the cell blank.
       dueDate: inv.dueDate,
       charge: roundMoney(parseAmount(inv.invoiceTotal)),
-      payment: paidAgainst(netted, inv.invoiceNumber),
+      payment: takesPayment[index] ? paidAgainst(netted, inv.invoiceNumber) : 0,
       sequence: index * 2,
     }));
 }
@@ -249,10 +269,14 @@ function asAtCutoff(invoices, payments, asAt, tz) {
  * because an older unpaid invoice is exactly what the 90+ bucket is for.
  */
 function outstandingByInvoice(invoices, payments) {
+  const takesPayment = firstOfEachNumber(invoices);
   return invoices
-    .map((inv) => ({
+    .map((inv, index) => ({
       dueDate: inv.dueDate,
-      amount: roundMoney(parseAmount(inv.invoiceTotal) - paidAgainst(payments, inv.invoiceNumber)),
+      amount: roundMoney(
+        parseAmount(inv.invoiceTotal)
+          - (takesPayment[index] ? paidAgainst(payments, inv.invoiceNumber) : 0),
+      ),
     }))
     .filter((entry) => entry.amount !== 0);
 }

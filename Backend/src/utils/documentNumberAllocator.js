@@ -54,3 +54,18 @@ export async function claimDocumentNumber(workspaceId, docType) {
   const prefix = numbering.prefix ?? documentNumberingDefault(docType, 'prefix');
   return `${prefix}${numbering.nextNumber - 1}`;
 }
+
+/**
+ * Claim the next INVOICE number, or throw when the workspace has no Business.
+ *
+ * For the generators that cannot number an invoice without one (KAN-288). The
+ * number is claimed in one database operation, so two invoices being built at
+ * the same time can never be handed the same one. The price is that a
+ * generation which fails after claiming leaves a gap in the sequence, which is
+ * the trade this module has always made: a gap is cosmetic, a duplicate is not.
+ */
+export async function claimInvoiceNumber(workspaceId) {
+  const claimed = await claimDocumentNumber(workspaceId, 'invoice');
+  if (!claimed) throw new Error('Business not found');
+  return claimed;
+}
