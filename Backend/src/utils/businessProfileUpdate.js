@@ -84,8 +84,10 @@ export function mergeDocumentNumbering(existing, incoming = {}) {
  * series' prefix, as its own database path, and nothing else.
  *
  * KAN-290: the numbering sequence is read-only through the profile form. A
- * counter is advanced only by the generators that issue the numbers, in one
- * atomic claim each. The save used to read the business, merge the stored
+ * counter is advanced only by the generators that issue the numbers; invoices,
+ * statements and statements of account claim theirs atomically (quotes and
+ * purchase orders still read-then-increment, see KAN-291). The save used to
+ * read the business, merge the stored
  * numbering with whatever the page sent, and write the whole object back; a page
  * opened before invoices were issued then wound the counter back to the number
  * it had loaded, and later invoices reused numbers already on issued invoices.

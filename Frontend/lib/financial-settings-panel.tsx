@@ -167,7 +167,7 @@ export function FinancialSettingsPanel({
         formDataToSend.append(key, text);
       }
       // Omit statement (STM-): Document Number Configuration no longer edits it.
-      // mergeDocumentNumbering keeps the stored series used by monthly budget
+      // The server keeps the stored series used by monthly budget
       // statement automation. Do not send clone/default STM- values — that would
       // overwrite a live nextNumber.
       formDataToSend.append(
