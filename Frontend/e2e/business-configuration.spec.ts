@@ -49,10 +49,15 @@ test.describe("business configuration logos", () => {
     const wideLogo = page.getByRole("heading", { name: "Wide Logo" }).locator("..");
     await expect(
       wideLogo.getByText(
-        "Recommended dimensions: 820 × 312 px, with the logo centred within the middle third of the image.",
+        "Maximum file size: 1 MB. Recommended dimensions: 820 × 312 px, with the logo centred within the middle third of the image.",
         { exact: true },
       ),
     ).toBeVisible();
-    await expect(wideLogo.getByText("Maximum file size: 1 MB", { exact: true })).toBeVisible();
+    await expect(
+      wideLogo.getByText(
+        "Used for online documents, including policies and procedures.",
+        { exact: true },
+      ),
+    ).toBeVisible();
   });
 });
