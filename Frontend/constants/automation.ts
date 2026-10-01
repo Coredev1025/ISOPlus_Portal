@@ -172,7 +172,9 @@ export const DEFAULT_EMAIL_MESSAGE: Readonly<Record<AutomationKind, string>> =
       + "your payment correctly.</p>"
       + "<p>Should you have any questions, please do not hesitate to contact "
       + "us.</p>"
-      + "<p>Kind regards,</p>",
+      + "<p>Kind regards,</p>"
+      + "<p>Account Receivable Team</p>"
+      + "<p>{{business_name}}</p>",
     statement:
       "<p>Dear Recipient,</p>"
       + "<p>Please find attached your account statement, "
@@ -183,7 +185,8 @@ export const DEFAULT_EMAIL_MESSAGE: Readonly<Record<AutomationKind, string>> =
       + "for your records. It is not a tax invoice and does not raise any new "
       + "charges.</p>"
       + "<p>Kind regards,</p>"
-      + "<p>Account Receivable Team</p>",
+      + "<p>Account Receivable Team</p>"
+      + "<p>{{business_name}}</p>",
   });
 
 /**
