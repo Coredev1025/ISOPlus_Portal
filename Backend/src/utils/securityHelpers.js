@@ -82,6 +82,16 @@ export function mongoEq(value) {
   return normalized;
 }
 
+/**
+ * mongoEq for a value that may legitimately be absent: undefined or null gives
+ * null instead of a throw, while anything present is still validated. For
+ * webhook payload fields ISO+ does not always send (board_id, workspace_id),
+ * where the caller has its own fallback for "not provided".
+ */
+export function mongoEqOrNull(value) {
+  return value === undefined || value === null ? null : mongoEq(value);
+}
+
 export function sanitizeApiPathSegment(value, label = 'id') {
   if (value === null || value === undefined) {
     throw new Error(`Invalid ${label}: expected a non-empty string.`);

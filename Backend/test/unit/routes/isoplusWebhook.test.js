@@ -132,34 +132,27 @@ describe('item.deleted', () => {
     expect(await Item.findOne({ itemId }).lean()).not.toBeNull();
   });
 
-  it('never reaches its stored-boardId fallback, because mongoEq throws on the missing board_id', async () => {
-    // handleItemDeleted does `let boardId = mongoEq(payload.board_id)` before
-    // the `if (!boardId)` lookup, and mongoEq throws rather than returning null
-    // for undefined. The fallback that reads boardId off the stored Item is
-    // therefore dead code, and the item survives a delete event that omits
-    // board_id. Reported as a bug; pinned here as current behaviour.
+  it('falls back to the stored boardId when the payload has no board_id (KAN-281)', async () => {
+    // Previously mongoEq threw on the missing board_id before the stored-boardId
+    // lookup could run, so the item survived a delete event that omitted it.
     const boardId = await seedBoard();
+    await Board.findOneAndUpdate({ boardId }, { $set: { 'syncStats.itemsSynced': 2 } });
     const itemId = await seedItem({ boardId });
 
     const res = await post({ event: 'item.deleted', payload: { id: itemId } });
 
     expect(res.status).toBe(200);
-    expect(res.body.success).toBe(false);
-    expect(res.body.error).toBe(
-      'Invalid query value: expected a plain string, number, boolean, or bigint.'
-    );
-    expect(await Item.findOne({ itemId }).lean()).not.toBeNull();
+    expect(res.body.success).toBe(true);
+    expect(await Item.findOne({ itemId }).lean()).toBeNull();
+    const board = await Board.findOne({ boardId }).lean();
+    expect(board.syncStats.itemsSynced).toBe(1);
   });
 
-  it('reports failure rather than acknowledging when board_id is absent', async () => {
+  it('acknowledges without error when board_id is absent and the item is not stored (KAN-281)', async () => {
     const res = await post({ event: 'item.deleted', payload: { id: nextId('item') } });
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({
-      success: false,
-      message: 'Failed to process hook',
-      error: 'Invalid query value: expected a plain string, number, boolean, or bigint.',
-    });
+    expect(res.body).toEqual({ success: true, message: 'Hook processed successfully' });
   });
 
   it('does not decrement the counter when the item was already gone', async () => {
@@ -346,6 +339,121 @@ describe('item.finalized', () => {
     expect(res.status).toBe(200);
     const stored = await Item.findOne({ itemId }).lean();
     expect(stored.data).toEqual({ Title: 'before' });
+  });
+});
+
+describe('payloads without board_id / workspace_id (KAN-281)', () => {
+  // ISO+ can send item events with only the item id (a cloned shift did). The
+  // handlers must fall back to searching the synced boards instead of throwing.
+  const itemUrl = (workspaceId, boardId, itemId) =>
+    `${API_BASE}/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`;
+  const freshItem = (itemId) => HttpResponse.json({
+    id: itemId,
+    folder_id: 'folder-9',
+    values: [{ data: 'Cloned title', attribute: { id: 'a1', name: 'Title', type: 'text' } }],
+  });
+
+  it('stores a new item from item.created when the payload has no board_id or workspace_id', async () => {
+    const boardId = await seedBoard();
+    const itemId = nextId('item');
+    server.use(http.get(itemUrl('ws-1', boardId, itemId), () => freshItem(itemId)));
+
+    const res = await post({ event: 'item.created', payload: { id: itemId } });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    const stored = await Item.findOne({ itemId }).lean();
+    expect(stored.boardId).toBe(boardId);
+    expect(stored.workspaceId).toBe('ws-1');
+    expect(stored.data.Title).toBe('Cloned title');
+  });
+
+  it('finds the item on a later synced board when an earlier board answers 404 for it', async () => {
+    // A 404 from one board means "not on this board", not "deleted in ISO+".
+    const firstBoard = await seedBoard({ workspaceId: 'ws-other' });
+    const secondBoard = await seedBoard({ workspaceId: 'ws-1' });
+    const itemId = nextId('item');
+    server.use(
+      http.get(itemUrl('ws-other', firstBoard, itemId), () =>
+        HttpResponse.json({ message: 'Not found' }, { status: 404 })),
+      http.get(itemUrl('ws-1', secondBoard, itemId), () => freshItem(itemId)),
+    );
+
+    const res = await post({ event: 'item.created', payload: { id: itemId } });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    const stored = await Item.findOne({ itemId }).lean();
+    expect(stored.boardId).toBe(secondBoard);
+    expect(stored.workspaceId).toBe('ws-1');
+  });
+
+  it('treats the item as deleted only when every synced board answers 404', async () => {
+    const boardA = await seedBoard({ workspaceId: 'ws-1' });
+    const boardB = await seedBoard({ workspaceId: 'ws-2' });
+    const itemId = nextId('item');
+    server.use(
+      http.get(itemUrl('ws-1', boardA, itemId), () =>
+        HttpResponse.json({ message: 'Not found' }, { status: 404 })),
+      http.get(itemUrl('ws-2', boardB, itemId), () =>
+        HttpResponse.json({ message: 'Not found' }, { status: 404 })),
+    );
+
+    const res = await post({ event: 'item.created', payload: { id: itemId } });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(await Item.findOne({ itemId }).lean()).toBeNull();
+  });
+
+  it('applies an item.finalized payload with no board_id or workspace_id to the stored item', async () => {
+    const boardId = await seedBoard();
+    const itemId = await seedItem({ boardId, syncGUID: 'old-guid' });
+
+    const res = await post({
+      event: 'item.finalized',
+      payload: {
+        id: itemId,
+        values: [{ data: 'finalized title', attribute: { id: 'a1', name: 'Title', type: 'text' } }],
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    const stored = await Item.findOne({ itemId }).lean();
+    expect(stored.data.Title).toBe('finalized title');
+    expect(stored.syncGUID).toBeNull();
+  });
+
+  it('stores a new item from item.finalized when the payload has no board_id or workspace_id', async () => {
+    const boardId = await seedBoard();
+    const itemId = nextId('item');
+    server.use(http.get(itemUrl('ws-1', boardId, itemId), () => freshItem(itemId)));
+
+    const res = await post({
+      event: 'item.finalized',
+      payload: {
+        id: itemId,
+        values: [{ data: 'finalized title', attribute: { id: 'a1', name: 'Title', type: 'text' } }],
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    const stored = await Item.findOne({ itemId }).lean();
+    expect(stored.boardId).toBe(boardId);
+    expect(stored.data.Title).toBe('finalized title');
+  });
+
+  it('refreshes a stored item from item.updated when the payload has no board_id or workspace_id', async () => {
+    const boardId = await seedBoard();
+    const itemId = await seedItem({ boardId });
+    server.use(http.get(itemUrl('ws-1', boardId, itemId), () => freshItem(itemId)));
+
+    const res = await post({ event: 'item.updated', payload: { id: itemId } });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
   });
 });
 
