@@ -1,6 +1,52 @@
 import type { AxiosInstance } from 'axios';
 import { downloadGeneratedPdfViaBackend } from '@/lib/pdf-download-helpers';
 
+const ISO_TRADEMARK = 'ISO+\u2122';
+
+/**
+ * Download name for an invoice PDF.
+ *
+ * Prefer the stored S3 object name (last path segment). That is the name the
+ * browser saved when it opened the bucket URL directly:
+ * `INV-1109-ISO+™-Jane-Smith.pdf`. The ™ stays in `link.download`; the proxy
+ * puts only an ASCII fallback in the `filename=` header.
+ *
+ * When the URL has no `.pdf` name, build the same shape from the invoice
+ * number and participant (spaces become hyphens, matching the stored key).
+ */
+export function invoicePdfDownloadFilename({
+  fileUrl,
+  invoiceNumber,
+  participantName,
+}: {
+  fileUrl?: string;
+  invoiceNumber?: string;
+  participantName?: string;
+}): string {
+  const fromKey = pdfNameFromFileUrl(fileUrl);
+  if (fromKey) return fromKey;
+
+  const raw = String(invoiceNumber || 'INV').trim();
+  const suffix = ` (${ISO_TRADEMARK})`;
+  const base = (raw.endsWith(suffix) ? raw.slice(0, -suffix.length) : raw).trim() || 'INV';
+  const participant = String(participantName || 'Participant').trim().replace(/\s+/g, '-') || 'Participant';
+  return `${base}-${ISO_TRADEMARK}-${participant}.pdf`;
+}
+
+function pdfNameFromFileUrl(fileUrl?: string): string | null {
+  if (!fileUrl) return null;
+  const last = String(fileUrl).split(/[?#]/)[0].split('/').pop() || '';
+  if (!last || !/\.pdf$/i.test(last)) return null;
+  let decoded = last;
+  try {
+    decoded = decodeURIComponent(last);
+  } catch {
+    decoded = last;
+  }
+  if (!decoded || decoded.includes('/') || decoded.includes('\\') || decoded.includes('..')) return null;
+  return decoded;
+}
+
 export async function downloadInvoicePdf(
   fileUrl: string,
   invoiceNumber: string,
@@ -10,7 +56,7 @@ export async function downloadInvoicePdf(
 ) {
   await downloadGeneratedPdfViaBackend({
     fileUrl,
-    filename: `Invoice_${invoiceNumber}_${participantName.replace(/\s+/g, '_')}.pdf`,
+    filename: invoicePdfDownloadFilename({ fileUrl, invoiceNumber, participantName }),
     workspaceId,
     axios,
   });

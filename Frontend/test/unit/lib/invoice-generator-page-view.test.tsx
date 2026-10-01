@@ -538,7 +538,11 @@ describe('InvoiceGeneratorPageView table body', () => {
 
     await user.click(screen.getByRole('button', { name: 'Invoice #INV-0042' }));
 
-    expect(props.onDownloadPdf).toHaveBeenCalledWith('https://files.example.com/INV-0042.pdf', 'INV-0042');
+    expect(props.onDownloadPdf).toHaveBeenCalledWith(
+      'https://files.example.com/INV-0042.pdf',
+      'INV-0042',
+      'Alan Turing',
+    );
   });
 
   it('strips markup out of the notes column', async () => {

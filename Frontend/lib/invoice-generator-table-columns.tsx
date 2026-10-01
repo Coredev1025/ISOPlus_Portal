@@ -33,7 +33,7 @@ export type InvoiceGeneratorTableColumn = {
 
 function renderPdfDownloadCell(
   record: InvoiceGeneratorServiceRecord,
-  onDownload: (fileUrl: string, invoiceNumber?: string) => void,
+  onDownload: (fileUrl: string, invoiceNumber?: string, participantName?: string) => void,
 ) {
   if (!record.fileUrl) {
     return '-';
@@ -43,7 +43,7 @@ function renderPdfDownloadCell(
       variant="ghost"
       size="sm"
       className="h-8 gap-2"
-      onClick={() => onDownload(record.fileUrl!, record.invoiceNumber)}
+      onClick={() => onDownload(record.fileUrl!, record.invoiceNumber, record.participant)}
       title="Download PDF Invoice"
     >
       <Download className="h-4 w-4" />
@@ -68,7 +68,7 @@ function buildNdisColumns(
   ndisStatusFieldLabel: string,
   formatDisplayDate: (dateString: string | null | undefined) => string,
   formatCurrency: (amount: number) => string,
-  onDownloadPdf: (fileUrl: string, invoiceNumber?: string) => void,
+  onDownloadPdf: (fileUrl: string, invoiceNumber?: string, participantName?: string) => void,
 ): InvoiceGeneratorTableColumn[] {
   return [
     { key: 'participant', label: 'Participant Name', className: 'min-w-[200px]', render: (r) => r.participant || '-' },
@@ -90,7 +90,7 @@ function buildLowCatColumns(
   formatDisplayDate: (dateString: string | null | undefined) => string,
   formatCurrency: (amount: number) => string,
   stripHtml: (value?: string) => string,
-  onDownloadPdf: (fileUrl: string, invoiceNumber?: string) => void,
+  onDownloadPdf: (fileUrl: string, invoiceNumber?: string, participantName?: string) => void,
 ): InvoiceGeneratorTableColumn[] {
   return [
     { key: 'participant', label: 'Participant Name', className: 'min-w-[200px]', render: (r) => r.participant || '-' },
@@ -113,7 +113,7 @@ function buildDefaultColumns(
   formatDisplayDate: (dateString: string | null | undefined) => string,
   formatCurrency: (amount: number) => string,
   stripHtml: (value?: string) => string,
-  onDownloadPdf: (fileUrl: string, invoiceNumber?: string) => void,
+  onDownloadPdf: (fileUrl: string, invoiceNumber?: string, participantName?: string) => void,
 ): InvoiceGeneratorTableColumn[] {
   return [
     { key: 'participant', label: 'Participant', className: 'min-w-[200px]', render: (r) => r.participant || '-' },
@@ -141,7 +141,7 @@ export function buildInvoiceGeneratorTableColumns(options: {
   formatDisplayDate: (dateString: string | null | undefined) => string;
   formatCurrency: (amount: number) => string;
   stripHtml: (value?: string) => string;
-  onDownloadPdf: (fileUrl: string, invoiceNumber?: string) => void;
+  onDownloadPdf: (fileUrl: string, invoiceNumber?: string, participantName?: string) => void;
 }): InvoiceGeneratorTableColumn[] {
   if (options.isNdisBoard) {
     return buildNdisColumns(
