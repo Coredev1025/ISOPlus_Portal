@@ -36,6 +36,13 @@ vi.mock('../../src/utils/uploadS3.js', () => ({
   getS3File: vi.fn(async () => Buffer.from('logo')),
 }));
 
+// Calls straight through; only here so a test can see what was warned about.
+vi.mock('../../src/utils/logger.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, warn: vi.fn(actual.warn) };
+});
+
+const { warn } = await import('../../src/utils/logger.js');
 const { getS3File } = await import('../../src/utils/uploadS3.js');
 const { default: Board } = await import('../../src/models/Board.js');
 const { default: Business } = await import('../../src/models/Business.js');
@@ -339,6 +346,15 @@ describe('a scheduled statement run, on untidy data', () => {
     expect(rows).toHaveLength(2);
     expect(rows.some((row) => row.includes('INV-GHOST'))).toBe(false);
     expect(closingBalanceOf(rendered)).toBe('$150.00');
+    // The omission is reported, not silent.
+    expect(warn).toHaveBeenCalledWith(
+      'Automation',
+      'Payments left off the statement: no matching invoice for this participant',
+      expect.objectContaining({
+        participant: PARTICIPANT,
+        payments: [{ invoiceNumber: 'INV-GHOST', amount: 100 }],
+      }),
+    );
   });
 
   // Payments are read per board; the invoices must be too, or an invoice

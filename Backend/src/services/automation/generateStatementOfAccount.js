@@ -219,9 +219,21 @@ export async function generateStatementOfAccount({
   // after that boundary. Using the real "now" is what lets this statement see
   // an invoice generated moments — or cycles — before it, rather than only
   // ever catching up one statement late.
-  const { ledger, ageing } = buildStatementLedger({
+  const { ledger, ageing, unmatchedPayments } = buildStatementLedger({
     invoices, items, period, openingBalance: 0, timezone, asAt: new Date(),
   });
+
+  // KAN-286: money recorded against an invoice this participant has no record
+  // of is left off the statement. Said here, so it is not a silent omission.
+  if (unmatchedPayments.length > 0) {
+    warn('Automation', 'Payments left off the statement: no matching invoice for this participant', {
+      workspaceId,
+      boardId,
+      participant,
+      periodKey,
+      payments: unmatchedPayments.map((p) => ({ invoiceNumber: p.invoiceNumber, amount: p.amount })),
+    });
+  }
 
   if (!hasStatementActivity(ledger)) {
     info('Automation', 'No account activity; no statement of account', {

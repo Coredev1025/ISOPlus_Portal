@@ -100,7 +100,8 @@ export function collectPayments(items) {
 }
 
 /**
- * Payments that refer to one of this participant's invoices.
+ * Splits payments into those that refer to an invoice actually on this
+ * statement and those that do not.
  *
  * KAN-286: a payment whose invoice number is not among the invoices has
  * nothing to be applied to, so it is left off, as `collectPayments` already
@@ -109,10 +110,23 @@ export function collectPayments(items) {
  * invoices), the two totals disagreed, and the statement's own reconciliation
  * check threw while the PDF was rendered — after a statement number had been
  * claimed.
+ *
+ * "On this statement" means raised by `asAt`, the same test `chargeRows` and
+ * `asAtCutoff` apply. An invoice dated after the statement date has no charge
+ * row and no ageing entry, so a payment against it is unmatched too.
+ *
+ * The unmatched payments are returned rather than discarded, so the caller can
+ * say what was left off: dropping real money without a trace would be a quiet,
+ * wrong statement.
  */
-function paymentsOnKnownInvoices(payments, invoices) {
-  const known = new Set(invoices.map((inv) => inv.invoiceNumber));
-  return payments.filter((p) => known.has(p.invoiceNumber));
+function splitPaymentsByInvoice(payments, invoices, asAt, tz) {
+  const known = new Set(
+    invoices.filter((inv) => raisedBy(inv.createdAt, asAt, tz)).map((inv) => inv.invoiceNumber),
+  );
+  return {
+    matched: payments.filter((p) => known.has(p.invoiceNumber)),
+    unmatched: payments.filter((p) => !known.has(p.invoiceNumber)),
+  };
 }
 
 /**
@@ -277,7 +291,9 @@ export function buildStatementLedger({
   timezone = DEFAULT_TIMEZONE,
   datedPayments = true,
 }) {
-  const payments = paymentsOnKnownInvoices(collectPayments(items), invoices);
+  const { matched: payments, unmatched: unmatchedPayments } = splitPaymentsByInvoice(
+    collectPayments(items), invoices, asAt, timezone,
+  );
   const rows = [
     ...chargeRows(invoices, payments, asAt, datedPayments, timezone),
     ...(datedPayments ? paymentRows(payments, asAt, timezone) : []),
@@ -289,7 +305,7 @@ export function buildStatementLedger({
     outstandingByInvoice(settled.invoices, settled.payments), asAt, timezone,
   );
 
-  return { ledger, ageing, payments };
+  return { ledger, ageing, payments, unmatchedPayments };
 }
 
 /**
