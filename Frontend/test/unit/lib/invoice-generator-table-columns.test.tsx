@@ -412,6 +412,7 @@ describe('invoice generator cell renderers — PDF download', () => {
     expect(onDownloadPdf).toHaveBeenCalledWith(
       'https://files.example.test/invoices/INV-2026-001.pdf',
       'INV-2026-001',
+      'Jane Doe',
     );
   });
 
@@ -431,7 +432,11 @@ describe('invoice generator cell renderers — PDF download', () => {
 
     await user.click(screen.getByRole('button', { name: 'Download' }));
 
-    expect(onDownloadPdf).toHaveBeenCalledWith('https://files.example.test/invoices/loose.pdf', undefined);
+    expect(onDownloadPdf).toHaveBeenCalledWith(
+      'https://files.example.test/invoices/loose.pdf',
+      undefined,
+      'Jane Doe',
+    );
   });
 
   it('treats an empty invoice number as no invoice number', async () => {
@@ -447,7 +452,11 @@ describe('invoice generator cell renderers — PDF download', () => {
 
     await user.click(screen.getByRole('button', { name: 'Download' }));
 
-    expect(onDownloadPdf).toHaveBeenCalledWith('https://files.example.test/invoices/loose.pdf', '');
+    expect(onDownloadPdf).toHaveBeenCalledWith(
+      'https://files.example.test/invoices/loose.pdf',
+      '',
+      'Jane Doe',
+    );
   });
 
   it('offers the same download button on every board variant', () => {

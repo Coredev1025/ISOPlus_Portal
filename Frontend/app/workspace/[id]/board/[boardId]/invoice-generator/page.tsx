@@ -71,6 +71,7 @@ import { useInvoiceGeneratorEligibleRecords } from "@/lib/use-invoice-generator-
 import { InvoiceGeneratorPageView } from "@/lib/invoice-generator-page-view";
 import {
   finalizePdfInvoiceGeneration,
+  invoicePdfDownloadFilename,
 } from "@/lib/invoice-generator-pdf-helpers";
 import { downloadGeneratedPdfViaBackend } from "@/lib/pdf-download-helpers";
 import { generateXeroInvoiceFromModal } from "@/lib/invoice-generator-xero-helpers";
@@ -479,7 +480,7 @@ export default function InvoiceGenerator() {
     return value.replace(/<[^>]*>/g, '').trim();
   };
 
-  const handleDownloadPDF = async (fileUrl: string, invoiceNumber?: string) => {
+  const handleDownloadPDF = async (fileUrl: string, invoiceNumber?: string, participantName?: string) => {
     try {
       if (!fileUrl) {
         if (invoiceNumber) {
@@ -494,10 +495,9 @@ export default function InvoiceGenerator() {
       }
 
       try {
-        const baseInvoiceNumber = invoiceNumber ? invoiceNumber.replace(/\s*\(ISO\+™\)\s*$/, '').trim() : 'Invoice';
         await downloadGeneratedPdfViaBackend({
           fileUrl,
-          filename: `Invoice_${baseInvoiceNumber}.pdf`,
+          filename: invoicePdfDownloadFilename({ fileUrl, invoiceNumber, participantName }),
           workspaceId: id,
           axios,
         });

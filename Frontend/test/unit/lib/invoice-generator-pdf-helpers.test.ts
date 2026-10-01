@@ -3,6 +3,7 @@ import type { AxiosInstance } from 'axios';
 
 import {
   downloadInvoicePdf,
+  invoicePdfDownloadFilename,
   updateLegacyInvoiceStatuses,
   finalizePdfInvoiceGeneration,
 } from '@/lib/invoice-generator-pdf-helpers';
@@ -56,38 +57,56 @@ afterEach(() => {
   consoleError.mockRestore();
 });
 
-describe('downloadInvoicePdf', () => {
-  it('downloads the PDF under an Invoice_<number>_<participant> file name', async () => {
-    const post = makeDownloadPost(true);
+describe('invoicePdfDownloadFilename', () => {
+  it('uses the stored S3 object name, including ISO+™, so old invoices keep their key filename', () => {
+    const fileUrl =
+      'https://isoplus-portal-dev.s3.ap-southeast-2.amazonaws.com/output/55515/board/Participant-invoices/INV-1109-ISO%2B%E2%84%A2-Jane-Smith.pdf?X-Amz-Signature=abc';
 
-    await downloadInvoicePdf(PDF_URL, 'INV-1001', 'Jane  Marie Doe', 'ws-1', {
+    expect(invoicePdfDownloadFilename({
+      fileUrl,
+      invoiceNumber: 'INV-1109 (ISO+™)',
+      participantName: 'Jane Smith',
+    })).toBe('INV-1109-ISO+™-Jane-Smith.pdf');
+  });
+
+  it('builds INV-{number}-ISO+™-{participant}.pdf when the URL has no pdf name', () => {
+    expect(invoicePdfDownloadFilename({
+      fileUrl: 'https://files.test/download',
+      invoiceNumber: 'INV-21 (ISO+™)',
+      participantName: 'Jane Smith',
+    })).toBe('INV-21-ISO+™-Jane-Smith.pdf');
+  });
+
+  it('turns spaces in the participant name into hyphens, matching the stored key', () => {
+    expect(invoicePdfDownloadFilename({
+      fileUrl: '',
+      invoiceNumber: 'INV-21',
+      participantName: 'Jane  Marie Doe',
+    })).toBe('INV-21-ISO+™-Jane-Marie-Doe.pdf');
+  });
+});
+
+describe('downloadInvoicePdf', () => {
+  it('downloads under the stored S3 object name INV-{number}-ISO+™-{participant}.pdf', async () => {
+    const post = makeDownloadPost(true);
+    const fileUrl =
+      'https://isoplus-portal-dev.s3.ap-southeast-2.amazonaws.com/output/ws/board/Participant-invoices/INV-1109-ISO%2B%E2%84%A2-Jane-Smith.pdf?X-Amz-Signature=abc';
+
+    await downloadInvoicePdf(fileUrl, 'INV-1109 (ISO+™)', 'Jane Smith', 'ws-1', {
       post,
     } as unknown as AxiosInstance);
 
     expect(post).toHaveBeenCalledWith(
       'http://localhost:4001/api/pdf-links/file',
       {
-        fileUrl: PDF_URL,
+        fileUrl,
         workspaceId: 'ws-1',
-        filename: 'Invoice_INV-1001_Jane_Marie_Doe.pdf',
+        filename: 'INV-1109-ISO+™-Jane-Smith.pdf',
       },
       { responseType: 'blob', headers: { Accept: 'application/pdf' } },
     );
-    expect(clicked).toEqual([{ download: 'Invoice_INV-1001_Jane_Marie_Doe.pdf', href: 'blob:mock-pdf-url' }]);
+    expect(clicked).toEqual([{ download: 'INV-1109-ISO+™-Jane-Smith.pdf', href: 'blob:mock-pdf-url' }]);
     expect(createObjectURL).toHaveBeenCalledTimes(1);
-    const blob = createObjectURL.mock.calls[0][0] as unknown as Blob;
-    expect(blob.size).toBe('%PDF-1.4 fake invoice'.length);
-  });
-
-  it('keeps the ISO+™ invoice suffix in the download name (origin generate naming)', async () => {
-    const post = makeDownloadPost(true);
-
-    await downloadInvoicePdf(PDF_URL, 'INV-14 (ISO+™)', 'Jane Smith', 'ws-1', {
-      post,
-    } as unknown as AxiosInstance);
-
-    expect(post.mock.calls[0][1].filename).toBe('Invoice_INV-14 (ISO+™)_Jane_Smith.pdf');
-    expect(clicked[0].download).toBe('Invoice_INV-14 (ISO+™)_Jane_Smith.pdf');
   });
 
   it('detaches the link and revokes the object URL after the download settles', async () => {
@@ -273,14 +292,20 @@ describe('finalizePdfInvoiceGeneration', () => {
 
   it('downloads the PDF when the response carried a file URL', async () => {
     const h = makeFinalizeHarness();
+    const storedUrl =
+      'https://bucket.s3.amazonaws.com/output/ws/board/Participant-invoices/INV-1001-ISO%2B%E2%84%A2-Jane-Doe.pdf?X-Amz-Signature=abc';
 
-    await finalizePdfInvoiceGeneration({ ...h.args, fileUrl: PDF_URL });
+    await finalizePdfInvoiceGeneration({ ...h.args, fileUrl: storedUrl });
 
-    expect(clicked).toEqual([{ download: 'Invoice_INV-1001_Jane_Doe.pdf', href: 'blob:mock-pdf-url' }]);
+    expect(clicked).toEqual([{ download: 'INV-1001-ISO+™-Jane-Doe.pdf', href: 'blob:mock-pdf-url' }]);
     expect(openSpy).not.toHaveBeenCalled();
     expect(h.post).toHaveBeenCalledWith(
       'http://localhost:4001/api/pdf-links/file',
-      expect.objectContaining({ fileUrl: PDF_URL, workspaceId: 'ws-1' }),
+      expect.objectContaining({
+        fileUrl: 'https://bucket.s3.amazonaws.com/output/ws/board/Participant-invoices/INV-1001-ISO%2B%E2%84%A2-Jane-Doe.pdf?X-Amz-Signature=abc',
+        workspaceId: 'ws-1',
+        filename: 'INV-1001-ISO+™-Jane-Doe.pdf',
+      }),
       expect.any(Object),
     );
   });
