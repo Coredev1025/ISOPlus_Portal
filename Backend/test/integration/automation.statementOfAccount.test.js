@@ -93,7 +93,7 @@ async function seed() {
       'Full Name/Preferred Name': PARTICIPANT,
       'Participant Full Name': PARTICIPANT,
       'Amount Received($)': '100',
-      'Invoice Received Date': '2026-08-20T00:00:00.000Z',
+      'Payment Received Date': '2026-08-20T00:00:00.000Z',
       // Shift dates inside the August period, so the participant has services
       // to report and the budget statement is issued. Without them the run
       // now correctly issues no budget statement at all — an all-zero document
@@ -299,7 +299,7 @@ describe('a scheduled statement run, on untidy data', () => {
 
   // ISO+ lets the amount and the received date be entered separately.
   it('still states the account when a payment has no received date', async () => {
-    await Item.updateOne({ itemId: 'item-1' }, { $unset: { 'data.Invoice Received Date': '' } });
+    await Item.updateOne({ itemId: 'item-1' }, { $unset: { 'data.Payment Received Date': '' } });
 
     await run();
 
@@ -348,7 +348,7 @@ describe('a scheduled statement run, on untidy data', () => {
         'Full Name/Preferred Name': 'Aaron Test',
         'Participant Full Name': 'Aaron Test',
         'Amount Received($)': '50',
-        'Invoice Received Date': '2026-08-20T00:00:00.000Z',
+        'Payment Received Date': '2026-08-20T00:00:00.000Z',
         'Scheduled Shift Start Date & Time': '2026-08-16T09:00:00.000Z',
         'Actual Shift End Date & Time': '2026-08-16T11:00:00.000Z',
         'Total Amount ($)': '250.00',
@@ -405,7 +405,7 @@ describe('a scheduled statement run, on untidy data', () => {
         // The correct, undamaged reference chain.
         'Participant Profile': ['profile-masoud'],
         'Amount Received($)': '75',
-        'Invoice Received Date': '2026-08-21T00:00:00.000Z',
+        'Payment Received Date': '2026-08-21T00:00:00.000Z',
       },
     });
 

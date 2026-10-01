@@ -29,7 +29,7 @@ const paidItem = (invoicedBy, amount, date) => ({
   data: {
     'Payment Status': 'Paid',
     'Amount Received($)': amount,
-    'Invoice Received Date': date,
+    'Payment Received Date': date,
   },
 });
 
@@ -55,7 +55,7 @@ describe('collectPayments', () => {
   });
 
   it('ignores a record that was never invoiced', () => {
-    const orphan = { itemId: 'x', data: { 'Amount Received($)': 100, 'Invoice Received Date': '2026-07-20' } };
+    const orphan = { itemId: 'x', data: { 'Amount Received($)': 100, 'Payment Received Date': '2026-07-20' } };
     expect(collectPayments([orphan])).toEqual([]);
   });
 
@@ -318,7 +318,7 @@ describe('buildStatementLedger — ageing stops at the statement date', () => {
       }],
       items: [{
         invoicedBy: 'INV-1',
-        data: { 'Amount Received($)': '100', 'Invoice Received Date': '2026-09-08T00:00:00.000Z' },
+        data: { 'Amount Received($)': '100', 'Payment Received Date': '2026-09-08T00:00:00.000Z' },
       }],
       period,
       openingBalance: 0,

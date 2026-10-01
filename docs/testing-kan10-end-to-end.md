@@ -475,7 +475,7 @@ docker exec -i isoplus-mongo mongosh business-dashboard --quiet --eval '
     createdAt:new Date("2026-08-05T00:00:00Z"), isDeleted:false, SignatureStatus:"Unsigned", createdBy:""});
   db.items.updateOne({workspaceId:"55390",boardId:"jpjztrn14pJ","data.Full Name/Preferred Name":"Jane Smith"},
     {$set:{invoicedBy:"INV-9003","data.Amount Received($)":"110",
-           "data.Invoice Received Date":"2026-08-18T00:00:00.000Z"}})'
+           "data.Payment Received Date":"2026-08-18T00:00:00.000Z"}})'
 ```
 
 **The document fails itself rather than going out wrong**, which is the point of

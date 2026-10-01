@@ -37,7 +37,7 @@ const BARE_DATE = /^\d{4}-\d{2}-\d{2}$/;
 /**
  * `value` as a comparable instant, in `tz`.
  *
- * `Invoice Received Date` (KAN-277) is entered through a date picker as a bare
+ * `Payment Received Date` (KAN-277) is entered through a date picker as a bare
  * `YYYY-MM-DD`, with no time component. Parsed directly, that is implicit UTC
  * midnight — mid-morning in `tz` — so a payment dated "today" reads as still
  * hours in the future for the first part of every business day, and gets
@@ -238,7 +238,7 @@ function outstandingByInvoice(invoices, payments) {
  * default — and for whatever the caller prints as the period covered.
  *
  * `datedPayments` is the switch for the open question about
- * `Invoice Received Date`. With it true — the default — each payment gets its
+ * `Payment Received Date`. With it true — the default — each payment gets its
  * own dated row and the running balance means what the sample shows. With it
  * false, payments are netted onto their invoice's row instead: the statement
  * still reconciles and the ageing is unchanged, but there are no payment lines
