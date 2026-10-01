@@ -100,6 +100,22 @@ export function collectPayments(items) {
 }
 
 /**
+ * Payments that refer to one of this participant's invoices.
+ *
+ * KAN-286: a payment whose invoice number is not among the invoices has
+ * nothing to be applied to, so it is left off, as `collectPayments` already
+ * does for a record with no `invoicedBy`. Left on, it got a payment row the
+ * ageing never counted (the ageing only subtracts payments from listed
+ * invoices), the two totals disagreed, and the statement's own reconciliation
+ * check threw while the PDF was rendered — after a statement number had been
+ * claimed.
+ */
+function paymentsOnKnownInvoices(payments, invoices) {
+  const known = new Set(invoices.map((inv) => inv.invoiceNumber));
+  return payments.filter((p) => known.has(p.invoiceNumber));
+}
+
+/**
  * Whether `value` is a usable date at or before `asAt`.
  *
  * KAN-274: charge and payment rows used to be scoped to the statement's own
@@ -261,7 +277,7 @@ export function buildStatementLedger({
   timezone = DEFAULT_TIMEZONE,
   datedPayments = true,
 }) {
-  const payments = collectPayments(items);
+  const payments = paymentsOnKnownInvoices(collectPayments(items), invoices);
   const rows = [
     ...chargeRows(invoices, payments, asAt, datedPayments, timezone),
     ...(datedPayments ? paymentRows(payments, asAt, timezone) : []),

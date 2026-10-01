@@ -312,6 +312,35 @@ describe('a scheduled statement run, on untidy data', () => {
     expect(closingBalanceOf(rendered)).toBe('$250.00');
   });
 
+  // KAN-286: a payment recorded against an invoice number the participant has
+  // no record of has nothing to be applied to. Left on, it gave the ledger a
+  // row the ageing never counted and the statement's own reconciliation check
+  // threw while rendering.
+  it('states the account without a payment that refers to an unknown invoice', async () => {
+    await Item.create({
+      itemId: 'item-ghost',
+      workspaceId: WORKSPACE,
+      boardId: BOARD,
+      folderId: 'folder-1',
+      invoicedBy: 'INV-GHOST',
+      data: {
+        'Participant Full Name': PARTICIPANT,
+        'Amount Received($)': '100',
+        'Payment Received Date': '2026-08-21T00:00:00.000Z',
+      },
+    });
+
+    await run();
+
+    const rendered = statementRender();
+    expect(rendered).toBeDefined();
+    const rows = JSON.parse(rendered.transactions);
+    // The invoice and its own $100 payment; nothing for INV-GHOST.
+    expect(rows).toHaveLength(2);
+    expect(rows.some((row) => row.includes('INV-GHOST'))).toBe(false);
+    expect(closingBalanceOf(rendered)).toBe('$150.00');
+  });
+
   // Payments are read per board; the invoices must be too, or an invoice
   // raised on board B shows as owing on board A's statement as well.
   it('leaves an invoice raised on another board to that board\'s statement', async () => {
