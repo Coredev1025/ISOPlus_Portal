@@ -70,10 +70,12 @@ describe('write builders', () => {
     expect(merged.quote).toEqual({ nextNumber: 9 });
     expect(prefixes).toEqual({ invoice: { prefix: 'TAX-' } });
   });
-  it('filters on the flag being unset and every counter still at 1 or missing', () => {
+  it('filters on the flag being unset and every counter stored and still at 1', () => {
     const filter = uninitializedFilter('abc');
     expect(filter.documentNumberingInitialized).toEqual({ $ne: true });
-    expect(filter['documentNumbering.invoice.nextNumber']).toEqual({ $in: [1, null] });
+    // Equality on 1 does not match a missing field, so a business whose backfill
+    // has not run is refused rather than written over.
+    expect(filter['documentNumbering.invoice.nextNumber']).toBe(1);
     expect(filter['documentNumbering.statement.nextNumber']).toBeUndefined();
   });
 });

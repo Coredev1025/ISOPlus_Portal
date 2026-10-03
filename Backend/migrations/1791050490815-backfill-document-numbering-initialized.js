@@ -16,18 +16,28 @@
  * ## What it does
  *
  * - Adds any missing prefix and counter for the five series, with the schema's
- *   defaults. Existing values are never changed.
+ *   defaults. A real value is never changed. A null, or a value that is not an
+ *   object where one is expected, counts as missing and is replaced by the default
+ *   (null already reads as the default everywhere).
  * - Sets `documentNumberingInitialized` where it is missing: true when any of
  *   the four user-set series (not statement) has a counter other than 1, which
  *   means documents were issued, false otherwise. An existing flag is kept.
  *
- * Idempotent. Run it deliberately after the deploy that introduces the flag; it
- * is not run on boot. It is safe to run while the app is up: it only fills in
- * what is missing.
+ * Idempotent. Run it deliberately; it is not run on boot. Run it BEFORE the
+ * deploy that introduces the first-numbers screen: until it has run, a business
+ * with a counter missing is refused when it tries to set its first numbers (see
+ * uninitializedFilter in utils/documentNumberingInitial.js). It is safe to run
+ * while the app is up and against the old code: it only fills in what is missing.
+ *
+ * Needs MongoDB 4.2 or later: it is an update with an aggregation pipeline. That
+ * does not work on Amazon DocumentDB.
  *
  * Down removes the flag and nothing else. The backfilled counters equal what
  * Mongoose would have supplied as defaults, and cannot be told apart from
- * counters that were always there, so they stay.
+ * counters that were always there, so they stay. It removes EVERY flag, including
+ * one a user set after the migration; a business that chose 1 for all four and
+ * has issued nothing then looks unset again. Only run it together with rolling
+ * back the code that reads the flag.
  */
 
 const SERIES_DEFAULTS = {

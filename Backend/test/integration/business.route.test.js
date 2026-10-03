@@ -408,6 +408,27 @@ describe('Business routes', () => {
       warnSpy.mockRestore();
     });
 
+    it('refuses the numbers, and says so, for a legacy business whose backfill has not run', async () => {
+      await Business.collection.insertOne({
+        workspaceId: 'ws-init-premigration',
+        name: 'Old Co',
+        documentNumbering: {
+          invoice: { prefix: 'INV-', nextNumber: 1 },
+          purchaseOrder: { prefix: 'PO-', nextNumber: 1 },
+          quote: { prefix: 'QT-', nextNumber: 1 },
+        },
+      });
+      const { agent } = await authenticatedAgent(app);
+
+      const res = await firstSave(agent, 'ws-init-premigration');
+
+      expect(res.status).toBe(200);
+      expect(res.body.initialNumbersApplied).toBe(false);
+      const stored = await Business.collection.findOne({ workspaceId: 'ws-init-premigration' });
+      expect(stored.documentNumbering.invoice.nextNumber).toBe(1);
+      expect(stored.documentNumberingInitialized).not.toBe(true);
+    });
+
     it('does not mention the numbers in the reply to a save that did not ask to set them', async () => {
       await Business.create({ workspaceId: 'ws-init-quiet', name: 'Init Co' });
       const { agent } = await authenticatedAgent(app);

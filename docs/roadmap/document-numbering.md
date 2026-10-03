@@ -41,6 +41,13 @@ an owner or support-admin path to correct a number that has not yet been used.
 - Before the profile has loaded, or when the load fails, the form's initial state
   is "not set", so it shows editable fields and the "cannot be changed" text.
   Saving is still blocked (the company name is empty), so this is cosmetic.
+- `financial-settings-numbering-helpers.ts` and `financial-settings-form.tsx`
+  import types from each other. Type imports are erased, so it is harmless, but
+  moving `BankDetailsForm` and `DocumentSequences` into one types file is cleaner.
+- Until the backfill has run, a business with a counter missing is refused when
+  it tries to set its first numbers, and the user sees the generic "not saved"
+  message. Run the migration before the deploy and it never happens; a clearer
+  reply (a reason code the screen can explain) is possible if it ever does.
 - Run the Playwright tests in `Frontend/e2e/business-configuration.spec.ts`
   (this ticket's first-numbers test and the KAN-290 read-only test). Neither has
   been run.

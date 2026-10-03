@@ -218,9 +218,13 @@ async function saveExistingProfile({ business, updateData, plan, incomingNumberi
   info('Business-Service', 'Business profile updated', { businessName: saved.name }, req ?? null);
   if (plan.requested && !initialNumbersWritten) {
     // The user typed first numbers and they were not applied: the business was
-    // already initialized, or a document was issued while the save was in flight.
+    // already initialized, or a document was issued while the save was in
+    // flight, or a counter is missing from the stored document because the
+    // backfill migration has not run (see uninitializedFilter).
     warn('Business-Service', 'The first document numbers were not applied', {
-      workspaceId, alreadyInitialized: !plan.allowed,
+      workspaceId,
+      alreadyInitialized: !plan.allowed,
+      hint: plan.allowed ? 'a counter moved, or the backfill migration has not run' : undefined,
     }, req ?? null);
   }
   await logAuditTrail({

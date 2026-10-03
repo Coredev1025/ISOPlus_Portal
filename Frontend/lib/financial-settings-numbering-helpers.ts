@@ -50,7 +50,7 @@ export function withInitialNumbers<T extends Record<string, NumberSequence>>(
 
 /** Shown when the server did not apply the first numbers the user typed. */
 export const NUMBERS_NOT_APPLIED_MESSAGE =
-  "Your starting numbers were not saved. Numbering was already set, from another session or because a document was issued while you were saving, so the numbers shown are the current ones. The rest of your changes were saved.";
+  "Your starting numbers were not saved. They may already have been set, from another session or because a document was issued while you were saving, or they could not be applied yet. The numbers shown are the current ones, and the rest of your changes were saved. If this keeps happening, contact support.";
 
 type ProfileFormFields = Record<string, unknown>;
 

@@ -62,13 +62,21 @@ export function initialNumberingForNewBusiness(numbering, incoming) {
 }
 
 /**
- * A filter that matches the business only while no counter has moved and the
- * flag is unset, so the numbers are written only if nothing was issued meanwhile.
+ * A filter that matches the business only while no counter has moved, every
+ * counter of the four user-set series is stored, and the flag is unset.
+ *
+ * The counters must be STORED, not merely absent: a counter missing from the
+ * document means the backfill migration has not run, and a copy of the business
+ * loaded earlier would carry Mongoose's default for it and write that default
+ * back over the number being set. Equality on 1 does not match a missing field,
+ * so such a business is refused (the reply says the numbers were not applied)
+ * until the migration has run. The statement series is not set by the user and
+ * is not part of this: a default of 1 written over a missing 1 changes nothing.
  */
 export function uninitializedFilter(id) {
   const filter = { _id: id, documentNumberingInitialized: { $ne: true } };
   for (const series of INITIAL_NUMBER_SERIES) {
-    filter[`documentNumbering.${series}.nextNumber`] = { $in: [DEFAULT_DOCUMENT_NEXT_NUMBER, null] };
+    filter[`documentNumbering.${series}.nextNumber`] = DEFAULT_DOCUMENT_NEXT_NUMBER;
   }
   return filter;
 }
