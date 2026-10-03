@@ -227,16 +227,21 @@ row once the migration has run in production and the release is closed.
 
 | Migration | Added by | Run | What it does | Check it worked | Undo |
 |---|---|---|---|---|---|
-| `backfill-document-numbering-initialized` | KAN-292 (PR #953) | After the backend deploy that includes KAN-292, and **before users start setting their first document numbers**. Safe at any time. Idempotent. | Stores every missing document numbering counter and prefix (older businesses lack `statementOfAccount` and `statement`) and the `documentNumberingInitialized` flag, so a stale `save()` cannot write defaults back over numbers the user chose. Never changes a value that is already there. The flag is true where any of invoice, purchase order, quote or statement of account has moved off 1, otherwise false. | Before and after: `npm run schema -- businesses`. Then in the database: `db.businesses.countDocuments({documentNumberingInitialized: {$exists: false}})` must be `0`, and `db.businesses.countDocuments({"documentNumbering.statementOfAccount.nextNumber": {$exists: false}})` must be `0` (same for `statement`, `invoice`, `purchaseOrder`, `quote`). Open Finance Settings for one workspace that has issued invoices: the number fields must be read-only. | `npm run migrate -- down backfill-document-numbering-initialized --allow-remote` removes the flag only. The backfilled counters equal what Mongoose would have supplied and stay. Without the flag the app still treats a business as set when any counter has moved. |
+| `backfill-document-numbering-initialized` | KAN-292 (PR #953) | **Before** the deploy that includes KAN-292. The first-numbers screen refuses a business whose counters are not all stored, so migrating first means nobody is ever refused. Safe against the old code and at any time. Idempotent. Needs MongoDB 4.2 or later (not DocumentDB). | Stores every missing document numbering counter and prefix (older businesses lack `statementOfAccount` and `statement`) and the `documentNumberingInitialized` flag, so a stale `save()` cannot write defaults back over numbers the user chose. Never changes a value that is already there. The flag is true where any of invoice, purchase order, quote or statement of account has moved off 1, otherwise false. | Before and after: `npm run schema -- businesses`. Then in the database: `db.businesses.countDocuments({documentNumberingInitialized: {$exists: false}})` must be `0`, and `db.businesses.countDocuments({"documentNumbering.statementOfAccount.nextNumber": {$exists: false}})` must be `0` (same for `statement`, `invoice`, `purchaseOrder`, `quote`). Open Finance Settings for one workspace that has issued invoices: the number fields must be read-only. | `npm run migrate -- down backfill-document-numbering-initialized --allow-remote` removes the flag only. The backfilled counters equal what Mongoose would have supplied and stay. Without the flag the app still treats a business as set when any counter has moved. |
 
 #### Migrations that ship when `develop` is promoted (snapshot 2026-10-04)
+
+The KAN-292 migration was written after this snapshot; the six above it are in
+`develop` today.
 
 None of these has run in production. `migrate up` applies pending migrations in
 timestamp order. All of them only add indexes, clean up, or disable rows; none
 reshapes data the old code reads. Run the index migrations **before the deploy**,
 so the new code never runs without them (the unique one is the guard against
-billing a period twice), and the KAN-292 backfill **after** it. Keep
-`AUTOMATION_ENABLED` off until all of them have run.
+billing a period twice), and the KAN-292 backfill **before it as well**: until it
+has run, a business with a missing counter is refused when it tries to set its
+first numbers. So all seven run before the deploy. Keep `AUTOMATION_ENABLED` off
+until they have run.
 
 | Migration | What it does | Risk and pre-check | Undo |
 |---|---|---|---|
@@ -343,6 +348,10 @@ release will undo it.
 ## To confirm
 
 Fill these in and delete this list.
+
+- The production MongoDB version. The KAN-292 backfill uses an update with an
+  aggregation pipeline, which needs 4.2 or later and does not work on Amazon
+  DocumentDB.
 
 - Whether the Google sign-in settings above are already set in production, and
   whether a support admin has confirmed they can sign in with them.
