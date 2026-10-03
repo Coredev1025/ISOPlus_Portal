@@ -179,6 +179,38 @@ triggers an environment update and a restart.
 | Must be unset in production | `ISOPLUS_OFFLINE`, `LOCAL_FILE_ROOT` | They switch the app to local, offline behaviour |
 | Read by the code, optional | `EMAIL_BACKEND`, `XERO_SCOPES` | Defaults apply |
 
+### Production today, and what must exist before the release
+
+Told by the team on 2026-10-04: **production has no Google single sign-on
+setup, and no SQS, SNS, SES or EventBridge setup.** The `develop` code expects
+all of them. What that means, piece by piece:
+
+| Missing in production | What the `develop` code does without it | Before releasing |
+|---|---|---|
+| **Google sign-in** (OAuth client, service account, Workspace group, the `GOOGLE_*` variables) | `GET /api/auth/google/redirect` returns 503 and **no support admin can sign in**, because password sign-in is removed on `develop`. Nothing else works around it. | **Hard blocker.** Set it up and have a support admin confirm they can sign in, before the release. There is no fallback to password login. |
+| **SES** (verified sending identity for `EMAIL_FROM`, an IAM key allowed to `ses:SendEmail`) | No email backend: an automation run that would email "generated nothing rather than discarding it" and sends nothing. Safe, but no invoice or statement is emailed. | Needed only for automated emails. Not a blocker if automation stays off. |
+| **SQS queue, and SES sending events feeding it** (the repo does not say whether an SNS topic sits between SES and the queue; the team's setup guide does) | The email-events consumer does not start when `SES_EVENTS_QUEUE_URL` is unset. No delivery, bounce or complaint states are recorded; documents stay "generated". | Needed only for delivery tracking. Not a blocker. |
+| **EventBridge rules** (dev has one per kind: invoice and statement) and `SCHEDULER_API_KEY` | `POST /api/scheduler/tick` is never called, so **no schedule ever runs**. With `SCHEDULER_API_KEY` unset the endpoint answers 500 and the app logs a warning at boot. | Needed only for scheduled automation. Not a blocker if automation stays off. |
+
+**Suggested staging, for a decision:** release with `AUTOMATION_ENABLED=false`
+once Google sign-in works (stage 1). The portal then behaves as `main` does for
+users, plus the new screens and the KAN-292 and KAN-293 changes, and nothing
+scheduled or emailed starts. Turn automation on later (stage 2) after SES, the
+SQS queue, the EventBridge rules and the scheduler keys exist and have been
+tested on a real send. Do not set `AUTOMATION_ENABLED=true` without them.
+
+Three things that catch people out:
+
+- **The SES account is shared with dev.** The suppression list is account-level,
+  so a bounce sent from dev can silently stop a real client's production mail.
+  Test only with the simulator addresses until production sending is separate.
+- **EventBridge rules are created and enabled by whoever owns the AWS account,**
+  not by a deploy. Dev's rules are `isoplus-dev-scheduler-invoice` and
+  `isoplus-dev-scheduler-statement`; do not enable a production one yourself
+  without that owner.
+- **Setting an Elastic Beanstalk property restarts the environment.** Set all the
+  new ones in one change, not one at a time.
+
 ## 2. Migrations
 
 Migrations are files in `Backend/migrations/`, run by hand with
@@ -353,10 +385,10 @@ Fill these in and delete this list.
   aggregation pipeline, which needs 4.2 or later and does not work on Amazon
   DocumentDB.
 
-- Whether the Google sign-in settings above are already set in production, and
-  whether a support admin has confirmed they can sign in with them.
-- Whether the production SQS queue, SES event destination and EventBridge rule
-  exist yet.
+- Who sets up Google sign-in for production, and when a support admin will
+  confirm it works. It gates the release.
+- Whether SES, SQS and EventBridge will be set up for production at all in this
+  release, or in a later stage.
 - Whether the three hotfix commits on `main` (KAN-22 and KAN-28) are still
   needed in the form they were written, or have been superseded in `develop`.
 
