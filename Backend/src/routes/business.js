@@ -25,7 +25,14 @@ import {
   documentNumberingForNewBusiness,
   documentNumberingSetPaths,
   parseLogoRemovals,
+  updateExistingBusiness,
 } from '../utils/businessProfileUpdate.js';
+import {
+  initialNumberSetPaths,
+  initialNumberingForNewBusiness,
+  isDocumentNumberingInitialized,
+  wantsInitialNumbers,
+} from '../utils/documentNumberingInitial.js';
 import { repointWorkspaceSchedules } from '../services/scheduler/schedules.js';
 import { sanitizeLogValue } from '../utils/sanitizeLog.js';
 import { normalizeLineItemMapping, enrichMappingWithTaxRatePercents } from '../utils/xeroLineItemMapping.js';
@@ -214,6 +221,10 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
       documentNumbering: undefined,
     });
     if (business) Object.assign(updateData, documentNumberingSetPaths(incomingNumbering));
+    // KAN-292: the first Finance Settings save sets the first numbers, once.
+    const settingInitialNumbers =
+      wantsInitialNumbers(req.body) && !isDocumentNumberingInitialized(business);
+    const initialPaths = settingInitialNumbers ? initialNumberSetPaths(incomingNumbering) : {};
 
     const logoUpdates = await applyBusinessLogoUpdates({
       workspaceId,
@@ -227,11 +238,7 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
 
     if (business) {
       const before = business?.toObject ? business.toObject() : business;
-      business = await Business.findByIdAndUpdate(
-        business._id,
-        updateData,
-        { new: true }
-      );
+      business = await updateExistingBusiness(business._id, updateData, initialPaths);
       info('Business-Service', 'Business profile updated', { businessName: business.name }, req ?? null);
       await logAuditTrail({
         workspaceId,
@@ -246,9 +253,13 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
         success: true
       });
     } else {
+      const newNumbering = documentNumberingForNewBusiness(incomingNumbering);
       business = new Business({
         ...updateData,
-        documentNumbering: documentNumberingForNewBusiness(incomingNumbering),
+        ...(settingInitialNumbers ? { documentNumberingInitialized: true } : {}),
+        documentNumbering: settingInitialNumbers
+          ? initialNumberingForNewBusiness(newNumbering, incomingNumbering)
+          : newNumbering,
       });
       await business.save();
       info('Business-Service', 'New Business profile created', { businessName: business.name }, req ?? null);

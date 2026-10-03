@@ -1,4 +1,5 @@
 import { getS3FileUrl, getS3File, getContentType } from './uploadS3.js';
+import { isDocumentNumberingInitialized } from './documentNumberingInitial.js';
 import { normalizeFeatureTogglesForProfile } from './workspaceFeatureToggleHelpers.js';
 
 export const LOGO_FIELDS = ['defaultLogo', 'squareLogo', 'wideLogo'];
@@ -26,6 +27,7 @@ export async function formatBusinessProfileResponse(business) {
   const plain = business?.toObject ? business.toObject() : { ...business };
   plain.logoUrls = await buildLogoUrls(plain);
   delete plain.xeroConnectionLogs;
+  if (business) plain.documentNumberingInitialized = isDocumentNumberingInitialized(plain);
   return normalizeFeatureTogglesForProfile(plain);
 }
 

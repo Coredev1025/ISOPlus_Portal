@@ -1,4 +1,8 @@
 import { EMAIL_PATTERN } from '../constants/validation.js';
+import {
+  hasAllInitialNumbers,
+  wantsInitialNumbers,
+} from '../utils/documentNumberingInitial.js';
 
 const DOC_NUMBERING_TYPES = [
   'invoice',
@@ -24,6 +28,14 @@ function validateDocumentNumbering(numbering, errors) {
     if (!numbering[type]) return;
     validateSequenceFields(type, numbering[type], errors);
   });
+}
+
+// KAN-292: the first save of Finance Settings must give every document type a
+// first number, so none is left to a default the user never saw.
+function validateInitialNumbers(body, numbering, errors) {
+  if (wantsInitialNumbers(body) && !hasAllInitialNumbers(numbering)) {
+    errors.push('Enter a starting number of 1 or more for every document type');
+  }
 }
 
 function validateIdentityFields(body, errors) {
@@ -74,10 +86,15 @@ export function collectBusinessProfileErrors(body) {
   validateAddressFields(body, errors);
   validateRegistrationFields(body, errors);
   validateBankFields(body, errors);
-  if (!body.documentNumbering) return errors;
+  if (!body.documentNumbering) {
+    if (wantsInitialNumbers(body)) validateInitialNumbers(body, {}, errors);
+    return errors;
+  }
 
   try {
-    validateDocumentNumbering(JSON.parse(body.documentNumbering), errors);
+    const numbering = JSON.parse(body.documentNumbering);
+    validateDocumentNumbering(numbering, errors);
+    validateInitialNumbers(body, numbering, errors);
   } catch {
     errors.push('Invalid document numbering format');
   }

@@ -126,6 +126,13 @@ const businessSchema = new mongoose.Schema({
     type: String,
     default: 'Australia/Sydney'
   },
+  // KAN-292: true once the user has chosen the first number of each document
+  // type. A business that predates this field is treated as initialized when
+  // any counter has moved (utils/documentNumberingInitial.js), so no backfill.
+  documentNumberingInitialized: {
+    type: Boolean,
+    default: false
+  },
   documentNumbering: {
     invoice: {
       prefix: {

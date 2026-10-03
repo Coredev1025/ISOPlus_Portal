@@ -15,6 +15,13 @@ import {
   type DocumentSequences,
 } from "@/lib/financial-settings-form";
 import {
+  EMPTY_INITIAL_NUMBERS,
+  initialNumberErrors,
+  withInitialNumbers,
+  type InitialNumbers,
+} from "@/lib/financial-settings-numbering-helpers";
+import { type InitialNumberSeriesType } from "@/constants/documentNumbering";
+import {
   showFetchErrorToast,
   showFetchSuccessToast,
   showSaveErrorToast,
@@ -69,6 +76,11 @@ export function FinancialSettingsPanel({
   const [bankDetails, setBankDetails] = useState<BankDetailsForm>(EMPTY_BANK);
   const [sequences, setSequences] =
     useState<DocumentSequences>(cloneDefaultSequences);
+  // KAN-292: until the server reports the first numbers set, the user types them.
+  // A workspace with no profile yet (404) is also not set.
+  const [numberingInitialized, setNumberingInitialized] = useState(false);
+  const [initialNumbers, setInitialNumbers] =
+    useState<InitialNumbers>(EMPTY_INITIAL_NUMBERS);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
@@ -94,6 +106,7 @@ export function FinancialSettingsPanel({
         setProfileForm(mapped);
         setBankDetails(bankFromProfileForm(mapped));
         setSequences(extractDocumentNumberingSequences(response.data));
+        setNumberingInitialized(response.data.documentNumberingInitialized !== false);
         showFetchSuccessToast("Financial settings");
       } catch (error: unknown) {
         if (
@@ -128,6 +141,13 @@ export function FinancialSettingsPanel({
     setBankDetails((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handleInitialNumberChange = (
+    type: InitialNumberSeriesType,
+    value: string
+  ) => {
+    setInitialNumbers((prev) => ({ ...prev, [type]: value }));
+  };
+
   const handleSequencePrefixChange = (
     type: DocumentSequenceType,
     value: string
@@ -151,6 +171,16 @@ export function FinancialSettingsPanel({
         return;
       }
 
+      if (!numberingInitialized) {
+        const numberErrors = initialNumberErrors(initialNumbers);
+        if (numberErrors.length > 0) {
+          setErrors(numberErrors);
+          showSaveErrorToast("financial settings", numberErrors[0]);
+          setTimeout(() => setErrors([]), 5000);
+          return;
+        }
+      }
+
       const formDataToSend = new FormData();
       const merged = {
         ...profileForm,
@@ -170,15 +200,21 @@ export function FinancialSettingsPanel({
       // The server keeps the stored series used by monthly budget
       // statement automation. Do not send clone/default STM- values — that would
       // overwrite a live nextNumber.
+      const toSend = {
+        invoice: sequences.invoice,
+        purchaseOrder: sequences.purchaseOrder,
+        quote: sequences.quote,
+        statementOfAccount: sequences.statementOfAccount,
+      };
       formDataToSend.append(
         "documentNumbering",
-        JSON.stringify({
-          invoice: sequences.invoice,
-          purchaseOrder: sequences.purchaseOrder,
-          quote: sequences.quote,
-          statementOfAccount: sequences.statementOfAccount,
-        })
+        JSON.stringify(
+          numberingInitialized ? toSend : withInitialNumbers(toSend, initialNumbers)
+        )
       );
+      if (!numberingInitialized) {
+        formDataToSend.append("initializeDocumentNumbering", "true");
+      }
 
       const response = await axios.put(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`,
@@ -191,6 +227,7 @@ export function FinancialSettingsPanel({
         setProfileForm(mapped);
         setBankDetails(bankFromProfileForm(mapped));
         setSequences(extractDocumentNumberingSequences(response.data));
+        setNumberingInitialized(response.data.documentNumberingInitialized !== false);
         setShowSuccess(true);
         showSaveSuccessToast("Financial settings");
         setTimeout(() => setShowSuccess(false), 2000);
@@ -243,6 +280,9 @@ export function FinancialSettingsPanel({
       showSuccess={showSuccess}
       onBankChange={handleBankChange}
       onSequencePrefixChange={handleSequencePrefixChange}
+      numberingInitialized={numberingInitialized}
+      initialNumbers={initialNumbers}
+      onInitialNumberChange={handleInitialNumberChange}
       onSave={handleSave}
     />
   );

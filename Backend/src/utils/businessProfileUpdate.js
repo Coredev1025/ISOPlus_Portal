@@ -2,6 +2,8 @@ import path from 'path';
 import { deleteFileFromS3, uploadFileToS3 } from './uploadS3.js';
 import { setLogo } from '../services/isoplus.js';
 import { DOCUMENT_SERIES } from '../constants/documentNumbering.js';
+import Business from '../models/Business.js';
+import { uninitializedFilter } from './documentNumberingInitial.js';
 
 const LOGO_UPLOADS = [
   { field: 'defaultLogo', pathPrefix: 'default-logo', syncToIsoplus: null },
@@ -124,6 +126,25 @@ export function documentNumberingForNewBusiness(incoming) {
     numbering[name] = { prefix: fields };
   }
   return numbering;
+}
+
+/**
+ * Save an existing business's profile. When the save also sets the first
+ * document numbers (KAN-292), they are written only if the business is still
+ * uninitialized at the moment of the write: if a document was issued in the
+ * meantime the filter no longer matches, and the profile is saved without the
+ * numbers instead, so a counter is never set over one that has moved.
+ */
+export async function updateExistingBusiness(id, updateData, initialPaths) {
+  if (Object.keys(initialPaths).length > 0) {
+    const withNumbers = await Business.findOneAndUpdate(
+      uninitializedFilter(id),
+      { ...updateData, ...initialPaths },
+      { new: true }
+    );
+    if (withNumbers) return withNumbers;
+  }
+  return Business.findByIdAndUpdate(id, updateData, { new: true });
 }
 
 /** Drop undefined entries so findByIdAndUpdate does not persist empty nests as {}. */
