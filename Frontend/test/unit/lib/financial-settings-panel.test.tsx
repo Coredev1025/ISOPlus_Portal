@@ -296,6 +296,35 @@ describe('FinancialSettingsPanel', () => {
       expect((container.querySelector('#invoice-next') as HTMLInputElement).value).toBe('1200');
     });
 
+    it('tells the user when the server did not apply the numbers they typed, and shows the current ones', async () => {
+      const user = userEvent.setup();
+      (axios.put as ReturnType<typeof vi.fn>).mockResolvedValue({
+        status: 200,
+        data: {
+          ...FRESH,
+          documentNumberingInitialized: true,
+          initialNumbersApplied: false,
+          documentNumbering: {
+            ...FRESH.documentNumbering,
+            invoice: { prefix: 'INV-', nextNumber: 1042 },
+          },
+        },
+      });
+      const { container } = await renderFresh();
+      for (const [id, v] of [['invoice-next', '1200'], ['po-next', '35'], ['quote-next', '410'], ['statement-of-account-next', '8']]) {
+        await user.type(container.querySelector(`#${id}`)!, v);
+      }
+
+      await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+      expect(await screen.findByText(/your starting numbers were not saved/i)).toBeInTheDocument();
+      expect(showSaveSuccessToast).not.toHaveBeenCalled();
+      expect(showSaveErrorToast).toHaveBeenCalled();
+      // The fields now show what the server holds, read-only.
+      await waitFor(() => expect(container.querySelector('#invoice-next')).toBeDisabled());
+      expect((container.querySelector('#invoice-next') as HTMLInputElement).value).toBe('1042');
+    });
+
     it('does not ask for the numbers again when the server says they are set', async () => {
       (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({
         data: { ...PROFILE, documentNumberingInitialized: true },

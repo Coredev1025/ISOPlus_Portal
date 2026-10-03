@@ -134,6 +134,9 @@ export function documentNumberingForNewBusiness(incoming) {
  * uninitialized at the moment of the write: if a document was issued in the
  * meantime the filter no longer matches, and the profile is saved without the
  * numbers instead, so a counter is never set over one that has moved.
+ *
+ * Returns the saved business and whether the numbers were written, so the
+ * caller can tell the user when theirs were not.
  */
 export async function updateExistingBusiness(id, updateData, initialPaths) {
   if (Object.keys(initialPaths).length > 0) {
@@ -142,9 +145,10 @@ export async function updateExistingBusiness(id, updateData, initialPaths) {
       { ...updateData, ...initialPaths },
       { new: true }
     );
-    if (withNumbers) return withNumbers;
+    if (withNumbers) return { business: withNumbers, initialNumbersWritten: true };
   }
-  return Business.findByIdAndUpdate(id, updateData, { new: true });
+  const business = await Business.findByIdAndUpdate(id, updateData, { new: true });
+  return { business, initialNumbersWritten: false };
 }
 
 /** Drop undefined entries so findByIdAndUpdate does not persist empty nests as {}. */

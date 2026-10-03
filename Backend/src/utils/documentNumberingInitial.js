@@ -72,3 +72,38 @@ export function uninitializedFilter(id) {
   }
   return filter;
 }
+
+/**
+ * What this save is allowed to do about the first numbers. `requested` is what
+ * the client asked for; `allowed` is also true only while the business is still
+ * uninitialized; `initialPaths` is the write, empty unless allowed.
+ */
+export function planInitialNumbers({ business, body, incomingNumbering }) {
+  const requested = wantsInitialNumbers(body);
+  const allowed = requested && !isDocumentNumberingInitialized(business);
+  return {
+    requested,
+    allowed,
+    initialPaths: allowed ? initialNumberSetPaths(incomingNumbering) : {},
+  };
+}
+
+/**
+ * The reply field telling the client whether the numbers it sent were applied.
+ * Present only when the client asked to set them: a save that did not ask has
+ * nothing to report. A request that was not applied (already initialized, or a
+ * counter moved while the save was in flight) says so instead of looking like a
+ * success.
+ */
+export function initialNumbersReply(plan, written) {
+  return plan.requested ? { initialNumbersApplied: Boolean(plan.allowed && written) } : {};
+}
+
+/** The numbers that were set, for the audit trail. Plain keys, no dotted paths. */
+export function initialNumbersAuditMetadata(incoming) {
+  const initialNumbers = {};
+  for (const series of INITIAL_NUMBER_SERIES) {
+    initialNumbers[series] = incoming[series].nextNumber;
+  }
+  return { initialNumbers };
+}

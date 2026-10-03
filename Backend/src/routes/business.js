@@ -28,10 +28,10 @@ import {
   updateExistingBusiness,
 } from '../utils/businessProfileUpdate.js';
 import {
-  initialNumberSetPaths,
+  initialNumbersAuditMetadata,
+  initialNumbersReply,
   initialNumberingForNewBusiness,
-  isDocumentNumberingInitialized,
-  wantsInitialNumbers,
+  planInitialNumbers,
 } from '../utils/documentNumberingInitial.js';
 import { repointWorkspaceSchedules } from '../services/scheduler/schedules.js';
 import { sanitizeLogValue } from '../utils/sanitizeLog.js';
@@ -198,22 +198,87 @@ router.get('/logo', authenticateToken, async (req, res) => {
   }
 });
 
+function parseIncomingNumbering(body) {
+  return body.documentNumbering ? JSON.parse(body.documentNumbering) : {};
+}
+
+/**
+ * Save the profile of a business that exists. KAN-290: the numbering sequence is
+ * read-only here: an existing business takes only its series prefixes, each on
+ * its own path (already in `updateData`); the counters are advanced by the
+ * generators that issue the numbers and are never taken from the form. The one
+ * exception is KAN-292, the first save of Finance Settings, which sets the first
+ * numbers once (`plan`).
+ */
+async function saveExistingProfile({ business, updateData, plan, incomingNumbering, workspaceId, req }) {
+  const before = business?.toObject ? business.toObject() : business;
+  const { business: saved, initialNumbersWritten } = await updateExistingBusiness(
+    business._id, updateData, plan.initialPaths,
+  );
+  info('Business-Service', 'Business profile updated', { businessName: saved.name }, req ?? null);
+  if (plan.requested && !initialNumbersWritten) {
+    // The user typed first numbers and they were not applied: the business was
+    // already initialized, or a document was issued while the save was in flight.
+    warn('Business-Service', 'The first document numbers were not applied', {
+      workspaceId, alreadyInitialized: !plan.allowed,
+    }, req ?? null);
+  }
+  await logAuditTrail({
+    workspaceId,
+    action: 'Updated Business profile',
+    detail: initialNumbersWritten
+      ? 'Business profile updated; first document numbers set'
+      : 'Business profile updated',
+    req,
+    category: 'Business',
+    entityType: 'Business',
+    entityId: saved?._id?.toString(),
+    before,
+    after: updateData,
+    metadata: initialNumbersWritten ? initialNumbersAuditMetadata(incomingNumbering) : undefined,
+    success: true
+  });
+  return { business: saved, initialNumbersWritten };
+}
+
+/**
+ * Create the profile of a workspace that has none. Takes the series prefixes and
+ * starts every counter at 1 (KAN-290), unless this is the first Finance Settings
+ * save, which also sets the first numbers (KAN-292).
+ */
+async function createProfile({ updateData, plan, incomingNumbering, workspaceId, req }) {
+  const prefixes = documentNumberingForNewBusiness(incomingNumbering);
+  const business = new Business({
+    ...updateData,
+    ...(plan.allowed ? { documentNumberingInitialized: true } : {}),
+    documentNumbering: plan.allowed
+      ? initialNumberingForNewBusiness(prefixes, incomingNumbering)
+      : prefixes,
+  });
+  await business.save();
+  info('Business-Service', 'New Business profile created', { businessName: business.name }, req ?? null);
+  await logAuditTrail({
+    workspaceId,
+    action: 'Created new Business profile',
+    detail: `Resource ID: ${business._id}`,
+    req,
+    category: 'Business',
+    entityType: 'Business',
+    entityId: business?._id?.toString(),
+    metadata: plan.allowed ? initialNumbersAuditMetadata(incomingNumbering) : undefined,
+    success: true
+  });
+  return { business, initialNumbersWritten: plan.allowed };
+}
+
 router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, async (req, res) => {
   try {
     const workspaceId = toRequiredQueryString(req.body.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
 
-    let incomingNumbering = {};
-    if (req.body.documentNumbering) {
-      incomingNumbering = JSON.parse(req.body.documentNumbering);
-    }
-
-    let business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
-    // KAN-290: the numbering sequence is read-only here. An existing business
-    // takes only its series prefixes, each on its own path; the counters are
-    // advanced by the generators that issue the numbers and are never taken from
-    // the form. A brand-new business takes its prefixes and starts every counter
-    // at 1 (below).
+    const incomingNumbering = parseIncomingNumbering(req.body);
+    const business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
+    const plan = planInitialNumbers({ business, body: req.body, incomingNumbering });
     const updateData = buildBusinessUpdateData({
       ...req.body,
       workspaceId,
@@ -221,10 +286,6 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
       documentNumbering: undefined,
     });
     if (business) Object.assign(updateData, documentNumberingSetPaths(incomingNumbering));
-    // KAN-292: the first Finance Settings save sets the first numbers, once.
-    const settingInitialNumbers =
-      wantsInitialNumbers(req.body) && !isDocumentNumberingInitialized(business);
-    const initialPaths = settingInitialNumbers ? initialNumberSetPaths(incomingNumbering) : {};
 
     const logoUpdates = await applyBusinessLogoUpdates({
       workspaceId,
@@ -236,44 +297,9 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
     });
     Object.assign(updateData, logoUpdates);
 
-    if (business) {
-      const before = business?.toObject ? business.toObject() : business;
-      business = await updateExistingBusiness(business._id, updateData, initialPaths);
-      info('Business-Service', 'Business profile updated', { businessName: business.name }, req ?? null);
-      await logAuditTrail({
-        workspaceId,
-        action: 'Updated Business profile',
-        detail: 'Business profile updated',
-        req,
-        category: 'Business',
-        entityType: 'Business',
-        entityId: business?._id?.toString(),
-        before,
-        after: updateData,
-        success: true
-      });
-    } else {
-      const newNumbering = documentNumberingForNewBusiness(incomingNumbering);
-      business = new Business({
-        ...updateData,
-        ...(settingInitialNumbers ? { documentNumberingInitialized: true } : {}),
-        documentNumbering: settingInitialNumbers
-          ? initialNumberingForNewBusiness(newNumbering, incomingNumbering)
-          : newNumbering,
-      });
-      await business.save();
-      info('Business-Service', 'New Business profile created', { businessName: business.name }, req ?? null);
-      await logAuditTrail({
-        workspaceId,
-        action: 'Created new Business profile',
-        detail: `Resource ID: ${business._id}`,
-        req,
-        category: 'Business',
-        entityType: 'Business',
-        entityId: business?._id?.toString(),
-        success: true
-      });
-    }
+    const { business: saved, initialNumbersWritten } = business
+      ? await saveExistingProfile({ business, updateData, plan, incomingNumbering, workspaceId, req })
+      : await createProfile({ updateData, plan, incomingNumbering, workspaceId, req });
 
     // KAN-262. A schedule's timezone is a snapshot taken from
     // headOfficeTimezone when the automation form was last saved, and nothing
@@ -293,8 +319,8 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
       }, req ?? null);
     }
 
-    const response = await formatBusinessProfileResponse(business);
-    res.status(200).json(response);
+    const response = await formatBusinessProfileResponse(saved);
+    res.status(200).json({ ...response, ...initialNumbersReply(plan, initialNumbersWritten) });
   } catch (err) {
     error('Business-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
     res.status(500).json({ message: 'Server error' });
