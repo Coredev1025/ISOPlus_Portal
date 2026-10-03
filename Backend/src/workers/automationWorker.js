@@ -86,14 +86,16 @@ function buildTemplateVars({ businessName, results }) {
 }
 
 /**
- * How many messages one job produces: one per participant.
+ * How many messages one job produces: one per participant PROFILE (KAN-293). A
+ * document that carries no profile id, such as a statement, is grouped by
+ * participant name instead.
  *
  * Flattening the whole board into a single message with no participant would
  * be wrong twice over. It cannot be delivered — resolveRecipient reads a
- * participant profile Item, keyed by participant display name (KAN-272: Case
- * A/AA/B off that profile's Billing Email, falling back to their own Email),
- * so a group with no participant has no profile to read and resolveRecipient
- * answers no_participant_name every time. And if it had resolved, one message
+ * participant profile Item, found by profile id or else by participant display
+ * name (KAN-272: Case A/AA/B off that profile's Billing Email, falling back to
+ * their own Email), so a group with neither has no profile to read and
+ * resolveRecipient answers no_participant_name every time. And if it had resolved, one message
  * carrying every participant's invoices addressed to one of them is a
  * cross-client data leak.
  *
@@ -105,13 +107,19 @@ function buildTemplateVars({ businessName, results }) {
  * dropped; the generators always carry one, so this is a floor, not a path.
  */
 function deliveryGroups(results) {
-  const byParticipant = new Map();
+  const byRecipient = new Map();
   for (const doc of results) {
-    const key = doc.participant ?? null;
-    if (!byParticipant.has(key)) byParticipant.set(key, []);
-    byParticipant.get(key).push(doc);
+    // KAN-293: an item belongs to one Participant Profile and a profile has one
+    // address, so a document that knows its profile is grouped, and addressed,
+    // by it. The name is only the label: two clients can share one. Documents
+    // with no profile id (statements) are grouped by name, as they always were.
+    const key = doc.profileId ? `profile:${doc.profileId}` : `name:${doc.participant ?? ''}`;
+    if (!byRecipient.has(key)) {
+      byRecipient.set(key, { participant: doc.participant ?? null, profileId: doc.profileId, results: [] });
+    }
+    byRecipient.get(key).results.push(doc);
   }
-  return [...byParticipant].map(([participant, rows]) => ({ participant, results: rows }));
+  return [...byRecipient.values()];
 }
 
 /**
@@ -144,6 +152,9 @@ async function deliverGroup({
     boardId,
     periodKey,
     recipientKey: group.participant,
+    // Absent for a document that carries no profile (a statement): the recipient
+    // is then found by name, as before.
+    ...(group.profileId ? { recipientProfileId: group.profileId } : {}),
     block: composeBlock(block, vars),
     attachments,
     // Context for the default subject and body, used only when the workspace

@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 // line is the behaviour under test here, not incidental noise.
 vi.mock('../../../src/utils/logger.js', async (importOriginal) => {
   const actual = await importOriginal();
-  return { ...actual, info: vi.fn() };
+  return { ...actual, info: vi.fn(), warn: vi.fn() };
 });
 
 import Board from '../../../src/models/Board.js';
@@ -25,7 +25,7 @@ import { GENERATOR_LIST_LIMIT } from '../../../src/constants/automation.js';
 import { parseListPagination } from '../../../src/utils/itemsRouteHelpers.js';
 import { getNdisInvoiceGeneratorData } from '../../../src/utils/ndisInvoiceGeneratorRouteHelpers.js';
 import { ndisInvoiceGeneratorListDeps } from '../../../src/utils/automationInvoiceGeneratorDeps.js';
-import { info } from '../../../src/utils/logger.js';
+import { info, warn } from '../../../src/utils/logger.js';
 
 const WS = 'ws-gen';
 const BOARD = 'board-gen';
@@ -123,6 +123,103 @@ describe('generateInvoicesForBoard — Invoice Generator pipeline', () => {
     process.env.ISOPLUS_OFFLINE = saved.ISOPLUS_OFFLINE;
     process.env.LOCAL_FILE_ROOT = saved.LOCAL_FILE_ROOT;
     rmSync(root, { recursive: true, force: true });
+  });
+
+  // KAN-293. Items belong to a participant by their Participant Profile
+  // reference, not by the display name. Rows whose name cannot be resolved used
+  // to collapse into one catch-all group that mixed profiles, and the generator
+  // refuses a group of more than one profile: the whole board run failed.
+  describe('grouping by Participant Profile (KAN-293)', () => {
+    const PP_2 = '33333333-bbbb-4111-8111-333333333333';
+    const PP_MISSING = '44444444-bbbb-4111-8111-444444444444';
+
+    async function seedCatalogue() {
+      await Item.create({
+        workspaceId: WS, boardId: 'cat-board', folderId: 'f-cat', itemId: SUPPORT_CAT_ID,
+        data: { 'Support Item Number': '01_011_0107_1_1', 'Support Item Name': 'Assistance' },
+      });
+      await Item.create({
+        workspaceId: WS, boardId: 'cat-board', folderId: 'f-cat', itemId: SP_ID,
+        data: {
+          'Direct Support Item Number': [{ id: SUPPORT_CAT_ID, name: 'Assistance' }],
+          'Unit (Direct Support)': 'Hour(H)',
+          'Agreed Unit Price for Direct Support ($)': '70.00',
+        },
+      });
+      await Item.create({
+        workspaceId: WS, boardId: 'cat-board', folderId: 'f-cat', itemId: PP_ID,
+        data: { 'Full Name/Preferred Name': 'Samuel Rivers', 'NDIS Number': '430123456' },
+      });
+      await Item.create({
+        workspaceId: WS, boardId: 'cat-board', folderId: 'f-cat', itemId: PP_2,
+        data: { 'Full Name/Preferred Name': 'Priya Nair', 'NDIS Number': '430999999' },
+      });
+    }
+
+    async function seedShift(itemId, profileRef) {
+      await seedMasterShift(BOARD, itemId);
+      const data = { ...(await Item.findOne({ itemId }).lean()).data };
+      if (profileRef === null) delete data['Participant Profile'];
+      else data['Participant Profile'] = [{ id: profileRef }];
+      await Item.updateOne({ itemId }, { $set: { data } });
+    }
+
+    const run = () => generateInvoicesForBoard({
+      workspaceId: WS, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: '20260814-1509',
+      schedule: MONTHLY,
+    });
+
+    it('invoices each participant profile on its own and leaves out items with no profile', async () => {
+      await seedCatalogue();
+      await seedShift('mp-a', PP_ID);
+      await seedShift('mp-b', PP_2);
+      await seedShift('mp-none', null);
+
+      const results = await run();
+
+      expect(results.map((r) => r.participant).sort()).toEqual(['Priya Nair', 'Samuel Rivers']);
+      // The profile travels with the document so delivery can tell two clients
+      // who share a name apart.
+      expect(results.map((r) => r.profileId).sort()).toEqual([PP_ID, PP_2].sort());
+      expect(await InvoiceNumber.countDocuments({ workspaceId: WS })).toBe(2);
+      const billed = (await PDFLink.find({ workspaceId: WS }).lean()).map((l) => l.itemId);
+      expect(billed).not.toContain('mp-none');
+    });
+
+    it('warns, naming the items it left out for having no profile', async () => {
+      await seedCatalogue();
+      await seedShift('mp-a', PP_ID);
+      await seedShift('mp-none', null);
+      info.mockClear();
+      warn.mockClear();
+
+      await run();
+
+      // A warn, with the item ids: these are never claimed and fall outside the
+      // next window, so a count in an info line is not enough to find them.
+      expect(warn).toHaveBeenCalledWith(
+        'Automation',
+        expect.stringMatching(/no Participant Profile/i),
+        expect.objectContaining({
+          workspaceId: WS, boardId: BOARD, periodKey: '20260814-1509', count: 1, itemIds: ['mp-none'],
+        }),
+      );
+    });
+
+    it('still invoices the others when one participant cannot be resolved, then fails the run visibly', async () => {
+      await seedCatalogue();
+      // The unresolvable one is listed first, so a run that stops at the first
+      // failing group would never reach the participant after it.
+      await seedShift('mp-bad', PP_MISSING);
+      await seedShift('mp-a', PP_ID);
+
+      await expect(run()).rejects.toThrow(/Participant Profile/i);
+
+      expect(await InvoiceNumber.countDocuments({ workspaceId: WS })).toBe(1);
+      const billed = (await PDFLink.find({ workspaceId: WS }).lean()).map((l) => l.itemId);
+      expect(billed).toContain('mp-a');
+      expect(billed).not.toContain('mp-bad');
+    });
   });
 
   it('does not invoice a quote-shaped item without an approved timesheet', async () => {

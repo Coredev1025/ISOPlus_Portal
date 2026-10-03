@@ -123,6 +123,22 @@ describe('sesBackend', () => {
     });
   });
 
+  // KAN-293: the profile id travels with the message so the recipient is found by
+  // profile, not by the display name two clients can share.
+  it('resolves the recipient by profile id when the message carries one', async () => {
+    await sesBackend.deliver({ ...MESSAGE, recipientProfileId: 'profile-9' });
+
+    expect(resolveRecipient).toHaveBeenCalledWith(
+      expect.objectContaining({ participant: MESSAGE.recipientKey, profileId: 'profile-9' }),
+    );
+  });
+
+  it('resolves by name alone when the message carries no profile id', async () => {
+    await sesBackend.deliver(MESSAGE);
+
+    expect(resolveRecipient.mock.calls[0][0].profileId).toBeNull();
+  });
+
   it('persists nothing when the send was refused', async () => {
     resolveRecipient.mockResolvedValueOnce({ address: null, reason: 'profile_not_found' });
 

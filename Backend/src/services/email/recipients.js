@@ -167,10 +167,25 @@ function logOutcome(outcome, context) {
 }
 
 /**
+ * The profile with this item id, in this workspace. KAN-293: a document knows
+ * which Participant Profile it belongs to, and a profile has one address, so the
+ * profile is found by its own id and not by a name that two clients can share.
+ */
+async function findProfileById(workspaceId, profileId) {
+  return Item.findOne({
+    workspaceId: mongoEq(workspaceId),
+    itemId: mongoEq(String(profileId)),
+  }).select('data boardId itemId').lean();
+}
+
+/**
  * @param {object} params
  * @param {string} params.workspaceId
  * @param {string} [params.boardId] tie-breaker only; the lookup is workspace-wide
  * @param {string|null} params.participant display name, null for an unattributable group
+ * @param {string} [params.profileId] the Participant Profile's item id. When given
+ *   the profile is found by it and the name is not used, so a missing profile is
+ *   `profile_not_found` and never a guess at somebody with the same name.
  * @returns {Promise<{address: string, source: string} | {address: null, reason: string}>}
  *
  * `source` is one of `profile_billing_email`, `profile_email_billing_fallback`,
@@ -178,16 +193,18 @@ function logOutcome(outcome, context) {
  * `no_participant_name`, `profile_not_found`, `no_address_on_profile`,
  * `malformed_address`.
  */
-export async function resolveRecipient({ workspaceId, boardId = null, participant }) {
+export async function resolveRecipient({ workspaceId, boardId = null, participant, profileId = null }) {
   const context = { workspaceId, boardId };
   const name = normalizeName(participant);
-  if (!name) {
+  if (!name && !profileId) {
     const outcome = { address: null, reason: 'no_participant_name' };
     logOutcome(outcome, context);
     return outcome;
   }
 
-  const profileItem = await findParticipantProfile(workspaceId, boardId, name);
+  const profileItem = profileId
+    ? await findProfileById(workspaceId, profileId)
+    : await findParticipantProfile(workspaceId, boardId, name);
   if (!profileItem) {
     const outcome = { address: null, reason: 'profile_not_found' };
     logOutcome(outcome, { ...context, participant: name });

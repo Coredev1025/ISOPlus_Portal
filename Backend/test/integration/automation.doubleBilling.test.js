@@ -77,6 +77,9 @@ const shift = (itemId) => ({
   itemId,
   data: {
     'Participant Full Name': 'Jane Smith',
+    // KAN-293: an item belongs to a participant by its profile reference; the
+    // name above is only a label, so a fixture without a reference is not billed.
+    'Participant Profile': [{ id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' }],
     'Job Status': 'Completed',
     // Inside the slot's service-delivery window (2025-12-15 → 2026-01-15 UTC).
     // It used to be 2025-12-10, which the mocked list happily returned and the

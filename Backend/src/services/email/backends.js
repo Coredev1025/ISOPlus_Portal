@@ -151,7 +151,8 @@ export const sesBackend = {
   name: 'ses',
   async deliver(message) {
     const {
-      workspaceId, boardId, kind, periodKey, block, recipientKey = null, bypassEmail = null,
+      workspaceId, boardId, kind, periodKey, block, recipientKey = null, recipientProfileId = null,
+      bypassEmail = null,
     } = message;
     const record = composeRecord(message);
 
@@ -165,7 +166,9 @@ export const sesBackend = {
     // there is nothing left for this backend to pass in.
     const recipient = bypassEmail?.length
       ? { address: bypassEmail.join(', '), source: 'bypass_email' }
-      : await resolveRecipient({ workspaceId, boardId, participant: recipientKey });
+      : await resolveRecipient({
+        workspaceId, boardId, participant: recipientKey, profileId: recipientProfileId,
+      });
 
     if (bypassEmail?.length) {
       warn(LOG_SCOPE, 'bypassEmail is set; sending to the override address instead of the participant', {
