@@ -6,7 +6,7 @@ import {
   canGenerateMonthlyStatement,
 } from '../../../src/utils/automationBoardFlags.js';
 import { parseReceivableDays, invoiceDatesFromSlot } from '../../../src/utils/automationInvoiceDates.js';
-import { groupItemIdsByParticipant } from '../../../src/utils/automationInvoiceGrouping.js';
+import { groupItemIdsByParticipantProfile } from '../../../src/utils/automationInvoiceGrouping.js';
 
 describe('previousCalendarMonth', () => {
   it('returns August 2026 for a 1 Sept 09:00 Sydney slot', () => {
@@ -86,16 +86,24 @@ describe('invoiceDatesFromSlot', () => {
   });
 });
 
-describe('groupItemIdsByParticipant', () => {
-  it('groups Invoice Generator rows by participant and de-dupes item ids', () => {
-    expect(groupItemIdsByParticipant([
+describe('groupItemIdsByParticipantProfile', () => {
+  it('groups Invoice Generator rows by participant profile and de-dupes item ids', () => {
+    const profiles = { a: 'P-Sam', b: 'P-Sam', c: 'P-Lee' };
+    expect(groupItemIdsByParticipantProfile([
       { sourceItemId: 'a', participant: 'Sam' },
       { sourceItemId: 'b', participant: 'Sam' },
       { sourceItemId: 'a', participant: 'Sam' },
       { sourceItemId: 'c', participant: 'Lee' },
-    ], { idKey: 'sourceItemId', participantKey: 'participant' })).toEqual([
-      { participant: 'Sam', itemIds: ['a', 'b'] },
-      { participant: 'Lee', itemIds: ['c'] },
-    ]);
+    ], {
+      idKey: 'sourceItemId',
+      participantKey: 'participant',
+      profileIdOf: (id) => profiles[id],
+    })).toEqual({
+      groups: [
+        { profileId: 'P-Sam', participant: 'Sam', itemIds: ['a', 'b'] },
+        { profileId: 'P-Lee', participant: 'Lee', itemIds: ['c'] },
+      ],
+      unprofiled: [],
+    });
   });
 });

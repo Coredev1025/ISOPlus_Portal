@@ -21,7 +21,10 @@ import {
 } from '../../utils/automationBoardFlags.js';
 import { invoiceDatesFromSlot } from '../../utils/automationInvoiceDates.js';
 import { generateUnderClaim } from '../../utils/automationInvoiceClaim.js';
-import { groupItemIdsByParticipant } from '../../utils/automationInvoiceGrouping.js';
+import {
+  generateGroupsIsolated,
+  groupBillableRowsByProfile,
+} from '../../utils/automationInvoiceProfiles.js';
 import { selectBillableItemIds } from '../../utils/automationItemSelection.js';
 import { invoiceTypeFromBoardLabel } from '../../utils/invoiceTypeFromLabel.js';
 import { reportStaleClaims } from '../../utils/staleInvoiceClaims.js';
@@ -275,9 +278,8 @@ async function generateNdisGeneratorInvoices({
   const selected = await billableRows({
     workspaceId, boardId, rows: listed.items || [], idKey: 'sourceItemId', invoiceType, period,
   });
-  const groups = groupItemIdsByParticipant(selected, {
-    idKey: 'sourceItemId',
-    participantKey: 'participant',
+  const groups = await groupBillableRowsByProfile({
+    workspaceId, boardId, periodKey, rows: selected, idKey: 'sourceItemId',
   });
   if (groups.length === 0) {
     logEmptySelection({
@@ -287,7 +289,7 @@ async function generateNdisGeneratorInvoices({
   }
 
   const results = [...existing];
-  for (const group of groups) {
+  await generateGroupsIsolated(groups, async (group) => {
     // The claim is what stops a second run billing these items again, and it
     // hands the generator only the items it actually took — anything another
     // invoice already holds is left off this PDF rather than double billed.
@@ -327,7 +329,7 @@ async function generateNdisGeneratorInvoices({
     // Null covers both "everything was already invoiced" and "the generator
     // found nothing billable". Section 3.5: no invoice, no email, and the run
     // still completes so the period is not retried forever.
-    if (!generated) continue;
+    if (!generated) return;
     info('Automation', 'Scheduled Invoice Generator PDF written', {
       workspaceId, boardId, periodKey, invoiceNumber: generated.invoiceNumber,
     });
@@ -337,7 +339,7 @@ async function generateNdisGeneratorInvoices({
       participant: group.participant,
       pdfUrl: generated.fileUrl,
     });
-  }
+  });
   return uniquePdfResults(results);
 }
 
@@ -416,7 +418,9 @@ async function generateAgeCareGeneratorInvoices({
   const selected = await billableRows({
     workspaceId, boardId, rows: pending, idKey: 'id', invoiceType, period,
   });
-  const groups = groupItemIdsByParticipant(selected, { idKey: 'id', participantKey: 'participant' });
+  const groups = await groupBillableRowsByProfile({
+    workspaceId, boardId, periodKey, rows: selected, idKey: 'id',
+  });
   if (groups.length === 0) {
     logEmptySelection({
       workspaceId, boardId, periodKey, period, invoiceType, listed: pending.length,
@@ -426,7 +430,7 @@ async function generateAgeCareGeneratorInvoices({
 
   const results = [...existing];
   const isLowCatBoard = isLowCatCareManagementLabel(label);
-  for (const group of groups) {
+  await generateGroupsIsolated(groups, async (group) => {
     const generated = await generateUnderClaim({
       workspaceId,
       boardId,
@@ -452,13 +456,13 @@ async function generateAgeCareGeneratorInvoices({
         type: PDFLINK_TYPE_AGE_CARE_INVOICE,
       }),
     });
-    if (!generated) continue;
+    if (!generated) return;
     results.push({
       itemId: generated.itemIds[0],
       invoiceNumber: generated.invoiceNumber,
       participant: group.participant,
       pdfUrl: generated.fileUrl,
     });
-  }
+  });
   return uniquePdfResults(results);
 }
