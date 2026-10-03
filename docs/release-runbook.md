@@ -241,7 +241,10 @@ For a production release:
    ```
 
    Pass the bare name (`backfill-document-numbering-initialized`), not the file
-   name. Do not write the connection string into a file or a commit, and clear it
+   name. **`up <name>` applies every pending migration up to and including that
+   one, in timestamp order, not just the one named.** Run `list` first and read the
+   pending list; if you want only the newest, there is no way to skip older
+   pending ones, so apply them all deliberately. Do not write the connection string into a file or a commit, and clear it
    from your shell history afterwards.
 4. **Check it did what it should**, using the row for that migration in the table
    below.

@@ -15,13 +15,19 @@ so it targets whichever database that worktree uses — including an
 npm run migrate -- list                     # what exists, and its state
 npm run migrate -- create add-archived-flag # scaffold a new migration
 npm run migrate -- up                       # apply everything pending
-npm run migrate -- up <name>                # apply one
+npm run migrate -- up <name>                # apply everything pending UP TO and including <name>, in order
 npm run migrate -- down <name>              # roll one back
 npm run migrate -- prune                    # drop records with no file
 ```
 
 The `--` is npm's separator for passing arguments through. Without Docker —
 running the backend natively — use `cd Backend && npm run migrate -- up`.
+
+**`up <name>` is not "apply only this one".** The runner applies every pending
+migration with an earlier timestamp first, then the one named. On 2026-10-04 an
+`up backfill-document-numbering-initialized` on dev also applied the six older
+migrations that had never run there. Always run `list` first, and treat `up <name>`
+as "everything pending up to this one". `down <name>` rolls back only that one.
 
 `up` and `down` take the **bare migration name**, not the filename:
 `add-archived-flag`, not `1785922362521-add-archived-flag.js`.
