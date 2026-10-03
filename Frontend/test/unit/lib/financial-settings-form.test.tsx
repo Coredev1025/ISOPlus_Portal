@@ -190,4 +190,65 @@ describe('FinancialSettingsForm', () => {
     renderForm();
     expect(screen.queryByText(/Reducing Number Sequence/i)).not.toBeInTheDocument();
   });
+
+  // KAN-292: until the first save the user chooses the first number of each
+  // document type; it is explained, exemplified and required.
+  describe('before the first numbers have been set', () => {
+    const BLANK = { invoice: '', purchaseOrder: '', quote: '', statementOfAccount: '' };
+
+    it.each([
+      ['invoice', '#invoice-next', '1001'],
+      ['purchase order', '#po-next', '101'],
+      ['quote', '#quote-next', '501'],
+      ['statement of account', '#statement-of-account-next', '1'],
+    ])('lets the user type the %s first number, with an example', async (_l, selector, example) => {
+      const user = userEvent.setup();
+      const onInitialNumberChange = vi.fn();
+      const { container } = renderForm({
+        numberingInitialized: false,
+        initialNumbers: BLANK,
+        onInitialNumberChange,
+      });
+      const input = container.querySelector(selector) as HTMLInputElement;
+
+      expect(input).toBeEnabled();
+      expect(input).not.toHaveAttribute('readonly');
+      expect(input).toBeRequired();
+      expect(input).toHaveAttribute('placeholder', `e.g. ${example}`);
+      expect(input.value).toBe('');
+
+      await user.type(input, '7');
+      expect(onInitialNumberChange).toHaveBeenCalled();
+    });
+
+    it('shows the typed value, not the stored one, and previews the first number', () => {
+      renderForm({
+        numberingInitialized: false,
+        initialNumbers: { ...BLANK, invoice: '1200' },
+        onInitialNumberChange: vi.fn(),
+      });
+      expect(screen.getByDisplayValue('1200')).toBeInTheDocument();
+      expect(screen.getByText('First: INV-1200')).toBeInTheDocument();
+    });
+
+    it('explains that the numbers are set once and cannot be changed afterwards', () => {
+      renderForm({
+        numberingInitialized: false,
+        initialNumbers: BLANK,
+        onInitialNumberChange: vi.fn(),
+      });
+      expect(screen.getByText(/enter the number each document type should start from/i)).toBeInTheDocument();
+      expect(screen.getByText(/cannot be changed after you save/i)).toBeInTheDocument();
+      expect(screen.getByText(/continue from your last number/i)).toBeInTheDocument();
+    });
+
+    it('keeps the prefix editable', () => {
+      const { container } = renderForm({
+        numberingInitialized: false,
+        initialNumbers: BLANK,
+        onInitialNumberChange: vi.fn(),
+      });
+      expect(container.querySelector('#invoice-prefix')).not.toBeDisabled();
+    });
+  });
 });

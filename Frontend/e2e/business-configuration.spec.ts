@@ -87,4 +87,59 @@ test.describe("business configuration logos", () => {
     // The prefix next to it is still editable.
     await expect(page.locator("#invoice-prefix")).toBeEditable();
   });
+
+  // KAN-292: the first Finance Settings save makes the user choose the first
+  // number of every document type. The profile is stubbed so the test does not
+  // depend on, or change, the numbering state of a real workspace.
+  test("first Finance Settings save requires a first number for every document type", async ({
+    page,
+  }) => {
+    const profile = {
+      name: "E2E Care",
+      bankDetails: {},
+      documentNumberingInitialized: false,
+      documentNumbering: {
+        invoice: { prefix: "INV-", nextNumber: 1 },
+        purchaseOrder: { prefix: "PO-", nextNumber: 1 },
+        quote: { prefix: "QT-", nextNumber: 1 },
+        statement: { prefix: "STM-", nextNumber: 1 },
+        statementOfAccount: { prefix: "SOA-", nextNumber: 1 },
+      },
+    };
+    let putBody = "";
+    await page.route("**/api/business/profile**", async (route) => {
+      const request = route.request();
+      if (request.method() === "PUT") {
+        putBody = request.postData() ?? "";
+        await route.fulfill({
+          json: { ...profile, documentNumberingInitialized: true },
+        });
+        return;
+      }
+      await route.fulfill({ json: profile });
+    });
+
+    await page.goto(`/workspace/${WORKSPACE}/finance-settings?tab=financial`);
+    await expect(
+      page.getByRole("heading", { name: "Document Number Configuration" }),
+    ).toBeVisible();
+
+    const invoice = page.locator("#invoice-next");
+    await expect(invoice).toBeEditable();
+    await expect(invoice).toHaveAttribute("placeholder", "e.g. 1001");
+    await expect(page.locator("#po-next")).toHaveAttribute("placeholder", "e.g. 101");
+
+    await page.getByRole("button", { name: /save changes/i }).click();
+    await expect(page.getByText(/invoice: enter a starting number/i)).toBeVisible();
+    expect(putBody).toBe("");
+
+    await invoice.fill("1200");
+    await page.locator("#po-next").fill("35");
+    await page.locator("#quote-next").fill("410");
+    await page.locator("#statement-of-account-next").fill("8");
+    await page.getByRole("button", { name: /save changes/i }).click();
+
+    await expect(invoice).toBeDisabled();
+    expect(putBody).toContain("initializeDocumentNumbering");
+  });
 });

@@ -5,6 +5,8 @@ import ScheduledJob from '../../src/models/ScheduledJob.js';
 import { upsertSchedule, disableSchedule } from '../../src/services/scheduler/schedules.js';
 import { authenticatedAgent } from '../helpers/auth.js';
 import { claimDocumentNumber } from '../../src/utils/documentNumberAllocator.js';
+import AuditTrail from '../../src/models/AuditTrail.js';
+import * as logger from '../../src/utils/logger.js';
 
 const app = createApp();
 
@@ -268,6 +270,206 @@ describe('Business routes', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.documentNumbering.statementOfAccount).toEqual({ prefix: 'SOAC-', nextNumber: 1 });
+  });
+
+  // KAN-292. The next numbers are set once, by the user, the first time Finance
+  // Settings is saved; after that they are read-only (KAN-290).
+  describe('initial document numbers (KAN-292)', () => {
+    const initialNumbering = (over = {}) => JSON.stringify({
+      invoice: { prefix: 'INV-', nextNumber: 1200 },
+      purchaseOrder: { prefix: 'PO-', nextNumber: 35 },
+      quote: { prefix: 'QT-', nextNumber: 410 },
+      statementOfAccount: { prefix: 'SOA-', nextNumber: 8 },
+      ...over,
+    });
+    const firstSave = (agent, workspaceId, numbering = initialNumbering()) =>
+      agent
+        .put('/api/business/profile')
+        .field('name', 'Init Co')
+        .field('workspaceId', workspaceId)
+        .field('initializeDocumentNumbering', 'true')
+        .field('documentNumbering', numbering);
+
+    it('reports numbering as not yet initialized for a business that never set it', async () => {
+      await Business.create({ workspaceId: 'ws-init-fresh', name: 'Init Co' });
+      const { agent } = await authenticatedAgent(app);
+      const res = await agent.get('/api/business/profile').query({ workspaceId: 'ws-init-fresh' });
+      expect(res.body.documentNumberingInitialized).toBe(false);
+    });
+
+    it('reports an existing business whose counters have advanced as initialized, with no migration', async () => {
+      await Business.create({
+        workspaceId: 'ws-init-legacy',
+        name: 'Legacy Co',
+        documentNumbering: { invoice: { prefix: 'INV-', nextNumber: 57 } },
+      });
+      const { agent } = await authenticatedAgent(app);
+      const res = await agent.get('/api/business/profile').query({ workspaceId: 'ws-init-legacy' });
+      expect(res.body.documentNumberingInitialized).toBe(true);
+    });
+
+    it('takes the next number of all four document types on the first Finance Settings save', async () => {
+      await Business.create({ workspaceId: 'ws-init-first', name: 'Init Co' });
+      const { agent } = await authenticatedAgent(app);
+      const res = await firstSave(agent, 'ws-init-first');
+
+      expect(res.status).toBe(200);
+      expect(res.body.documentNumberingInitialized).toBe(true);
+      const stored = await Business.findOne({ workspaceId: 'ws-init-first' }).lean();
+      expect(stored.documentNumbering.invoice.nextNumber).toBe(1200);
+      expect(stored.documentNumbering.purchaseOrder.nextNumber).toBe(35);
+      expect(stored.documentNumbering.quote.nextNumber).toBe(410);
+      expect(stored.documentNumbering.statementOfAccount.nextNumber).toBe(8);
+      expect(stored.documentNumbering.statement.nextNumber).toBe(1);
+      expect(await claimDocumentNumber('ws-init-first', 'invoice')).toBe('INV-1200');
+    });
+
+    it('ignores the numbers on every later save', async () => {
+      await Business.create({ workspaceId: 'ws-init-twice', name: 'Init Co' });
+      const { agent } = await authenticatedAgent(app);
+      await firstSave(agent, 'ws-init-twice');
+      const res = await firstSave(agent, 'ws-init-twice', initialNumbering({
+        invoice: { prefix: 'INV-', nextNumber: 5 },
+      }));
+
+      expect(res.status).toBe(200);
+      const stored = await Business.findOne({ workspaceId: 'ws-init-twice' }).lean();
+      expect(stored.documentNumbering.invoice.nextNumber).toBe(1200);
+    });
+
+    it('does not wind back a business whose counters had already advanced, even if the flag is sent', async () => {
+      await Business.create({
+        workspaceId: 'ws-init-advanced',
+        name: 'Init Co',
+        documentNumbering: { invoice: { prefix: 'INV-', nextNumber: 46 } },
+      });
+      const { agent } = await authenticatedAgent(app);
+      const res = await firstSave(agent, 'ws-init-advanced');
+
+      expect(res.status).toBe(200);
+      const stored = await Business.findOne({ workspaceId: 'ws-init-advanced' }).lean();
+      expect(stored.documentNumbering.invoice.nextNumber).toBe(46);
+      expect(stored.documentNumbering.quote.nextNumber).toBe(1);
+    });
+
+    it('does not initialize on a save that does not ask for it (Configure Business)', async () => {
+      await Business.create({ workspaceId: 'ws-init-basic', name: 'Init Co' });
+      const { agent } = await authenticatedAgent(app);
+      const res = await agent
+        .put('/api/business/profile')
+        .field('name', 'Init Co')
+        .field('workspaceId', 'ws-init-basic')
+        .field('documentNumbering', initialNumbering());
+
+      expect(res.status).toBe(200);
+      expect(res.body.documentNumberingInitialized).toBe(false);
+      const stored = await Business.findOne({ workspaceId: 'ws-init-basic' }).lean();
+      expect(stored.documentNumbering.invoice.nextNumber).toBe(1);
+    });
+
+    it.each([
+      ['a missing document type', { quote: undefined }],
+      ['zero', { invoice: { prefix: 'INV-', nextNumber: 0 } }],
+      ['a blank number', { purchaseOrder: { prefix: 'PO-', nextNumber: null } }],
+      ['a decimal', { quote: { prefix: 'QT-', nextNumber: 1.5 } }],
+    ])('rejects the first save with %s and changes nothing', async (_label, over) => {
+      await Business.create({ workspaceId: 'ws-init-bad', name: 'Init Co' });
+      const { agent } = await authenticatedAgent(app);
+      const res = await firstSave(agent, 'ws-init-bad', initialNumbering(over));
+
+      expect(res.status).toBe(400);
+      const stored = await Business.findOne({ workspaceId: 'ws-init-bad' }).lean();
+      expect(stored.documentNumberingInitialized).not.toBe(true);
+      expect(stored.documentNumbering.invoice.nextNumber).toBe(1);
+    });
+
+    it('tells the client whether the numbers were applied', async () => {
+      await Business.create({ workspaceId: 'ws-init-reply', name: 'Init Co' });
+      const { agent } = await authenticatedAgent(app);
+
+      const first = await firstSave(agent, 'ws-init-reply');
+      expect(first.body.initialNumbersApplied).toBe(true);
+
+      // A second tab, or a user who saved first, sends the numbers again: they
+      // are not applied, and the client is told rather than shown a success.
+      const warnSpy = vi.spyOn(logger, 'warn');
+      const second = await firstSave(agent, 'ws-init-reply', initialNumbering({
+        invoice: { prefix: 'INV-', nextNumber: 5 },
+      }));
+      expect(second.status).toBe(200);
+      expect(second.body.initialNumbersApplied).toBe(false);
+      expect(second.body.documentNumbering.invoice.nextNumber).toBe(1200);
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Business-Service',
+        expect.stringMatching(/first document numbers were not applied/i),
+        expect.objectContaining({ workspaceId: 'ws-init-reply' }),
+        expect.anything(),
+      );
+      warnSpy.mockRestore();
+    });
+
+    it('refuses the numbers, and says so, for a legacy business whose backfill has not run', async () => {
+      await Business.collection.insertOne({
+        workspaceId: 'ws-init-premigration',
+        name: 'Old Co',
+        documentNumbering: {
+          invoice: { prefix: 'INV-', nextNumber: 1 },
+          purchaseOrder: { prefix: 'PO-', nextNumber: 1 },
+          quote: { prefix: 'QT-', nextNumber: 1 },
+        },
+      });
+      const { agent } = await authenticatedAgent(app);
+
+      const res = await firstSave(agent, 'ws-init-premigration');
+
+      expect(res.status).toBe(200);
+      expect(res.body.initialNumbersApplied).toBe(false);
+      const stored = await Business.collection.findOne({ workspaceId: 'ws-init-premigration' });
+      expect(stored.documentNumbering.invoice.nextNumber).toBe(1);
+      expect(stored.documentNumberingInitialized).not.toBe(true);
+    });
+
+    it('does not mention the numbers in the reply to a save that did not ask to set them', async () => {
+      await Business.create({ workspaceId: 'ws-init-quiet', name: 'Init Co' });
+      const { agent } = await authenticatedAgent(app);
+      const res = await agent
+        .put('/api/business/profile')
+        .field('name', 'Init Co')
+        .field('workspaceId', 'ws-init-quiet');
+      expect(res.body).not.toHaveProperty('initialNumbersApplied');
+    });
+
+    it('records the numbers that were set in the audit trail', async () => {
+      await Business.create({ workspaceId: 'ws-init-audit', name: 'Init Co' });
+      const { agent } = await authenticatedAgent(app);
+      await firstSave(agent, 'ws-init-audit');
+
+      const rows = await AuditTrail.find({ workspaceId: 'ws-init-audit' }).lean();
+      const row = rows.find((r) => r.metadata?.initialNumbers);
+      expect(row).toBeTruthy();
+      expect(row.metadata.initialNumbers).toEqual({
+        invoice: 1200, purchaseOrder: 35, quote: 410, statementOfAccount: 8,
+      });
+    });
+
+    it('records the numbers in the audit trail when the first save creates the business', async () => {
+      const { agent } = await authenticatedAgent(app);
+      await firstSave(agent, 'ws-init-audit-new');
+
+      const rows = await AuditTrail.find({ workspaceId: 'ws-init-audit-new' }).lean();
+      expect(rows.find((r) => r.metadata?.initialNumbers)?.metadata.initialNumbers.invoice).toBe(1200);
+    });
+
+    it('takes the numbers when the first save also creates the business', async () => {
+      const { agent } = await authenticatedAgent(app);
+      const res = await firstSave(agent, 'ws-init-created');
+
+      expect(res.status).toBe(200);
+      expect(res.body.documentNumberingInitialized).toBe(true);
+      const stored = await Business.findOne({ workspaceId: 'ws-init-created' }).lean();
+      expect(stored.documentNumbering.invoice.nextNumber).toBe(1200);
+      expect(stored.documentNumbering.statement.nextNumber).toBe(1);
+    });
   });
 
   it('does not expose POST /api/business/xero/connect', async () => {

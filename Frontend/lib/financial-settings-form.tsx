@@ -7,6 +7,11 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type NumberSequence } from "@/lib/configure-business-helpers";
+import {
+  INITIAL_NUMBER_SERIES,
+  type InitialNumberSeriesType,
+} from "@/constants/documentNumbering";
+import { type InitialNumbers } from "@/lib/financial-settings-numbering-helpers";
 
 export type DocumentSequenceType =
   | "invoice"
@@ -88,13 +93,22 @@ type SequenceFieldProps = Readonly<{
   sequence: NumberSequence;
   hint: string;
   onPrefixChange?: (value: string) => void;
+  /** KAN-292: set while the first number has not been chosen yet. */
+  initialEntry?: Readonly<{
+    value: string;
+    example: number;
+    onChange: (value: string) => void;
+  }>;
 }>;
 
 /**
- * KAN-290: the next number is shown but cannot be edited. A counter is advanced
- * only by the generators that issue the numbers; typing one here let an operator
- * (or a page opened before invoices were issued) set it to a number already in
- * use. The server ignores a next number for an existing business as well.
+ * KAN-290: once set, the next number is shown but cannot be edited. A counter is
+ * advanced only by the generators that issue the numbers; typing one here let an
+ * operator (or a page opened before invoices were issued) set it to a number
+ * already in use. The server ignores a next number for an existing business too.
+ *
+ * KAN-292: until the first save the user chooses it. `initialEntry` makes the
+ * field an editable, required input with an example as its placeholder.
  */
 function SequenceField({
   label,
@@ -103,6 +117,7 @@ function SequenceField({
   sequence,
   hint,
   onPrefixChange,
+  initialEntry,
 }: SequenceFieldProps) {
   return (
     <Field id={prefixId} label={label} hint={hint}>
@@ -115,16 +130,32 @@ function SequenceField({
           className="min-w-0 flex-1"
         />
         <span className="text-muted-foreground">/</span>
-        <Input
-          id={nextId}
-          type="number"
-          value={sequence.nextNumber}
-          readOnly
-          disabled
-          aria-readonly="true"
-          title="Assigned automatically; it cannot be edited here"
-          className="min-w-0 flex-1 cursor-not-allowed bg-muted text-muted-foreground"
-        />
+        {initialEntry ? (
+          <Input
+            id={nextId}
+            type="number"
+            min={1}
+            step={1}
+            inputMode="numeric"
+            required
+            value={initialEntry.value}
+            onChange={(e) => initialEntry.onChange(e.target.value)}
+            placeholder={`e.g. ${initialEntry.example}`}
+            aria-label={`${label}: first number`}
+            className="min-w-0 flex-1"
+          />
+        ) : (
+          <Input
+            id={nextId}
+            type="number"
+            value={sequence.nextNumber}
+            readOnly
+            disabled
+            aria-readonly="true"
+            title="Assigned automatically; it cannot be edited here"
+            className="min-w-0 flex-1 cursor-not-allowed bg-muted text-muted-foreground"
+          />
+        )}
       </div>
     </Field>
   );
@@ -140,6 +171,13 @@ type FinancialSettingsFormProps = Readonly<{
   onBankChange: (field: keyof BankDetailsForm, value: string) => void;
   onSequencePrefixChange: (type: DocumentSequenceType, value: string) => void;
   onSave: () => void;
+  /** KAN-292: false until the user has chosen the first numbers. Default true. */
+  numberingInitialized?: boolean;
+  initialNumbers?: InitialNumbers;
+  onInitialNumberChange?: (
+    type: InitialNumberSeriesType,
+    value: string
+  ) => void;
 }>;
 
 export function FinancialSettingsForm({
@@ -152,7 +190,26 @@ export function FinancialSettingsForm({
   onBankChange,
   onSequencePrefixChange,
   onSave,
+  numberingInitialized = true,
+  initialNumbers,
+  onInitialNumberChange,
 }: FinancialSettingsFormProps) {
+  const settingInitial = !numberingInitialized && initialNumbers !== undefined;
+  const entryFor = (type: InitialNumberSeriesType) => {
+    if (!settingInitial) return undefined;
+    const example = INITIAL_NUMBER_SERIES.find((s) => s.type === type)?.example ?? 1;
+    return {
+      value: initialNumbers[type],
+      example,
+      onChange: (value: string) => onInitialNumberChange?.(type, value),
+    };
+  };
+  const hintFor = (type: InitialNumberSeriesType) => {
+    const { prefix, nextNumber } = sequences[type];
+    if (!settingInitial) return `Next: ${prefix}${nextNumber}`;
+    const typed = initialNumbers[type];
+    return typed ? `First: ${prefix}${typed}` : "Set once, then it cannot be changed";
+  };
   return (
     <>
       <div className="space-y-[18px]">
@@ -233,8 +290,19 @@ export function FinancialSettingsForm({
           <CardHeaderBlock
             icon={<Hash className="h-4 w-4" />}
             title="Document Number Configuration"
-            description="Configure the prefix for each financial document. Next numbers are assigned automatically and cannot be edited."
+            description={
+              settingInitial
+                ? "Enter the number each document type should start from. If you already issue documents elsewhere, continue from your last number plus one. These numbers cannot be changed after you save."
+                : "Configure the prefix for each financial document. Next numbers are assigned automatically and cannot be edited."
+            }
           />
+          {settingInitial ? (
+            <p className="mb-4 text-[12.5px] text-muted-foreground">
+              For example, if your last invoice was INV-1000, enter 1001 and
+              your next invoice will be INV-1001. If you are starting fresh,
+              enter 1.
+            </p>
+          ) : null}
 
           <div
             data-testid="document-numbering-grid"
@@ -246,7 +314,8 @@ export function FinancialSettingsForm({
               nextId="invoice-next"
               sequence={sequences.invoice}
               onPrefixChange={(v) => onSequencePrefixChange("invoice", v)}
-              hint={`Next: ${sequences.invoice.prefix}${sequences.invoice.nextNumber}`}
+              hint={hintFor("invoice")}
+              initialEntry={entryFor("invoice")}
             />
             <SequenceField
               label="Purchase Order Numbers"
@@ -256,7 +325,8 @@ export function FinancialSettingsForm({
               onPrefixChange={(v) =>
                 onSequencePrefixChange("purchaseOrder", v)
               }
-              hint={`Next: ${sequences.purchaseOrder.prefix}${sequences.purchaseOrder.nextNumber}`}
+              hint={hintFor("purchaseOrder")}
+              initialEntry={entryFor("purchaseOrder")}
             />
             <SequenceField
               label="Quote Numbers"
@@ -264,7 +334,8 @@ export function FinancialSettingsForm({
               nextId="quote-next"
               sequence={sequences.quote}
               onPrefixChange={(v) => onSequencePrefixChange("quote", v)}
-              hint={`Next: ${sequences.quote.prefix}${sequences.quote.nextNumber}`}
+              hint={hintFor("quote")}
+              initialEntry={entryFor("quote")}
             />
             <SequenceField
               label="Statement of Account Numbers"
@@ -274,7 +345,8 @@ export function FinancialSettingsForm({
               onPrefixChange={(v) =>
                 onSequencePrefixChange("statementOfAccount", v)
               }
-              hint={`Next: ${sequences.statementOfAccount.prefix}${sequences.statementOfAccount.nextNumber}`}
+              hint={hintFor("statementOfAccount")}
+              initialEntry={entryFor("statementOfAccount")}
             />
           </div>
 

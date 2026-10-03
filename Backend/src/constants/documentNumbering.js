@@ -28,3 +28,18 @@ export const DOCUMENT_SERIES = [
   'statement',
   'statementOfAccount',
 ];
+
+/**
+ * The series whose first number the user chooses, once, the first time Finance
+ * Settings is saved (KAN-292). `statement` (STM-) is left out: monthly statement
+ * automation owns it and it always starts at 1.
+ *
+ * Touchpoints: utils/documentNumberingInitial.js, validators/businessProfile.js,
+ * Frontend/constants/documentNumbering.ts (mirror; keep in step).
+ */
+export const INITIAL_NUMBER_SERIES = [
+  'invoice',
+  'purchaseOrder',
+  'quote',
+  'statementOfAccount',
+];

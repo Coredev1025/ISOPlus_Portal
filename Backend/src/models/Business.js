@@ -126,6 +126,16 @@ const businessSchema = new mongoose.Schema({
     type: String,
     default: 'Australia/Sydney'
   },
+  // KAN-292: true once the user has chosen the first number of each document
+  // type. Deliberately NO default: Mongoose fills a missing path with its default
+  // on load and writes it back on a later save(), so a default here would let a
+  // stale save of a copy loaded earlier reset a flag that was set in between.
+  // Absent means "not set", the same as false. A business that predates the field
+  // counts as set when any counter has moved (utils/documentNumberingInitial.js),
+  // and migrations/*-backfill-document-numbering-initialized.js stores it.
+  documentNumberingInitialized: {
+    type: Boolean
+  },
   documentNumbering: {
     invoice: {
       prefix: {

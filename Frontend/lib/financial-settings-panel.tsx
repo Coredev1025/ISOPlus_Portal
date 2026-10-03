@@ -15,6 +15,15 @@ import {
   type DocumentSequences,
 } from "@/lib/financial-settings-form";
 import {
+  EMPTY_INITIAL_NUMBERS,
+  NUMBERS_NOT_APPLIED_MESSAGE,
+  buildFinancialSettingsFormData,
+  describeSaveFailure,
+  initialNumberErrors,
+  type InitialNumbers,
+} from "@/lib/financial-settings-numbering-helpers";
+import { type InitialNumberSeriesType } from "@/constants/documentNumbering";
+import {
   showFetchErrorToast,
   showFetchSuccessToast,
   showSaveErrorToast,
@@ -69,6 +78,11 @@ export function FinancialSettingsPanel({
   const [bankDetails, setBankDetails] = useState<BankDetailsForm>(EMPTY_BANK);
   const [sequences, setSequences] =
     useState<DocumentSequences>(cloneDefaultSequences);
+  // KAN-292: until the server reports the first numbers set, the user types them.
+  // A workspace with no profile yet (404) is also not set.
+  const [numberingInitialized, setNumberingInitialized] = useState(false);
+  const [initialNumbers, setInitialNumbers] =
+    useState<InitialNumbers>(EMPTY_INITIAL_NUMBERS);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
@@ -94,6 +108,7 @@ export function FinancialSettingsPanel({
         setProfileForm(mapped);
         setBankDetails(bankFromProfileForm(mapped));
         setSequences(extractDocumentNumberingSequences(response.data));
+        setNumberingInitialized(response.data.documentNumberingInitialized !== false);
         showFetchSuccessToast("Financial settings");
       } catch (error: unknown) {
         if (
@@ -128,6 +143,13 @@ export function FinancialSettingsPanel({
     setBankDetails((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handleInitialNumberChange = (
+    type: InitialNumberSeriesType,
+    value: string
+  ) => {
+    setInitialNumbers((prev) => ({ ...prev, [type]: value }));
+  };
+
   const handleSequencePrefixChange = (
     type: DocumentSequenceType,
     value: string
@@ -138,87 +160,81 @@ export function FinancialSettingsPanel({
     }));
   };
 
-  const handleSave = async () => {
-    try {
-      setSaving(true);
+  // Shows `messages` as the form's errors for five seconds, and as a toast.
+  const showBlockingErrors = (messages: string[]) => {
+    setErrors(messages);
+    showSaveErrorToast("financial settings", messages[0]);
+    setTimeout(() => setErrors([]), 5000);
+  };
+
+  // What must be fixed before anything is sent, or an empty list.
+  const findBlockingErrors = (): string[] => {
+    if (!profileForm.name?.trim()) return [MISSING_BUSINESS_NAME_HINT];
+    return numberingInitialized ? [] : initialNumberErrors(initialNumbers);
+  };
+
+  const applySavedProfile = (data: Record<string, any>) => {
+    const mapped = mapBusinessProfileToFormData(data, workspaceId);
+    setProfileForm(mapped);
+    setBankDetails(bankFromProfileForm(mapped));
+    setSequences(extractDocumentNumberingSequences(data));
+    setNumberingInitialized(data.documentNumberingInitialized !== false);
+    if (data.initialNumbersApplied === false) {
+      // The rest of the profile saved, but the numbers the user typed did not:
+      // say so, rather than showing a success over numbers that differ.
+      setApiError(NUMBERS_NOT_APPLIED_MESSAGE);
+      showSaveErrorToast("financial settings", NUMBERS_NOT_APPLIED_MESSAGE);
+      setTimeout(() => setApiError(""), 8000);
+      return;
+    }
+    setShowSuccess(true);
+    showSaveSuccessToast("Financial settings");
+    setTimeout(() => setShowSuccess(false), 2000);
+  };
+
+  const reportSaveFailure = (error: unknown) => {
+    setShowSuccess(false);
+    const { errors: responseErrors, message } = describeSaveFailure(
+      error,
+      mapFinancialSettingsErrors
+    );
+    showSaveErrorToast("financial settings", message);
+    if (responseErrors.length > 0) {
+      setErrors(responseErrors);
+    } else {
+      setApiError(message);
+    }
+    setTimeout(() => {
       setErrors([]);
       setApiError("");
+    }, 5000);
+  };
 
-      if (!profileForm.name?.trim()) {
-        setErrors([MISSING_BUSINESS_NAME_HINT]);
-        showSaveErrorToast("financial settings", MISSING_BUSINESS_NAME_HINT);
-        setTimeout(() => setErrors([]), 5000);
-        return;
-      }
-
-      const formDataToSend = new FormData();
-      const merged = {
-        ...profileForm,
-        ...bankDetails,
-        workspaceId,
-      };
-      for (const [key, value] of Object.entries(merged)) {
-        const text =
-          typeof value === "string" ||
-          typeof value === "number" ||
-          typeof value === "boolean"
-            ? String(value)
-            : "";
-        formDataToSend.append(key, text);
-      }
-      // Omit statement (STM-): Document Number Configuration no longer edits it.
-      // The server keeps the stored series used by monthly budget
-      // statement automation. Do not send clone/default STM- values — that would
-      // overwrite a live nextNumber.
-      formDataToSend.append(
-        "documentNumbering",
-        JSON.stringify({
-          invoice: sequences.invoice,
-          purchaseOrder: sequences.purchaseOrder,
-          quote: sequences.quote,
-          statementOfAccount: sequences.statementOfAccount,
-        })
-      );
-
+  const handleSave = async () => {
+    setErrors([]);
+    setApiError("");
+    const blocking = findBlockingErrors();
+    if (blocking.length > 0) {
+      showBlockingErrors(blocking);
+      return;
+    }
+    try {
+      setSaving(true);
       const response = await axios.put(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`,
-        formDataToSend,
+        buildFinancialSettingsFormData({
+          profileForm,
+          bankDetails,
+          workspaceId,
+          sequences,
+          numberingInitialized,
+          initialNumbers,
+        }),
         { headers: { "Content-Type": "multipart/form-data" } }
       );
-
-      if (response.status === 200) {
-        const mapped = mapBusinessProfileToFormData(response.data, workspaceId);
-        setProfileForm(mapped);
-        setBankDetails(bankFromProfileForm(mapped));
-        setSequences(extractDocumentNumberingSequences(response.data));
-        setShowSuccess(true);
-        showSaveSuccessToast("Financial settings");
-        setTimeout(() => setShowSuccess(false), 2000);
-      }
+      if (response.status === 200) applySavedProfile(response.data);
     } catch (error: unknown) {
-      setShowSuccess(false);
-      const err = error as {
-        response?: { data?: { errors?: string[]; message?: string } };
-      };
-      const rawErrors = err.response?.data?.errors;
-      const responseErrors = Array.isArray(rawErrors)
-        ? mapFinancialSettingsErrors(rawErrors)
-        : [];
-      const errorMessage =
-        responseErrors[0] ||
-        err.response?.data?.message ||
-        "An unexpected error occurred";
-      showSaveErrorToast("financial settings", errorMessage);
-
-      if (responseErrors.length > 0) {
-        setErrors(responseErrors);
-      } else {
-        setApiError(errorMessage);
-      }
-      setTimeout(() => {
-        setErrors([]);
-        setApiError("");
-      }, 5000);
+      reportSaveFailure(error);
     } finally {
       setSaving(false);
     }
@@ -243,6 +259,9 @@ export function FinancialSettingsPanel({
       showSuccess={showSuccess}
       onBankChange={handleBankChange}
       onSequencePrefixChange={handleSequencePrefixChange}
+      numberingInitialized={numberingInitialized}
+      initialNumbers={initialNumbers}
+      onInitialNumberChange={handleInitialNumberChange}
       onSave={handleSave}
     />
   );
