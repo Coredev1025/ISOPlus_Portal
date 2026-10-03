@@ -38,19 +38,15 @@ Ticket: KAN-295. Branching, tickets and commit rules are in
 Work through these in order. If a step cannot be done, say so in the release
 note rather than skipping it.
 
-1. **Agree the scope.** `main` and `develop` have drifted: on 2026-10-04,
-   `develop` was 525 commits ahead of `main` and `main` was 20 ahead of
-   `develop`. Promoting `develop` ships everything in it, so look before you
-   promote:
-
-   ```bash
-   git fetch origin
-   git log --oneline origin/main..origin/develop     # what would ship
-   git log --oneline origin/develop..origin/main     # what main has that develop lacks
-   ```
-
-   Read the second list: those commits must be understood before a merge
-   overwrites or conflicts with them.
+1. **Compare `main` with `develop`, and reconcile them first.** They have
+   drifted, so promoting `develop` ships everything in it and can silently undo
+   a hotfix that exists only on `main`. Run the comparison in
+   "Comparing main with develop" below, and do not open the release PR until:
+   every commit that is only on `main` is also in `develop` (or has been
+   consciously dropped), the trial merge is clean, and the release contents
+   (migrations, environment variables, infrastructure, sign-in changes) have been
+   read and signed off. The snapshot taken on 2026-10-04 is in the next section;
+   it found problems.
 2. **No open PR is half of a pair.** If a change needs a migration, an
    environment property, or a frontend deploy, confirm the other half is ready.
 3. **CI is green on the commit being released**, backend and frontend.
@@ -76,6 +72,112 @@ note rather than skipping it.
       --environment-names isoplus-be-prod-blue --region ap-southeast-2 \
       --query 'Environments[0].VersionLabel'
     ```
+
+## Comparing main with develop
+
+Do this at the start of every release, from a fresh `git fetch origin`.
+
+```bash
+git fetch origin
+BASE=$(git merge-base origin/main origin/develop)
+
+git rev-list --count origin/main..origin/develop        # commits that would ship
+git rev-list --count origin/develop..origin/main        # commits only main has
+git log --oneline --merges origin/main..origin/develop  # the PRs that would ship
+git cherry -v origin/develop origin/main                # "+" = a change develop lacks
+git merge-tree --write-tree --name-only origin/main origin/develop   # trial merge, touches nothing
+
+git diff --stat origin/main origin/develop              # size and areas
+git diff --name-status origin/main origin/develop -- Backend/migrations      # migrations that would ship
+git diff --name-status origin/main origin/develop -- Backend/src/models      # schema changes
+git diff origin/main origin/develop -- Backend/package.json Frontend/package.json   # dependencies
+git diff origin/main origin/develop -- Backend/.env.example                 # environment variables
+git diff --stat origin/main origin/develop -- .github Backend/.ebextensions Backend/.platform   # deploy config
+```
+
+Read the `git cherry` output carefully. A `+` line is a commit on `main` whose
+change is not in `develop`; if it is not brought across, the release removes it
+from production.
+
+### Snapshot: 2026-10-04
+
+What the comparison found. Treat it as the starting point and re-run the
+commands; it will be out of date.
+
+| | |
+|---|---|
+| Merge base | `7dfbe16a`, 2026-07-23 (PR #844) |
+| `develop` ahead of `main` | 525 commits, 87 merged PRs, 2026-07-23 to 2026-10-02 |
+| `main` ahead of `develop` | 20 commits, of which 17 are merge commits |
+| Size | 802 files changed, 173,230 insertions, 7,675 deletions (most of it tests: 267 Backend and 166 Frontend test files) |
+| Source touched | 176 Backend `src` files, 54 Frontend `lib`, 14 Frontend `app`, 12 `scripts`, 33 `docs` |
+
+**Findings that block a straight promotion:**
+
+1. **Three production hotfixes exist only on `main`, and a trial merge conflicts
+   in six files.**
+   - `c5c67a6c` (2026-08-31, PR #892, KAN-22): "Fix isoplus_user board access and
+     OAuth login redirect". Touches `Backend/src/index.js`, `Frontend/app/page.tsx`,
+     the workspace page and the board page.
+   - `f08001a9` and `1fe10a55` (2026-09-08, PR #896, KAN-28): ISO+ service
+     authorization parameters, attribute caching and pagination. Touch
+     `Backend/src/services/isoplus.js` and `Backend/src/utils/isoplusLogoHelpers.js`.
+   - The trial merge reports content conflicts in `Backend/src/index.js`,
+     `Backend/src/services/isoplus.js`, `Backend/src/utils/isoplusLogoHelpers.js`,
+     `Frontend/app/page.tsx`, `Frontend/app/workspace/[id]/page.tsx` and
+     `Frontend/app/workspace/[id]/board/[boardId]/page.tsx`.
+   - **Do this first:** merge `main` into `develop` through a PR, resolve those six
+     files once, and test. Then the release PR from `develop` to `main` has
+     nothing to resolve and cannot drop a hotfix. Resolving the conflicts inside
+     the release PR is how a hotfix gets lost.
+2. **Support-admin password sign-in is removed.** On `main`, `POST
+   /api/auth/login` signs a support admin in with email and password. On
+   `develop` it answers 404 ("Support admin password login is no longer
+   available. Use Google sign-in."). Support-admin access becomes Google sign-in
+   with a Workspace group check on every session verify. Before releasing,
+   production must have the Google settings (below) and at least one support admin
+   must have confirmed they can sign in with them, or support admins are locked
+   out. `GOOGLE_SUPPORT_BREAK_GLASS_EMAILS` is the escape hatch for a failed
+   directory lookup only.
+3. **Six migrations have never run in production** (table below).
+4. **New infrastructure and environment variables are needed** (below). Several
+   fail silently when missing.
+
+**Also in the release:**
+
+- **Schema.** 14 model files changed or added: `AutomationRun`,
+  `AutomationSettings`, `ScheduledJob`, `SchedulerHealth`, `EmailSend`,
+  `EmailEvent`, `XeroConnectTicket`, `ticketSchema` (new collections), and changes
+  to `AuditTrail`, `Board`, `Business`, `Item`, `OAuthTicket`, `PDFLink` and
+  `SyncExecution`.
+- **Dependencies.** Backend adds `@aws-sdk/client-sesv2`, `@aws-sdk/client-sqs`,
+  `sqs-consumer`, `google-auth-library`, `googleapis`, `nodemailer`,
+  `cron-parser` and `lodash-es`, and removes `node-schedule` (board catch-up
+  moved to an in-process clock). Frontend adds the TipTap editor packages and
+  `lodash-es`. Everything else added is test tooling.
+- **Deploy workflow.** `.github/workflows/cicd.yml` was rewritten (259 lines
+  changed). The release deploys with the `develop` version of it, which is the one
+  this runbook describes.
+- **Tests.** `develop` carries the Vitest suites and Playwright end-to-end tests
+  that `main` does not have, so the first release also changes what CI enforces.
+
+### Environment and infrastructure the `develop` code expects
+
+Set these in the Elastic Beanstalk environment **before** the deploy, except
+where noted. Each variable's meaning is in `Backend/.env.example`. Setting one
+triggers an environment update and a restart.
+
+| Needed | Variables and resources | If it is missing |
+|---|---|---|
+| Support-admin sign-in | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_CALLBACK_URL` (defaults to `${BACKEND_URL}/api/auth/google/callback`), `GOOGLE_ADMIN_EMAIL`, `GOOGLE_TARGET_GROUP`, `GOOGLE_SERVICE_ACCOUNT_JSON` (or `_KEY_FILE`), optional `GOOGLE_SUPPORT_BREAK_GLASS_EMAILS`; and the callback URL registered with Google | Support admins cannot sign in |
+| Scheduler | `SCHEDULER_API_KEY` (and the optional per-kind `SCHEDULER_API_KEY_INVOICE` / `_STATEMENT`), plus the EventBridge rule. See `docs/scheduling.md` | The app boots healthy and no schedule ever runs |
+| Automation switch | `AUTOMATION_ENABLED`. Leave it `false` until the migrations have run and the Google and email settings are verified; a tick then holds due jobs back instead of running them | With it off, jobs are held, not lost |
+| Email | `EMAIL_FROM` (production: `noreply@mail.isoplus.online`, on a domain verified in SES) | Sends are refused |
+| Email delivery events | `SES_EVENTS_QUEUE_URL`, the SQS queue and the SES event destination that feeds it | Delivered, bounced and complained states never reach the documents |
+| Session cookies | `BACKEND_URL` (an `https` value makes the cookie `Secure` and `SameSite=None`) | Sessions may not stick across the frontend and backend hosts |
+| Board catch-up | `BOARD_SYNC_ENABLED`, `BOARD_SYNC_CRON`, `BOARD_SYNC_GAP_MS` | Defaults apply |
+| Must be unset in production | `ISOPLUS_OFFLINE`, `LOCAL_FILE_ROOT` | They switch the app to local, offline behaviour |
+| Read by the code, optional | `EMAIL_BACKEND`, `XERO_SCOPES` | Defaults apply |
 
 ## 2. Migrations
 
@@ -126,6 +228,30 @@ row once the migration has run in production and the release is closed.
 | Migration | Added by | Run | What it does | Check it worked | Undo |
 |---|---|---|---|---|---|
 | `backfill-document-numbering-initialized` | KAN-292 (PR #953) | After the backend deploy that includes KAN-292, and **before users start setting their first document numbers**. Safe at any time. Idempotent. | Stores every missing document numbering counter and prefix (older businesses lack `statementOfAccount` and `statement`) and the `documentNumberingInitialized` flag, so a stale `save()` cannot write defaults back over numbers the user chose. Never changes a value that is already there. The flag is true where any of invoice, purchase order, quote or statement of account has moved off 1, otherwise false. | Before and after: `npm run schema -- businesses`. Then in the database: `db.businesses.countDocuments({documentNumberingInitialized: {$exists: false}})` must be `0`, and `db.businesses.countDocuments({"documentNumbering.statementOfAccount.nextNumber": {$exists: false}})` must be `0` (same for `statement`, `invoice`, `purchaseOrder`, `quote`). Open Finance Settings for one workspace that has issued invoices: the number fields must be read-only. | `npm run migrate -- down backfill-document-numbering-initialized --allow-remote` removes the flag only. The backfilled counters equal what Mongoose would have supplied and stay. Without the flag the app still treats a business as set when any counter has moved. |
+
+#### Migrations that ship when `develop` is promoted (snapshot 2026-10-04)
+
+None of these has run in production. `migrate up` applies pending migrations in
+timestamp order. All of them only add indexes, clean up, or disable rows; none
+reshapes data the old code reads. Run the index migrations **before the deploy**,
+so the new code never runs without them (the unique one is the guard against
+billing a period twice), and the KAN-292 backfill **after** it. Keep
+`AUTOMATION_ENABLED` off until all of them have run.
+
+| Migration | What it does | Risk and pre-check | Undo |
+|---|---|---|---|
+| `1771401600000-remove-xero-connection-logs` | Unsets `xeroConnectionLogs` on every business. Those events now live in the audit trail. | Not reversible: the log documents are not copied out. Its own note says production documents never had the field. Check: `db.businesses.countDocuments({xeroConnectionLogs: {$exists: true}})`. | `down` writes an empty array back, not the history. |
+| `1786697189409-pdflink-scheduled-xero-ids` | Creates index `automation_slot_lookup` on `pdflinks`. | Index build on the whole `pdflinks` collection. | `down` drops the index. |
+| `1787023330061-pdflink-email-delivery-state` | Creates sparse index `delivery_message_lookup` on `pdflinks`. | Sparse, so small. No backfill by design. | `down` drops the index **and removes** `deliveryMessageId`, `deliveryState`, `deliveryDetail` and `deliveryUpdatedAt` from every row that carries a message id. Once emails have been tracked that is real data, so do not run it after go-live without a reason. |
+| `1787097600000-audit-trail-workspace-category-index` | Creates `workspaceId_1_category_1_createdAt_-1` on `audittrails`. | Index build on a large collection. | `down` drops the index. |
+| `1787186180650-pdflink-invoice-period` | Adds period fields and the **unique** partial index `automation_period_item_unique` (the double-billing guard). | It checks for duplicate rows first and refuses to build, with a clear message naming them, if any exist; no index is left behind. If it refuses, the duplicates must be understood, not deleted blindly. | `down` drops the index and removes `periodStart`, `periodEnd`, `invoiceType` and `invoiceTotal` from rows that have them. `periodKey` is left alone. |
+| `1787291724206-disable-portal-board-sync-schedule` | Sets `enabled: false` on the old EventBridge-era `scheduledjobs` row with `kind: 'board_sync'` and `targetId: 'portal'`. | That row must stay disabled or a tick claims it with no handler. Check: `db.scheduledjobs.find({kind: 'board_sync', targetId: 'portal'})`. | `down` sets it back to enabled, which you do not want. |
+| `1791050490815-backfill-document-numbering-initialized` (KAN-292, PR #953, not yet in `develop` when this was written) | The row above. | The row above. | The row above. |
+
+Before running any of them in production: take the backup (section 1), then
+`npm run migrate -- list` against production to see exactly which are pending,
+and run `npm run schema -- pdflinks`, `-- audittrails` and `-- businesses` to
+see the real shape.
 
 If this release also ships KAN-293 (PR #952): it needs no migration and no
 environment change. See "After the deploy" for what to watch.
@@ -217,6 +343,13 @@ release will undo it.
 ## To confirm
 
 Fill these in and delete this list.
+
+- Whether the Google sign-in settings above are already set in production, and
+  whether a support admin has confirmed they can sign in with them.
+- Whether the production SQS queue, SES event destination and EventBridge rule
+  exist yet.
+- Whether the three hotfix commits on `main` (KAN-22 and KAN-28) are still
+  needed in the form they were written, or have been superseded in `develop`.
 
 - How the frontend is built and deployed to production, and how to roll it back.
 - The production backend host and the production frontend host.
