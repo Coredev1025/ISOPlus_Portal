@@ -62,6 +62,19 @@ describe('groupItemIdsByParticipantProfile', () => {
     expect(unprofiled).toEqual(['n1', 'n2']);
   });
 
+  it('lists an item with no profile once even when several rows come from it', () => {
+    const { unprofiled } = groupItemIdsByParticipantProfile(
+      [row('n1', ''), row('n1', ''), row('n1', '')],
+      opts({}),
+    );
+    expect(unprofiled).toEqual(['n1']);
+  });
+
+  it('carries the profile id on each group', () => {
+    const { groups } = groupItemIdsByParticipantProfile([row('a1', 'Ann')], opts({ a1: 'P-A' }));
+    expect(groups[0].profileId).toBe('P-A');
+  });
+
   it('ignores rows without an id and does not mutate its input', () => {
     const rows = [row('a1', 'Ann'), { participant: 'No id' }];
     const copy = JSON.parse(JSON.stringify(rows));

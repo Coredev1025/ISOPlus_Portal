@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 // line is the behaviour under test here, not incidental noise.
 vi.mock('../../../src/utils/logger.js', async (importOriginal) => {
   const actual = await importOriginal();
-  return { ...actual, info: vi.fn() };
+  return { ...actual, info: vi.fn(), warn: vi.fn() };
 });
 
 import Board from '../../../src/models/Board.js';
@@ -25,7 +25,7 @@ import { GENERATOR_LIST_LIMIT } from '../../../src/constants/automation.js';
 import { parseListPagination } from '../../../src/utils/itemsRouteHelpers.js';
 import { getNdisInvoiceGeneratorData } from '../../../src/utils/ndisInvoiceGeneratorRouteHelpers.js';
 import { ndisInvoiceGeneratorListDeps } from '../../../src/utils/automationInvoiceGeneratorDeps.js';
-import { info } from '../../../src/utils/logger.js';
+import { info, warn } from '../../../src/utils/logger.js';
 
 const WS = 'ws-gen';
 const BOARD = 'board-gen';
@@ -178,23 +178,31 @@ describe('generateInvoicesForBoard — Invoice Generator pipeline', () => {
       const results = await run();
 
       expect(results.map((r) => r.participant).sort()).toEqual(['Priya Nair', 'Samuel Rivers']);
+      // The profile travels with the document so delivery can tell two clients
+      // who share a name apart.
+      expect(results.map((r) => r.profileId).sort()).toEqual([PP_ID, PP_2].sort());
       expect(await InvoiceNumber.countDocuments({ workspaceId: WS })).toBe(2);
       const billed = (await PDFLink.find({ workspaceId: WS }).lean()).map((l) => l.itemId);
       expect(billed).not.toContain('mp-none');
     });
 
-    it('says how many billable items it left out for having no profile', async () => {
+    it('warns, naming the items it left out for having no profile', async () => {
       await seedCatalogue();
       await seedShift('mp-a', PP_ID);
       await seedShift('mp-none', null);
       info.mockClear();
+      warn.mockClear();
 
       await run();
 
-      expect(info).toHaveBeenCalledWith(
+      // A warn, with the item ids: these are never claimed and fall outside the
+      // next window, so a count in an info line is not enough to find them.
+      expect(warn).toHaveBeenCalledWith(
         'Automation',
         expect.stringMatching(/no Participant Profile/i),
-        expect.objectContaining({ workspaceId: WS, boardId: BOARD, count: 1 }),
+        expect.objectContaining({
+          workspaceId: WS, boardId: BOARD, periodKey: '20260814-1509', count: 1, itemIds: ['mp-none'],
+        }),
       );
     });
 

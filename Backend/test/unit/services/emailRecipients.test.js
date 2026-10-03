@@ -240,4 +240,43 @@ describe('resolveRecipient', () => {
     const result = await resolveRecipient({ workspaceId: WS, participant: { $ne: null } });
     expect(result).toEqual({ address: null, reason: 'no_participant_name' });
   });
+
+  // KAN-293. An item belongs to one profile and a profile has one address, so a
+  // recipient can be found by the profile's own id. The name is only a fallback
+  // for documents that carry no profile id.
+  describe('by profile id', () => {
+    it('addresses each of two same-name clients by their own profile', async () => {
+      const a = await seedProfile({ 'Full Name/Preferred Name': 'Sam Lee', Email: 'sam.a@example.com' });
+      const b = await seedProfile({ 'Full Name/Preferred Name': 'Sam Lee', Email: 'sam.b@example.com' });
+
+      const first = await resolveRecipient({ workspaceId: WS, boardId: BOARD, participant: 'Sam Lee', profileId: a.itemId });
+      const second = await resolveRecipient({ workspaceId: WS, boardId: BOARD, participant: 'Sam Lee', profileId: b.itemId });
+
+      expect(first.address).toBe('sam.a@example.com');
+      expect(second.address).toBe('sam.b@example.com');
+    });
+
+    it('needs no name when the profile id is given', async () => {
+      const p = await seedProfile({ 'Full Name/Preferred Name': 'No Name Shown', Email: 'x@example.com' });
+      const result = await resolveRecipient({ workspaceId: WS, boardId: BOARD, participant: null, profileId: p.itemId });
+      expect(result.address).toBe('x@example.com');
+    });
+
+    it('says profile_not_found for a profile id that does not exist, and does not fall back to the name', async () => {
+      await seedProfile({ 'Full Name/Preferred Name': 'Jane Smith', Email: 'jane@example.com' });
+      const result = await resolveRecipient({
+        workspaceId: WS, boardId: BOARD, participant: 'Jane Smith', profileId: 'no-such-profile',
+      });
+      expect(result).toEqual({ address: null, reason: 'profile_not_found' });
+    });
+
+    it('does not read a profile that belongs to another workspace', async () => {
+      const other = await seedProfile(
+        { 'Full Name/Preferred Name': 'Other Tenant', Email: 'other@example.com' },
+        { workspaceId: 'ws-other' },
+      );
+      const result = await resolveRecipient({ workspaceId: WS, boardId: BOARD, participant: 'Other Tenant', profileId: other.itemId });
+      expect(result).toEqual({ address: null, reason: 'profile_not_found' });
+    });
+  });
 });

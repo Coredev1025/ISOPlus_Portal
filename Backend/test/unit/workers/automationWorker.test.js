@@ -1008,6 +1008,76 @@ describe('startAutomationWorker', () => {
       await cleanupWorkerNdisBoard();
     });
 
+    // KAN-293. An item belongs to one Participant Profile and a profile has one
+    // address, so delivery is keyed on the profile, not on the display name. Two
+    // clients who share a name each get their own email, addressed by profile.
+    it('online, two profiles sharing a name: sends each its own email, addressed by profile', async () => {
+      process.env.ISOPLUS_OFFLINE = '0';
+      process.env.EMAIL_FROM = 'billing@dev.isoplus.online';
+      process.env.AWS_ACCESS_KEY_ID = 'test-key';
+      process.env.AWS_SECRET_ACCESS_KEY = 'test-secret';
+      process.env.AWS_REGION = 'ap-southeast-2';
+      const URL_X1 = 'https://b.s3.ap-southeast-2.amazonaws.com/out/sam-x1.pdf';
+      const URL_X2 = 'https://b.s3.ap-southeast-2.amazonaws.com/out/sam-x2.pdf';
+      const URL_Y = 'https://b.s3.ap-southeast-2.amazonaws.com/out/sam-y.pdf';
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        invoice: { enabled: true, recipient: 'billing_contact', emailSubject: 'Invoice run' },
+      });
+      const genSpy = vi.spyOn(generateDocuments, 'generateInvoicesForBoard').mockResolvedValue([
+        { itemId: 'i-x1', invoiceNumber: 'IN-1', participant: 'Sam Lee', profileId: 'P-X', pdfUrl: URL_X1 },
+        { itemId: 'i-y', invoiceNumber: 'IN-2', participant: 'Sam Lee', profileId: 'P-Y', pdfUrl: URL_Y },
+        { itemId: 'i-x2', invoiceNumber: 'IN-1', participant: 'Sam Lee', profileId: 'P-X', pdfUrl: URL_X2 },
+      ]);
+      const deliverSpy = vi.spyOn(outbox, 'deliverEmail')
+        .mockResolvedValue({ delivered: true, backend: 'ses', messageId: 'm-1' });
+      startAutomationWorker();
+
+      await registeredHandler()(JOB);
+
+      // One message per PROFILE: P-X carries two documents, P-Y one.
+      expect(deliverSpy).toHaveBeenCalledTimes(2);
+      const byProfile = Object.fromEntries(
+        deliverSpy.mock.calls.map(([m]) => [m.recipientProfileId, m]),
+      );
+      expect(Object.keys(byProfile).sort()).toEqual(['P-X', 'P-Y']);
+      expect(byProfile['P-X'].attachments).toEqual([URL_X1, URL_X2]);
+      expect(byProfile['P-Y'].attachments).toEqual([URL_Y]);
+      expect(byProfile['P-X'].recipientKey).toBe('Sam Lee');
+
+      genSpy.mockRestore();
+      deliverSpy.mockRestore();
+      await cleanupWorkerNdisBoard();
+    });
+
+    it('online, documents with no profile id (statements) are still sent per name, with no profile id', async () => {
+      process.env.ISOPLUS_OFFLINE = '0';
+      process.env.EMAIL_FROM = 'billing@dev.isoplus.online';
+      process.env.AWS_ACCESS_KEY_ID = 'test-key';
+      process.env.AWS_SECRET_ACCESS_KEY = 'test-secret';
+      process.env.AWS_REGION = 'ap-southeast-2';
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        invoice: { enabled: true, recipient: 'billing_contact', emailSubject: 'Invoice run' },
+      });
+      const genSpy = vi.spyOn(generateDocuments, 'generateInvoicesForBoard').mockResolvedValue([
+        { itemId: 'i-1', invoiceNumber: 'IN-1', participant: 'Ann Smith', pdfUrl: 'https://b/a1.pdf' },
+        { itemId: 'i-2', invoiceNumber: 'IN-2', participant: 'Ann Smith', pdfUrl: 'https://b/a2.pdf' },
+      ]);
+      const deliverSpy = vi.spyOn(outbox, 'deliverEmail')
+        .mockResolvedValue({ delivered: true, backend: 'ses', messageId: 'm-1' });
+      startAutomationWorker();
+
+      await registeredHandler()(JOB);
+
+      expect(deliverSpy).toHaveBeenCalledTimes(1);
+      expect(deliverSpy.mock.calls[0][0]).not.toHaveProperty('recipientProfileId');
+
+      genSpy.mockRestore();
+      deliverSpy.mockRestore();
+      await cleanupWorkerNdisBoard();
+    });
+
     it('online with no transport: consumes no invoice number', async () => {
       process.env.ISOPLUS_OFFLINE = '0';
       delete process.env.EMAIL_FROM;

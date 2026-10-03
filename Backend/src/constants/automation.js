@@ -311,3 +311,13 @@ export const DELIVERY_REFUSAL_MESSAGES = {
  */
 export const DEFAULT_DELIVERY_REFUSAL_MESSAGE =
   'This document could not be emailed. Check the Recipient and Send a Copy To settings.';
+
+/**
+ * How many item ids one "left out: no Participant Profile" warning carries. The
+ * rest are counted, not listed: the logger's storage sanitizer drops oversized
+ * metadata, so an uncapped list can cost the warning its whole payload.
+ *
+ * Touchpoints: utils/automationInvoiceProfiles.js (`groupBillableRowsByProfile`,
+ * the only reader).
+ */
+export const UNPROFILED_ITEM_LOG_LIMIT = 50;

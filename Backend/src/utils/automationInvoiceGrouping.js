@@ -11,17 +11,18 @@ const GENERIC_PARTICIPANT_LABEL = 'Participant';
  *
  * Pure. `profileIdOf(itemId)` answers the profile reference for an item, or a
  * falsy value when it has none. Rows with no profile are returned in
- * `unprofiled` instead of being grouped: there is no one to bill them to.
+ * `unprofiled` (each item once, however many rows it produced) instead of being
+ * grouped: there is no one to bill them to.
  */
 export function groupItemIdsByParticipantProfile(rows, { idKey, participantKey, profileIdOf }) {
   const groups = new Map();
-  const unprofiled = [];
+  const unprofiled = new Set();
   for (const row of rows) {
     const itemId = row[idKey];
     if (!itemId) continue;
     const profileId = profileIdOf(itemId);
     if (!profileId) {
-      unprofiled.push(String(itemId));
+      unprofiled.add(String(itemId));
       continue;
     }
     const name = String(row[participantKey] || '').trim();
@@ -36,6 +37,6 @@ export function groupItemIdsByParticipantProfile(rows, { idKey, participantKey, 
       participant: name || GENERIC_PARTICIPANT_LABEL,
       itemIds: [...itemIds],
     })),
-    unprofiled,
+    unprofiled: [...unprofiled],
   };
 }

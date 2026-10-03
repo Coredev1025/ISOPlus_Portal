@@ -2,7 +2,8 @@ import Item from '../models/Item.js';
 import { extractRefId } from './ndisServiceRecords.js';
 import { mongoEq } from './securityHelpers.js';
 import { groupItemIdsByParticipantProfile } from './automationInvoiceGrouping.js';
-import { info } from './logger.js';
+import { UNPROFILED_ITEM_LOG_LIMIT } from '../constants/automation.js';
+import { warn } from './logger.js';
 
 const PARTICIPANT_PROFILE_ATTR = 'Participant Profile';
 
@@ -23,6 +24,23 @@ async function loadProfileIds(workspaceId, boardId, itemIds) {
 }
 
 /**
+ * Rows with the Participant Profile of their item added as `profileId`. For
+ * documents read back from the ledger, which do not carry it: a retry of the
+ * same slot then groups a client's earlier and new documents into one email.
+ * A row that already has a `profileId`, or whose item has no profile, is left
+ * as it is. Does not mutate its input.
+ */
+export async function attachProfileIds(workspaceId, boardId, rows) {
+  const profileIds = await loadProfileIds(
+    workspaceId, boardId, rows.filter((row) => !row.profileId && row.itemId).map((row) => row.itemId),
+  );
+  return rows.map((row) => {
+    const profileId = row.profileId ? null : profileIds.get(String(row.itemId));
+    return profileId ? { ...row, profileId } : row;
+  });
+}
+
+/**
  * The billable rows grouped by Participant Profile (KAN-293). Items with no
  * profile are left out of every group and counted in the log, so a board full
  * of unlinked rows is visible rather than silently skipped.
@@ -37,8 +55,15 @@ export async function groupBillableRowsByProfile({
     profileIdOf: (itemId) => profileIds.get(String(itemId)),
   });
   if (unprofiled.length > 0) {
-    info('Automation', 'Billable items left out: no Participant Profile to bill them to', {
-      workspaceId, boardId, periodKey, count: unprofiled.length,
+    // A warn with the item ids, not an info count: these items are never claimed
+    // and fall outside the next period's window, so nothing later picks them up
+    // and an operator needs to be able to find them.
+    warn('Automation', 'Billable items left out: no Participant Profile to bill them to', {
+      workspaceId,
+      boardId,
+      periodKey,
+      count: unprofiled.length,
+      itemIds: unprofiled.slice(0, UNPROFILED_ITEM_LOG_LIMIT),
     });
   }
   return groups;

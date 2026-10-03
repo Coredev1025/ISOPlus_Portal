@@ -22,6 +22,7 @@ import {
 import { invoiceDatesFromSlot } from '../../utils/automationInvoiceDates.js';
 import { generateUnderClaim } from '../../utils/automationInvoiceClaim.js';
 import {
+  attachProfileIds,
   generateGroupsIsolated,
   groupBillableRowsByProfile,
 } from '../../utils/automationInvoiceProfiles.js';
@@ -118,6 +119,7 @@ function uniquePdfResults(links) {
     // Absent rather than empty: the worker only sets a template var for a value
     // that exists, so {{client_name}} survives verbatim instead of rendering blank.
     if (link.participant) row.participant = link.participant;
+    if (link.profileId) row.profileId = link.profileId;
     results.push(row);
   }
   return results;
@@ -138,7 +140,7 @@ async function existingSlotResults(workspaceId, boardId, periodKey, type) {
     periodKey: mongoEq(String(periodKey)),
     type,
   }).lean();
-  return uniquePdfResults(links);
+  return attachProfileIds(workspaceId, boardId, uniquePdfResults(links));
 }
 
 /**
@@ -337,6 +339,7 @@ async function generateNdisGeneratorInvoices({
       itemId: generated.itemIds[0],
       invoiceNumber: generated.invoiceNumber,
       participant: group.participant,
+      profileId: group.profileId,
       pdfUrl: generated.fileUrl,
     });
   });
@@ -461,6 +464,7 @@ async function generateAgeCareGeneratorInvoices({
       itemId: generated.itemIds[0],
       invoiceNumber: generated.invoiceNumber,
       participant: group.participant,
+      profileId: group.profileId,
       pdfUrl: generated.fileUrl,
     });
   });
