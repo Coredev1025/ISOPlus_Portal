@@ -512,10 +512,12 @@ describe('InvoiceStatementAutomationPanel', () => {
   });
 
   /**
-   * KAN-44. Only invoices can be sent from the accounting platform; a
-   * statement saved that way was emailed anyway, silently.
+   * KAN-44 and KAN-299. Only invoices can be sent from the accounting platform.
+   * A statement is always sent from ISO+, so its block has no Send Method control
+   * at all (it used to be a dropdown with the one option). The invoice block
+   * keeps both.
    */
-  it('offers the accounting platform as a send method for invoices only', async () => {
+  it('offers the accounting platform as a send method for invoices only, and no Send Method on statements', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     fetchMock.mockResolvedValue(settings({ enabled: true }, { enabled: true }));
     await renderPanel();
@@ -524,13 +526,61 @@ describe('InvoiceStatementAutomationPanel', () => {
     expect(
       screen.getByRole('option', { name: /accounting platform/i })
     ).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /send from iso\+/i })).toBeInTheDocument();
     await user.keyboard('{Escape}');
 
-    await user.click(within(statementSection()).getByLabelText('Send Method'));
-    expect(screen.getByRole('option', { name: /send from iso\+/i })).toBeInTheDocument();
-    expect(
-      screen.queryByRole('option', { name: /accounting platform/i })
-    ).not.toBeInTheDocument();
+    // The statement block is enabled, so its email fields are shown, and the
+    // Send Method control is not one of them.
+    expect(within(statementSection()).getByLabelText(/reply-to email/i)).toBeInTheDocument();
+    expect(within(statementSection()).queryByLabelText('Send Method')).not.toBeInTheDocument();
+    expect(within(statementSection()).queryByText('Send Method')).not.toBeInTheDocument();
+  });
+
+  it('shows the same email fields on a statement as before, minus Send Method', async () => {
+    fetchMock.mockResolvedValue(settings({ enabled: true }, { enabled: true }));
+    await renderPanel();
+
+    for (const label of [/send a copy to/i, /reply-to email/i, /email subject/i]) {
+      expect(within(statementSection()).getByLabelText(label)).toBeInTheDocument();
+      expect(within(invoiceSection()).getByLabelText(label)).toBeInTheDocument();
+    }
+  });
+
+  it('still saves a statement as sent from ISO+, with no control to choose it', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    fetchMock.mockResolvedValue(settings({}, { enabled: true }));
+    await renderPanel();
+
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() =>
+      expect(saveMock).toHaveBeenCalledWith(
+        'ws-1',
+        expect.objectContaining({
+          statement: expect.objectContaining({ enabled: true, sendMethod: 'isoplus' }),
+        })
+      )
+    );
+  });
+
+  it('leaves the invoice send method as saved when a statement is edited', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    fetchMock.mockResolvedValue(
+      settings({ enabled: true, sendMethod: 'accounting' }, { enabled: true })
+    );
+    await renderPanel();
+
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() =>
+      expect(saveMock).toHaveBeenCalledWith(
+        'ws-1',
+        expect.objectContaining({
+          invoice: expect.objectContaining({ sendMethod: 'accounting' }),
+          statement: expect.objectContaining({ sendMethod: 'isoplus' }),
+        })
+      )
+    );
   });
 
   it('hides the schedule and email fields until automatic generation is enabled', async () => {
