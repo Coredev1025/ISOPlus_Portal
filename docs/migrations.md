@@ -29,14 +29,20 @@ running the backend natively — use `cd Backend && npm run migrate -- up`.
 runner (`ts-migrate-mongoose`, `collectMigrationsToRun`): `up <name>` applies every
 pending migration up to and including `<name>`, oldest first, and `down <name>`
 rolls back `<name>` and every NEWER applied migration, newest first. Add `--single`
-(`-s`) to either to act on just the named migration. On 2026-10-04 an
+(`-s`) to either to act on just the named migration. **`--single` does not check
+whether the migration is applied**: `up X --single` re-runs one that already ran
+(for `pdflink-invoice-period` that drops and rebuilds the double-billing unique
+index), and `down X --single` runs the `down` of one that never ran, which can
+throw. Confirm its state with `list` immediately before. On 2026-10-04 an
 `up backfill-document-numbering-initialized` on dev, without `--single`, also applied
 the six older migrations that had never run there. Always run `list` first, and
 use `--single` unless you really mean "everything up to here".
 
 **`list` is not read-only.** It first syncs: migration files that are not yet
 recorded in the database are imported into the `migrations` collection, after an
-interactive checkbox prompt (without a terminal it imports them all). Against a
+interactive checkbox prompt (without a terminal it imports them all; in a terminal
+nothing is selected to start with, so choose all of them, or a later `up <name>` fails
+with "Could not find migration ... in the database"). Against a
 remote database that is a write, and `list` does not need `--allow-remote`.
 
 `up` and `down` take the **bare migration name**, not the filename:
@@ -44,7 +50,10 @@ remote database that is a write, and `list` does not need `--allow-remote`.
 
 ## Look at the schema first
 
-**Before writing a migration, run `npm run schema`.** A migration is a claim
+**Before writing a migration, run `npm run schema`.** (It imports every model, and
+with Mongoose's defaults that creates missing collections and starts building the
+indexes the models declare, so it is not read-only: run it against production only
+with a read-only database user.) A migration is a claim
 about what the data currently looks like, and the models are only half the
 story — they say what the code expects, not what is actually stored.
 
@@ -147,8 +156,11 @@ The wrapper refuses to run against a URI that does not look local
 `--allow-remote`:
 
 ```bash
-npm run migrate -- up --allow-remote
+cd Backend && MONGODB_URI="<target>" npm run migrate -- up <name> --single --allow-remote
 ```
+
+(Run from `Backend/` natively. The root `npm run migrate` execs into the local
+container, so `--allow-remote` means nothing there.)
 
 This exists because `up` is destructive and effectively irreversible against
 production data. Deliberately typing `--allow-remote` is the point.
@@ -182,7 +194,10 @@ Beanstalk bundle and can be run against an environment explicitly:
 
 ```bash
 cd Backend
-MONGODB_URI="<target>" npm run migrate -- up --allow-remote
+MONGODB_URI="<target>" npm run migrate -- up <name> --single --allow-remote
 ```
 
-Run it as a deliberate step, after taking a backup, and check `list` first.
+`--single` matters: without it `up` applies every pending migration older than
+`<name>` as well. Run it as a deliberate step, from a checkout of the release
+commit, after taking a backup, and check `list` first. For a production release
+follow [`release-runbook.md`](./release-runbook.md), section 2.

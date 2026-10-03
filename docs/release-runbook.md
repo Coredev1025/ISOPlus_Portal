@@ -152,7 +152,7 @@ commands; it will be out of date.
 
 - **Schema.** 15 model files changed or added: `AutomationRun`,
   `AutomationSettings`, `ScheduledJob`, `SchedulerHealth`, `EmailSend`,
-  `EmailEvent`, `XeroConnectTicket`, `ticketSchema` (new collections), and changes
+  `EmailEvent`, `XeroConnectTicket` (new collections; `ticketSchema.js` is a shared schema file), and changes
   to `AuditTrail`, `Board`, `Business`, `Item`, `OAuthTicket`, `PDFLink` and
   `SyncExecution`.
 - **Dependencies.** Backend adds `@aws-sdk/client-sesv2`, `@aws-sdk/client-sqs`,
@@ -174,12 +174,12 @@ triggers an environment update and a restart.
 
 | Needed | Variables and resources | If it is missing |
 |---|---|---|
-| Support-admin sign-in | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_CALLBACK_URL` (defaults to `${BACKEND_URL}/api/auth/google/callback`), `GOOGLE_ADMIN_EMAIL`, `GOOGLE_TARGET_GROUP`, `GOOGLE_SERVICE_ACCOUNT_JSON` (on Elastic Beanstalk use the JSON variable; `_KEY_FILE` is a path relative to the repo), optional `GOOGLE_SUPPORT_BREAK_GLASS_EMAILS`; and the callback URL registered with Google | Support admins cannot sign in |
+| Support-admin sign-in | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_CALLBACK_URL` (defaults to `${BACKEND_URL}/api/auth/google/callback`), `GOOGLE_ADMIN_EMAIL`, `GOOGLE_TARGET_GROUP`, `GOOGLE_SERVICE_ACCOUNT_JSON` (on Elastic Beanstalk use the JSON variable; `_KEY_FILE` is a path relative to `Backend/`), optional `GOOGLE_SUPPORT_BREAK_GLASS_EMAILS`; and the callback URL registered with Google | Support admins cannot sign in |
 | Scheduler | `SCHEDULER_API_KEY` (and the optional per-kind `SCHEDULER_API_KEY_INVOICE` / `_STATEMENT`), plus the EventBridge rule. See `docs/scheduling.md` | The app boots healthy and no schedule ever runs |
 | Automation switch | `AUTOMATION_ENABLED`. Leave it `false` until the migrations have run and the Google and email settings are verified; a tick then holds due jobs back instead of running them | With it off, jobs are held, not lost |
 | Email | `EMAIL_FROM` (production: `noreply@mail.isoplus.online`, on a domain verified in SES) | Sends are refused |
 | Email delivery events | `SES_EVENTS_QUEUE_URL`, the SQS queue and the SES event destination that feeds it | Delivered, bounced and complained states never reach the documents |
-| Session cookies | `BACKEND_URL`, and `SESSION_COOKIE_SAMESITE` (new). With `NODE_ENV=production` the session cookie is already `Secure` and `SameSite=None` whatever `BACKEND_URL` is | Sessions may not stick across the frontend and backend hosts |
+| Session cookies | `BACKEND_URL`. `SESSION_COOKIE_SAMESITE` is new but has no effect in production: with `NODE_ENV=production` the session cookie is always `Secure` and `SameSite=None` | None in production |
 | Board catch-up | `BOARD_SYNC_ENABLED`, `BOARD_SYNC_CRON`, `BOARD_SYNC_GAP_MS` | Defaults apply |
 | Must be unset in production | `ISOPLUS_OFFLINE`, `LOCAL_FILE_ROOT` | They switch the app to local, offline behaviour |
 | Read by the code, optional | `EMAIL_BACKEND`, `XERO_SCOPES` | Defaults apply |
@@ -238,10 +238,19 @@ For a production release:
    MONGODB_URI='<production uri>' npm run schema -- <collection>
    ```
 
+   **`npm run schema` is not read-only.** It imports every model from the release
+   commit, and with Mongoose's defaults (`autoIndex` and `autoCreate` on) that
+   creates missing collections and starts building every index the models declare.
+   Against production that is part of the deploy's index work running early and
+   unannounced. Run it against production only with a **read-only database user**,
+   or treat it as part of the migration step at the time you chose.
+
 2. **See what has run and what is pending.** `list` needs no remote flag, but it is
    not read-only: it first imports migration files the database does not know yet
    into its `migrations` collection (after a prompt). Run it from the release
-   commit, as in step 0 below.
+   commit, as in step 0 above. In a terminal the import prompt starts with nothing
+   selected: choose all, or a later `up <name>` fails with "Could not find
+   migration ... in the database".
 
    ```bash
    MONGODB_URI='<production uri>' npm run migrate -- list
@@ -262,7 +271,11 @@ For a production release:
    name. **Without `--single`, `up <name>` applies every pending migration older
    than it as well** (checked against the runner; this is how all seven ran on dev
    on 2026-10-04 when only one was meant). To apply several, run them oldest first,
-   each with `--single`, and check each. Every production command in this document
+   each with `--single`, and check each. **`--single` does not check whether a
+   migration is already applied**: it will re-run one that has run (for
+   `pdflink-invoice-period` that drops and rebuilds the double-billing unique
+   index), and `down X --single` runs the `down` of one that never ran. Confirm
+   the state with `list` immediately before. Every production command in this document
    carries `MONGODB_URI='<production uri>'`: without it the wrapper falls back to
    `Backend/.env`, which usually points at the dev database, and `--allow-remote`
    then bypasses the guard. Do not write the connection string into a file or a
@@ -283,7 +296,7 @@ row once the migration has run in production and the release is closed.
 
 | Migration | Added by | Run | What it does | Check it worked | Undo |
 |---|---|---|---|---|---|
-| `backfill-document-numbering-initialized` | KAN-292 (PR #953) | **Before** the deploy that includes KAN-292. The first-numbers screen refuses a business whose counters are not all stored, so migrating first means nobody is ever refused. Safe against the old code and at any time. Idempotent. Needs MongoDB 4.2 or later (not DocumentDB). | Stores every missing document numbering counter and prefix (older businesses lack `statementOfAccount` and `statement`) and the `documentNumberingInitialized` flag, so a stale `save()` cannot write defaults back over numbers the user chose. Never changes a value that is already there. The flag is true where any of invoice, purchase order, quote or statement of account has moved off 1, otherwise false. | Before and after: `MONGODB_URI='<production uri>' npm run schema -- businesses`. Then in the database: `db.businesses.countDocuments({documentNumberingInitialized: {$exists: false}})` must be `0`, and `db.businesses.countDocuments({"documentNumbering.statementOfAccount.nextNumber": {$exists: false}})` must be `0` (same for `statement`, `invoice`, `purchaseOrder`, `quote`). Open Finance Settings for one workspace that has issued invoices: the number fields must be read-only. | `MONGODB_URI='<production uri>' npm run migrate -- down backfill-document-numbering-initialized --single --allow-remote` removes the flag only; the backfilled counters stay. **It removes every flag, including one a user set after the migration**: a business that chose 1 for all four numbers and has issued nothing then looks unset again and can set its numbers a second time. Only run it together with rolling back the code that reads the flag. |
+| `backfill-document-numbering-initialized` | KAN-292 (PR #953) | **Before** the deploy that includes KAN-292. The first-numbers screen refuses a business whose counters are not all stored, so migrating first means nobody is ever refused. Safe against the old code and at any time. Idempotent. Needs MongoDB 4.2 or later (not DocumentDB). | Stores every missing document numbering counter and prefix (older businesses lack `statementOfAccount` and `statement`) and the `documentNumberingInitialized` flag, so a stale `save()` cannot write defaults back over numbers the user chose. Never changes a value that is already there. The flag is true where any of invoice, purchase order, quote or statement of account has moved off 1, otherwise false. | Before and after: `MONGODB_URI='<production uri>' npm run schema -- businesses`. Then in the database: `db.businesses.countDocuments({documentNumberingInitialized: {$exists: false}})` must be `0`, and `db.businesses.countDocuments({"documentNumbering.statementOfAccount.nextNumber": {$exists: false}})` must be `0` (same for `statement`, `invoice`, `purchaseOrder`, `quote`). After the deploy (section 4), open Finance Settings for one workspace that has issued invoices: the number fields must be read-only. | `MONGODB_URI='<production uri>' npm run migrate -- down backfill-document-numbering-initialized --single --allow-remote` removes the flag only; the backfilled counters stay. **It removes every flag, including one a user set after the migration**: a business that chose 1 for all four numbers and has issued nothing then looks unset again and can set its numbers a second time. Only run it together with rolling back the code that reads the flag. |
 
 #### Migrations that ship when `develop` is promoted (snapshot 2026-10-04)
 
@@ -403,7 +416,7 @@ Decide quickly. The longer a bad release runs, the more data it writes.
 
 A `hotfix/<TICKET>_<description>` branch is cut from `origin/main` and its PR
 targets `main` ([`CLAUDE.md`](../CLAUDE.md)). It deploys the same way as a
-release, so sections 3 to 5 apply, with section 1 shortened to: scope is the
+release, so sections 3 to 5 apply (step 0 of section 3 only if the hotfix needs a migration), with section 1 shortened to: scope is the
 hotfix commit only, CI green, a rollback target recorded. Because `main` and
 `develop` have drifted, make sure the fix also reaches `develop`, or the next
 release will undo it.
@@ -421,10 +434,9 @@ Fill these in and delete this list.
   release, or in a later stage.
 - Whether the three hotfix commits on `main` (KAN-22 and KAN-28) are still
   needed in the form they were written, or have been superseded in `develop`.
-
 - How the frontend is built and deployed to production, and how to roll it back.
 - The production backend host and the production frontend host.
-- How to take and restore a production database backup, and whether the Atlas
+- How to take and restore a production database backup, and whether the production
   cluster has point-in-time recovery.
 - Who holds production AWS and database credentials, and how a migration is run
   against production in practice (from a laptop, a bastion, a CI job).
