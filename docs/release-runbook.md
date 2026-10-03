@@ -11,7 +11,11 @@ Ticket: KAN-295. Branching, tickets and commit rules are in
 
 ## What a release is here
 
-- **A push to `main` deploys the backend to production.** The `CICD` workflow
+- **A push to `main` that changes `Backend/**` deploys the backend to
+  production.** The workflow decides what changed by diffing the push against its
+  parent commit only (`HEAD~1`), so merge the release PR with a **merge commit**
+  and confirm "Deploy Backend" actually ran. A rebase-merge of a multi-commit PR
+  diffs only the last commit and can skip the deploy. The `CICD` workflow
   runs the backend tests (and the frontend tests if the frontend changed). If
   they pass, it zips `Backend/`, uploads it to S3
   (`isoplus-backend-deploy-bucket-isoplus-v1`), creates an Elastic Beanstalk
@@ -22,8 +26,9 @@ Ticket: KAN-295. Branching, tickets and commit rules are in
   **(to confirm)**.
 - A change that touches only `.github/` produces no push run, so it does not
   deploy itself. The workflow can be started by hand with the `deploy` input set,
-  which builds, tests and deploys the backend. The AWS steps only act when it is
-  run on `main` (production) or `develop` (dev).
+  which builds, tests and deploys the backend. The Elastic Beanstalk steps only act
+  when it is run on `main` (production) or `develop` (dev), but the S3 upload runs
+  from whichever branch it is started on.
 - **Migrations never run on deploy.** See "Migrations".
 - **Elastic Beanstalk environment properties are not set by the workflow.** They
   live in the environment's own configuration and survive every deploy. Changing
@@ -145,13 +150,13 @@ commands; it will be out of date.
 
 **Also in the release:**
 
-- **Schema.** 14 model files changed or added: `AutomationRun`,
+- **Schema.** 15 model files changed or added: `AutomationRun`,
   `AutomationSettings`, `ScheduledJob`, `SchedulerHealth`, `EmailSend`,
   `EmailEvent`, `XeroConnectTicket`, `ticketSchema` (new collections), and changes
   to `AuditTrail`, `Board`, `Business`, `Item`, `OAuthTicket`, `PDFLink` and
   `SyncExecution`.
 - **Dependencies.** Backend adds `@aws-sdk/client-sesv2`, `@aws-sdk/client-sqs`,
-  `sqs-consumer`, `google-auth-library`, `googleapis`, `nodemailer`,
+  `sqs-consumer`, `ts-migrate-mongoose` (runs migrations), `google-auth-library`, `googleapis`, `nodemailer`,
   `cron-parser` and `lodash-es`, and removes `node-schedule` (board catch-up
   moved to an in-process clock). Frontend adds the TipTap editor packages and
   `lodash-es`. Everything else added is test tooling.
@@ -169,12 +174,12 @@ triggers an environment update and a restart.
 
 | Needed | Variables and resources | If it is missing |
 |---|---|---|
-| Support-admin sign-in | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_CALLBACK_URL` (defaults to `${BACKEND_URL}/api/auth/google/callback`), `GOOGLE_ADMIN_EMAIL`, `GOOGLE_TARGET_GROUP`, `GOOGLE_SERVICE_ACCOUNT_JSON` (or `_KEY_FILE`), optional `GOOGLE_SUPPORT_BREAK_GLASS_EMAILS`; and the callback URL registered with Google | Support admins cannot sign in |
+| Support-admin sign-in | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_CALLBACK_URL` (defaults to `${BACKEND_URL}/api/auth/google/callback`), `GOOGLE_ADMIN_EMAIL`, `GOOGLE_TARGET_GROUP`, `GOOGLE_SERVICE_ACCOUNT_JSON` (on Elastic Beanstalk use the JSON variable; `_KEY_FILE` is a path relative to the repo), optional `GOOGLE_SUPPORT_BREAK_GLASS_EMAILS`; and the callback URL registered with Google | Support admins cannot sign in |
 | Scheduler | `SCHEDULER_API_KEY` (and the optional per-kind `SCHEDULER_API_KEY_INVOICE` / `_STATEMENT`), plus the EventBridge rule. See `docs/scheduling.md` | The app boots healthy and no schedule ever runs |
 | Automation switch | `AUTOMATION_ENABLED`. Leave it `false` until the migrations have run and the Google and email settings are verified; a tick then holds due jobs back instead of running them | With it off, jobs are held, not lost |
 | Email | `EMAIL_FROM` (production: `noreply@mail.isoplus.online`, on a domain verified in SES) | Sends are refused |
 | Email delivery events | `SES_EVENTS_QUEUE_URL`, the SQS queue and the SES event destination that feeds it | Delivered, bounced and complained states never reach the documents |
-| Session cookies | `BACKEND_URL` (an `https` value makes the cookie `Secure` and `SameSite=None`) | Sessions may not stick across the frontend and backend hosts |
+| Session cookies | `BACKEND_URL`, and `SESSION_COOKIE_SAMESITE` (new). With `NODE_ENV=production` the session cookie is already `Secure` and `SameSite=None` whatever `BACKEND_URL` is | Sessions may not stick across the frontend and backend hosts |
 | Board catch-up | `BOARD_SYNC_ENABLED`, `BOARD_SYNC_CRON`, `BOARD_SYNC_GAP_MS` | Defaults apply |
 | Must be unset in production | `ISOPLUS_OFFLINE`, `LOCAL_FILE_ROOT` | They switch the app to local, offline behaviour |
 | Read by the code, optional | `EMAIL_BACKEND`, `XERO_SCOPES` | Defaults apply |
@@ -197,7 +202,10 @@ once Google sign-in works (stage 1). The portal then behaves as `main` does for
 users, plus the new screens and the KAN-292 and KAN-293 changes, and nothing
 scheduled or emailed starts. Turn automation on later (stage 2) after SES, the
 SQS queue, the EventBridge rules and the scheduler keys exist and have been
-tested on a real send. Do not set `AUTOMATION_ENABLED=true` without them.
+tested on a real send. Do not set `AUTOMATION_ENABLED=true` without them. **Before
+switching it on, read `scheduledjobs.nextRunAt` for every enabled schedule:** slots
+held back while it was off stay due, so each schedule's oldest held slot bills
+immediately when the switch comes on.
 
 Three things that catch people out:
 
@@ -217,6 +225,12 @@ Migrations are files in `Backend/migrations/`, run by hand with
 `Backend/scripts/migrate.mjs`. Full detail in [`docs/migrations.md`](./migrations.md).
 For a production release:
 
+0. **Run migrations from a checkout of the exact release commit**, not a feature
+   branch (a feature branch can carry migration files that are not part of the
+   release) and not `main` (it has no `Backend/migrations`, no
+   `scripts/migrate.mjs` and no `ts-migrate-mongoose`). Run `npm ci` in `Backend/`
+   on the host first: the local Docker setup keeps `node_modules` in a volume, so a
+   laptop may have none.
 1. **Look at the data first.** A migration is a claim about what is stored.
 
    ```bash
@@ -224,28 +238,35 @@ For a production release:
    MONGODB_URI='<production uri>' npm run schema -- <collection>
    ```
 
-2. **See what has run and what is pending.** `list` works without the remote
-   flag:
+2. **See what has run and what is pending.** `list` needs no remote flag, but it is
+   not read-only: it first imports migration files the database does not know yet
+   into its `migrations` collection (after a prompt). Run it from the release
+   commit, as in step 0 below.
 
    ```bash
    MONGODB_URI='<production uri>' npm run migrate -- list
    ```
 
-3. **Run it deliberately.** The wrapper refuses a database that does not look
-   local unless you pass `--allow-remote`. Typing it is the point. Run from
-   `Backend/` natively; the root `npm run migrate` execs into the local Docker
-   container and would hit the local database, not production.
+3. **Run it deliberately, one migration at a time.** The wrapper refuses a
+   database that does not look local unless you pass `--allow-remote`. Typing it is
+   the point, so confirm the target first: print the host of the URI you are about
+   to use and check it is the production cluster, not the dev one in `Backend/.env`.
+   Run from `Backend/` natively; the root `npm run migrate` execs into the local
+   Docker container and would hit the local database, not production.
 
    ```bash
-   MONGODB_URI='<production uri>' npm run migrate -- up <migration-name> --allow-remote
+   MONGODB_URI='<production uri>' npm run migrate -- up <migration-name> --single --allow-remote
    ```
 
    Pass the bare name (`backfill-document-numbering-initialized`), not the file
-   name. **`up <name>` applies every pending migration up to and including that
-   one, in timestamp order, not just the one named.** Run `list` first and read the
-   pending list; if you want only the newest, there is no way to skip older
-   pending ones, so apply them all deliberately. Do not write the connection string into a file or a commit, and clear it
-   from your shell history afterwards.
+   name. **Without `--single`, `up <name>` applies every pending migration older
+   than it as well** (checked against the runner; this is how all seven ran on dev
+   on 2026-10-04 when only one was meant). To apply several, run them oldest first,
+   each with `--single`, and check each. Every production command in this document
+   carries `MONGODB_URI='<production uri>'`: without it the wrapper falls back to
+   `Backend/.env`, which usually points at the dev database, and `--allow-remote`
+   then bypasses the guard. Do not write the connection string into a file or a
+   commit, and clear it from your shell history afterwards.
 4. **Check it did what it should**, using the row for that migration in the table
    below.
 5. **Order against the deploy** is stated per migration, because it differs. A
@@ -262,15 +283,14 @@ row once the migration has run in production and the release is closed.
 
 | Migration | Added by | Run | What it does | Check it worked | Undo |
 |---|---|---|---|---|---|
-| `backfill-document-numbering-initialized` | KAN-292 (PR #953) | **Before** the deploy that includes KAN-292. The first-numbers screen refuses a business whose counters are not all stored, so migrating first means nobody is ever refused. Safe against the old code and at any time. Idempotent. Needs MongoDB 4.2 or later (not DocumentDB). | Stores every missing document numbering counter and prefix (older businesses lack `statementOfAccount` and `statement`) and the `documentNumberingInitialized` flag, so a stale `save()` cannot write defaults back over numbers the user chose. Never changes a value that is already there. The flag is true where any of invoice, purchase order, quote or statement of account has moved off 1, otherwise false. | Before and after: `npm run schema -- businesses`. Then in the database: `db.businesses.countDocuments({documentNumberingInitialized: {$exists: false}})` must be `0`, and `db.businesses.countDocuments({"documentNumbering.statementOfAccount.nextNumber": {$exists: false}})` must be `0` (same for `statement`, `invoice`, `purchaseOrder`, `quote`). Open Finance Settings for one workspace that has issued invoices: the number fields must be read-only. | `npm run migrate -- down backfill-document-numbering-initialized --allow-remote` removes the flag only. The backfilled counters equal what Mongoose would have supplied and stay. Without the flag the app still treats a business as set when any counter has moved. |
+| `backfill-document-numbering-initialized` | KAN-292 (PR #953) | **Before** the deploy that includes KAN-292. The first-numbers screen refuses a business whose counters are not all stored, so migrating first means nobody is ever refused. Safe against the old code and at any time. Idempotent. Needs MongoDB 4.2 or later (not DocumentDB). | Stores every missing document numbering counter and prefix (older businesses lack `statementOfAccount` and `statement`) and the `documentNumberingInitialized` flag, so a stale `save()` cannot write defaults back over numbers the user chose. Never changes a value that is already there. The flag is true where any of invoice, purchase order, quote or statement of account has moved off 1, otherwise false. | Before and after: `MONGODB_URI='<production uri>' npm run schema -- businesses`. Then in the database: `db.businesses.countDocuments({documentNumberingInitialized: {$exists: false}})` must be `0`, and `db.businesses.countDocuments({"documentNumbering.statementOfAccount.nextNumber": {$exists: false}})` must be `0` (same for `statement`, `invoice`, `purchaseOrder`, `quote`). Open Finance Settings for one workspace that has issued invoices: the number fields must be read-only. | `MONGODB_URI='<production uri>' npm run migrate -- down backfill-document-numbering-initialized --single --allow-remote` removes the flag only; the backfilled counters stay. **It removes every flag, including one a user set after the migration**: a business that chose 1 for all four numbers and has issued nothing then looks unset again and can set its numbers a second time. Only run it together with rolling back the code that reads the flag. |
 
 #### Migrations that ship when `develop` is promoted (snapshot 2026-10-04)
 
-The KAN-292 migration was written after this snapshot; the six above it are in
-`develop` today.
+All seven are in `develop` (PR #953 merged on 2026-10-04).
 
-None of these has run in production. `migrate up` applies pending migrations in
-timestamp order. All of them only add indexes, clean up, or disable rows; none
+None of these has run in production (all seven have run on dev, 2026-10-04). Pending migrations apply in
+timestamp order, and `up <name>` without `--single` takes every older one with it. All of them only add indexes, clean up, or disable rows; none
 reshapes data the old code reads. Run the index migrations **before the deploy**,
 so the new code never runs without them (the unique one is the guard against
 billing a period twice), and the KAN-292 backfill **before it as well**: until it
@@ -281,26 +301,29 @@ until they have run.
 | Migration | What it does | Risk and pre-check | Undo |
 |---|---|---|---|
 | `1771401600000-remove-xero-connection-logs` | Unsets `xeroConnectionLogs` on every business. Those events now live in the audit trail. | Not reversible: the log documents are not copied out. Its own note says production documents never had the field. Check: `db.businesses.countDocuments({xeroConnectionLogs: {$exists: true}})`. | `down` writes an empty array back, not the history. |
-| `1786697189409-pdflink-scheduled-xero-ids` | Creates index `automation_slot_lookup` on `pdflinks`. | Index build on the whole `pdflinks` collection. | `down` drops the index. |
+| `1786697189409-pdflink-scheduled-xero-ids` | Creates index `automation_slot_lookup` on `pdflinks`. | Index build on the whole `pdflinks` collection. | `down` drops the index **and removes `periodKey` and `invoiceNumber`** from every `pdflinks` row that has a `periodKey`, which is every row an automation run wrote. Once automation has run that is billing data, so treat it as not undoable. |
 | `1787023330061-pdflink-email-delivery-state` | Creates sparse index `delivery_message_lookup` on `pdflinks`. | Sparse, so small. No backfill by design. | `down` drops the index **and removes** `deliveryMessageId`, `deliveryState`, `deliveryDetail` and `deliveryUpdatedAt` from every row that carries a message id. Once emails have been tracked that is real data, so do not run it after go-live without a reason. |
 | `1787097600000-audit-trail-workspace-category-index` | Creates `workspaceId_1_category_1_createdAt_-1` on `audittrails`. | Index build on a large collection. | `down` drops the index. |
-| `1787186180650-pdflink-invoice-period` | Adds period fields and the **unique** partial index `automation_period_item_unique` (the double-billing guard). | It checks for duplicate rows first and refuses to build, with a clear message naming them, if any exist; no index is left behind. If it refuses, the duplicates must be understood, not deleted blindly. | `down` drops the index and removes `periodStart`, `periodEnd`, `invoiceType` and `invoiceTotal` from rows that have them. `periodKey` is left alone. |
+| `1787186180650-pdflink-invoice-period` | Drops and recreates the **unique** partial index `automation_period_item_unique` (the double-billing guard) after the duplicate check. It does not add the period fields themselves; they are optional fields written by automation runs. | It checks for duplicate rows first and refuses to build, with a clear message naming them, if any exist; no index is left behind. If it refuses, the duplicates must be understood, not deleted blindly. | `down` drops the index and removes `periodStart`, `periodEnd`, `invoiceType` and `invoiceTotal` from rows that have them. `periodKey` is left alone. |
 | `1787291724206-disable-portal-board-sync-schedule` | Sets `enabled: false` on the old EventBridge-era `scheduledjobs` row with `kind: 'board_sync'` and `targetId: 'portal'`. | That row must stay disabled or a tick claims it with no handler. Check: `db.scheduledjobs.find({kind: 'board_sync', targetId: 'portal'})`. | `down` sets it back to enabled, which you do not want. |
-| `1791050490815-backfill-document-numbering-initialized` (KAN-292, PR #953, not yet in `develop` when this was written) | The row above. | The row above. | The row above. |
+| `1791050490815-backfill-document-numbering-initialized` (KAN-292, PR #953) | The row above. | The row above. | The row above. |
 
 Before running any of them in production: take the backup (section 1), then
-`npm run migrate -- list` against production to see exactly which are pending,
-and run `npm run schema -- pdflinks`, `-- audittrails` and `-- businesses` to
-see the real shape.
+`MONGODB_URI='<production uri>' npm run migrate -- list` to see exactly which are
+pending, and run `MONGODB_URI='<production uri>' npm run schema -- pdflinks`,
+`-- audittrails` and `-- businesses` to see the real shape.
 
 If this release also ships KAN-293 (PR #952): it needs no migration and no
 environment change. See "After the deploy" for what to watch.
 
 ## 3. The deploy
 
+0. **Run the pre-deploy migrations** (section 2): the backup, then `list`, then
+   each migration with `--single` oldest first, then the checks in the table. All
+   seven are pre-deploy. Do not merge until they have run and been checked.
 1. Open a PR from `develop` to `main` (hotfixes go from `hotfix/...` to `main`,
    see "Hotfix"). Check the diff is the scope you agreed.
-2. Merge. The `CICD` workflow starts on the push to `main`.
+2. Merge with a **merge commit**. The `CICD` workflow starts on the push to `main`.
 3. Watch it: the test jobs, then `Deploy Backend`. Both must be green. A red test
    job blocks the deploy by design.
 4. Watch the Elastic Beanstalk environment until it reports healthy:
@@ -314,7 +337,8 @@ environment change. See "After the deploy" for what to watch.
    The version label must be the new `<timestamp>-<sha>`. The backend can return
    502 briefly while it restarts.
 5. Deploy the frontend **(to confirm how)**.
-6. Run the migrations that belong after the deploy (section 2).
+6. Confirm "Deploy Backend" really ran (the workflow only deploys when `Backend/**`
+   changed in the pushed commit). There are no migrations to run after the deploy.
 
 ## 4. After the deploy
 
@@ -323,10 +347,10 @@ Do these before calling it done, and write down the result of each.
 - **Health.** `GET /api/healthcheck` on the production backend host returns
   `{"status":"OK"}`. The production backend host is **(to confirm; the webhook
   documentation uses `portal-backend.isoplus.online`)**.
-- **Boot warnings.** Check the deployment log for `Bootstrap:` warnings, in
-  particular `SCHEDULER_API_KEY is not set`, which means no schedule will ever
-  run and nothing else says so.
-- **The scheduler is still ticking.** `SchedulerHealth.lastTickAt` keeps
+- **Boot warnings.** Check the deployment log for `Bootstrap:` warnings. In stage 1
+  (automation off, no EventBridge) `SCHEDULER_API_KEY is not set` is **expected**.
+  In stage 2 it means no schedule will ever run and nothing else says so.
+- **Stage 2 only: the scheduler is ticking.** `SchedulerHealth.lastTickAt` keeps
   advancing. A stale value means the EventBridge rule or `SCHEDULER_API_KEY` is
   missing. See `docs/scheduling.md`, "What to alert on".
 - **Sign in** and open a workspace: dashboard, a board, Finance Settings.
@@ -335,12 +359,12 @@ Do these before calling it done, and write down the result of each.
 - **The specific change.** Each change in the release has its own check. For
   KAN-292: a workspace that has issued documents shows read-only number fields,
   and a workspace whose counters are all 1 and whose flag is unset shows editable
-  fields with examples. For KAN-293: after the first scheduled invoice run, the
+  fields with examples. For KAN-293 (stage 2, once automation is on): after the first scheduled invoice run, the
   `AutomationRun` for a board with participants succeeded, the logs show no
   "multiple participant profiles detected", and any `Billable items left out: no
   Participant Profile` warning lists item ids worth a look.
-- **Watch the next scheduled run** of a workspace you can verify, and the emails
-  it sent, before leaving.
+- **Stage 2 only: watch the next scheduled run** of a workspace you can verify, and
+  the emails it sent, before leaving.
 
 ## 5. Rolling back
 
@@ -360,9 +384,13 @@ Decide quickly. The longer a bad release runs, the more data it writes.
   ```
 
   Then revert the commit on `main` through a PR, so the next push does not
-  redeploy the bad version.
-- **A migration.** Run its `down` (the table says what each does). Check first
-  that the older code can run against the migrated data, and the reverse.
+  redeploy the bad version. Reverting a merge commit has a trap: a later
+  `develop` to `main` merge will not bring those changes back unless the revert is
+  itself reverted first.
+- **A migration.** Run its `down` with `--single` (without it, every newer applied
+  migration is rolled back as well). The table says what each `down` does, and
+  several delete data. Check first that the older code can run against the migrated
+  data, and the reverse.
 - **What cannot be rolled back.** Documents already issued: invoice and statement
   numbers that were claimed, PDFs written to S3, emails already sent, invoices
   pushed to Xero. A bad release that runs the automation can create these. If the
@@ -387,7 +415,6 @@ Fill these in and delete this list.
 - The production MongoDB version. The KAN-292 backfill uses an update with an
   aggregation pipeline, which needs 4.2 or later and does not work on Amazon
   DocumentDB.
-
 - Who sets up Google sign-in for production, and when a support admin will
   confirm it works. It gates the release.
 - Whether SES, SQS and EventBridge will be set up for production at all in this

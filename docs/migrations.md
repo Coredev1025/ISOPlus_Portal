@@ -15,19 +15,29 @@ so it targets whichever database that worktree uses — including an
 npm run migrate -- list                     # what exists, and its state
 npm run migrate -- create add-archived-flag # scaffold a new migration
 npm run migrate -- up                       # apply everything pending
-npm run migrate -- up <name>                # apply everything pending UP TO and including <name>, in order
-npm run migrate -- down <name>              # roll one back
+npm run migrate -- up <name>                # everything pending UP TO and including <name>, oldest first
+npm run migrate -- up <name> --single       # only <name>
+npm run migrate -- down <name>              # <name> AND every newer applied migration, newest first
+npm run migrate -- down <name> --single     # only <name>
 npm run migrate -- prune                    # drop records with no file
 ```
 
 The `--` is npm's separator for passing arguments through. Without Docker —
 running the backend natively — use `cd Backend && npm run migrate -- up`.
 
-**`up <name>` is not "apply only this one".** The runner applies every pending
-migration with an earlier timestamp first, then the one named. On 2026-10-04 an
-`up backfill-document-numbering-initialized` on dev also applied the six older
-migrations that had never run there. Always run `list` first, and treat `up <name>`
-as "everything pending up to this one". `down <name>` rolls back only that one.
+**`up <name>` and `down <name>` are not "only this one".** Checked against the
+runner (`ts-migrate-mongoose`, `collectMigrationsToRun`): `up <name>` applies every
+pending migration up to and including `<name>`, oldest first, and `down <name>`
+rolls back `<name>` and every NEWER applied migration, newest first. Add `--single`
+(`-s`) to either to act on just the named migration. On 2026-10-04 an
+`up backfill-document-numbering-initialized` on dev, without `--single`, also applied
+the six older migrations that had never run there. Always run `list` first, and
+use `--single` unless you really mean "everything up to here".
+
+**`list` is not read-only.** It first syncs: migration files that are not yet
+recorded in the database are imported into the `migrations` collection, after an
+interactive checkbox prompt (without a terminal it imports them all). Against a
+remote database that is a write, and `list` does not need `--allow-remote`.
 
 `up` and `down` take the **bare migration name**, not the filename:
 `add-archived-flag`, not `1785922362521-add-archived-flag.js`.
