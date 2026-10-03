@@ -14,8 +14,10 @@
 
 import { REF_ATTRIBUTE_NAMES } from '../constants/monthlyStatementAttributes.js';
 import { resolveInvoiceRecipient } from './invoiceRecipientHelpers.js';
+import { attributeText } from './attributeText.js';
 
-const str = (value) => String(value ?? '').trim();
+// KAN-298: profile attributes can be select objects (State); attributeText prints the name.
+const str = attributeText;
 
 /** The non-empty parts, comma-joined — so a missing suburb does not print ", ,". */
 const joinParts = (parts) => parts.map(str).filter(Boolean).join(', ');

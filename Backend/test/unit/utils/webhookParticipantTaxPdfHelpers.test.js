@@ -280,6 +280,26 @@ describe('resolveParticipantTaxReceiverDetails', () => {
     });
   });
 
+  // KAN-298: with no Billing Email the participant's own address is printed, and
+  // State is a dropdown on the profile, stored as an object.
+  it('prints the name of a select State in the participant address, never "[object Object]"', () => {
+    const profile = {
+      itemId: 'pp_1',
+      data: {
+        'Full Name/Preferred Name': 'TEs TestSurname',
+        Address: '13 Sample Street',
+        Suburb: 'Sampletown',
+        State: { id: 'uuid-1', name: 'NSW', color: '#FFFFFF' },
+        Postcode: 5000,
+      },
+    };
+
+    const result = resolveParticipantTaxReceiverDetails([deliveredRecord()], refMap(profile), helpers);
+
+    expect(result.receiverAddress).toBe('13 Sample Street, Sampletown, NSW 5000');
+    expect(result.receiverAddress).not.toContain('[object Object]');
+  });
+
   it('uses only the first item, even when later items point at another profile', () => {
     const second = deliveredRecord();
     second.data['Participant Profile'] = [{ id: 'pp_2' }];

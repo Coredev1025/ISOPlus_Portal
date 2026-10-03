@@ -45,6 +45,21 @@ describe('buildStatementDocument', () => {
     expect(doc.recipient.address).toBe('5 Client Rd, Newtown, NSW 2042');
   });
 
+  // KAN-298: State is a dropdown on the profile, so it is stored as an object.
+  it('prints the name of a select State, never "[object Object]"', () => {
+    const selectProfile = {
+      data: {
+        Address: '13 Sample Street', Suburb: 'Sampletown',
+        State: { id: 'uuid-1', name: 'NSW', color: '#FFFFFF' }, Postcode: 5000,
+      },
+    };
+
+    const doc = buildStatementDocument({ ...base, profile: selectProfile });
+
+    expect(doc.recipient.address).toBe('13 Sample Street, Sampletown, NSW 5000');
+    expect(JSON.stringify(doc)).not.toContain('[object Object]');
+  });
+
   // A profile with no address still gets a statement — a blank address line is
   // survivable, refusing to state the account is not.
   it('leaves the address blank rather than failing when the profile has none', () => {

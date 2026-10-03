@@ -27,11 +27,13 @@
 // preserves rather than replaces.
 
 import { REF_ATTRIBUTE_NAMES } from '../constants/monthlyStatementAttributes.js';
+import { attributeText } from './attributeText.js';
 
 export const RECIPIENT_TYPE_BILLING_CONTACT = 'billing_contact';
 export const RECIPIENT_TYPE_CLIENT_PARTICIPANT = 'client_participant';
 
-const trim = (value) => (value === null || value === undefined ? '' : String(value).trim());
+// KAN-298: a select attribute (State) is an object; attributeText prints its name.
+const trim = attributeText;
 
 /** The participant's own address, as the printed lines Case AA and B share. */
 function participantAddressLines({ address, suburb, state, postcode }) {

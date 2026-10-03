@@ -207,3 +207,50 @@ describe('readProfileRecipientAttributes', () => {
     expect(readProfileRecipientAttributes({}, getValueFromFlatData, '').billingEmail).toBe('');
   });
 });
+
+// KAN-298. State is a dropdown on the participant profile, so its stored value
+// is an object. It used to be printed as "[object Object]".
+describe('select-type profile attributes (KAN-298)', () => {
+  const getValueFromFlatData = (item, name) => item?.data?.[name] ?? null;
+  const SELECT = (name) => ({ id: 'uuid-1', name, color: '#FFFFFF' });
+
+  it('reads a select State as its name', () => {
+    const profileItem = { data: { Address: '13 Sample Street', Suburb: 'Sampletown', State: SELECT('NSW'), Postcode: 5000 } };
+
+    const read = readProfileRecipientAttributes(profileItem, getValueFromFlatData, 'Jane Smith');
+
+    expect(read.state).toBe('NSW');
+    expect(read.postcode).toBe('5000');
+  });
+
+  it('reads a State stored as a list of select values', () => {
+    const profileItem = { data: { State: [SELECT('VIC')] } };
+    expect(readProfileRecipientAttributes(profileItem, getValueFromFlatData, 'Jane').state).toBe('VIC');
+  });
+
+  it('prints the participant address with the state name, for Case B and Case AA', () => {
+    const profileItem = { data: { Address: '13 Sample Street', Suburb: 'Sampletown', State: SELECT('NSW'), Postcode: 5000 } };
+
+    const recipient = resolveInvoiceRecipient(
+      readProfileRecipientAttributes(profileItem, getValueFromFlatData, 'TEs TestSurname'),
+    );
+
+    expect(recipient.addressLines).toEqual(['13 Sample Street', 'Sampletown', 'NSW 5000']);
+    expect(recipient.addressLines.join(' ')).not.toContain('[object Object]');
+  });
+
+  it('also copes when a select object is passed straight to the resolver', () => {
+    const recipient = resolveInvoiceRecipient({
+      fullName: 'Jane', address: '5 Rd', suburb: 'Newtown', state: SELECT('NSW'), postcode: 2042,
+    });
+    expect(recipient.addressLines).toEqual(['5 Rd', 'Newtown', 'NSW 2042']);
+  });
+
+  it('leaves the state out, not "[object Object]", when the select value has no readable text', () => {
+    const recipient = resolveInvoiceRecipient({
+      fullName: 'Jane', address: '5 Rd', suburb: 'Newtown', state: {}, postcode: 2042,
+    });
+    expect(recipient.addressLines).toEqual(['5 Rd', 'Newtown', '2042']);
+  });
+});
+
