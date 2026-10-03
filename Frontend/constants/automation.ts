@@ -20,16 +20,6 @@ export const SEND_METHOD_OPTIONS = [
 ] as const;
 
 /**
- * Touchpoints: lib/invoice-statement-automation-panel.tsx (Statement block's
- * Send Method select). Only invoices can be delivered through the accounting
- * platform, and the API refuses anything else on a statement — mirrors
- * `STATEMENT_SEND_METHOD` in Backend/src/constants/automation.js (KAN-44).
- */
-export const STATEMENT_SEND_METHOD_OPTIONS = [
-  { value: "isoplus", label: "Send from ISO+" },
-] as const;
-
-/**
  * Touchpoints: lib/automation-schedule-block.tsx (Every select). Values are the
  * wire values of `AutomationUnit`.
  */

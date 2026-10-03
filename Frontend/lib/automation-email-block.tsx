@@ -113,8 +113,12 @@ type AutomationEmailBlockProps = Readonly<{
   /** Decides which single system variable this block offers, and its copy. */
   kind: AutomationKind;
   value: AutomationBlock;
-  /** Differs per block: statements cannot be sent from the accounting platform. */
-  sendMethodOptions: readonly AutomationSelectOption[];
+  /**
+   * The Send Method choices. Only the invoice block passes them: an invoice can be
+   * sent from ISO+ or raised in the accounting platform. A statement is always
+   * sent from ISO+ (KAN-299), so it passes none and shows no Send Method control.
+   */
+  sendMethodOptions?: readonly AutomationSelectOption[];
   onChange: (next: AutomationBlock) => void;
 }>;
 
@@ -136,17 +140,19 @@ export function AutomationEmailBlock({
       {/* KAN-272: the manual "Recipient" selector (Billing Contact |
           Client/Participant) is removed — recipient/address resolution is
           now derived purely from ISO+ profile data (Case A/AA/B). */}
-      <AutomationField id={`${idPrefix}-send-method`} label="Send Method">
-        <OptionSelect
-          id={`${idPrefix}-send-method`}
-          ariaLabel="Send Method"
-          value={value.sendMethod}
-          options={sendMethodOptions}
-          onValueChange={(next) =>
-            set({ sendMethod: next as AutomationBlock["sendMethod"] })
-          }
-        />
-      </AutomationField>
+      {sendMethodOptions ? (
+        <AutomationField id={`${idPrefix}-send-method`} label="Send Method">
+          <OptionSelect
+            id={`${idPrefix}-send-method`}
+            ariaLabel="Send Method"
+            value={value.sendMethod}
+            options={sendMethodOptions}
+            onValueChange={(next) =>
+              set({ sendMethod: next as AutomationBlock["sendMethod"] })
+            }
+          />
+        </AutomationField>
+      ) : null}
 
       {EMAIL_TEXT_FIELDS.map((field) => (
         <EmailTextField

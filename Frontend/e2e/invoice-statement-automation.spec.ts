@@ -342,22 +342,28 @@ test.describe("Invoice & Statement Automation", () => {
     await expect(reloaded.getByLabel("Send Method")).toContainText(/accounting|xero/i);
   });
 
-  test("Statement Send Method offers no accounting platform, and the API refuses one", async ({
+  test("Statement automation has no Send Method control, and the API still refuses an accounting one", async ({
     page,
   }) => {
-    // KAN-44. Only invoices go through the accounting platform. A statement
-    // saved that way was emailed regardless, and the tab never said so.
+    // KAN-44 and KAN-299. Only invoices go through the accounting platform. A
+    // statement is always sent from ISO+, so its block shows no Send Method
+    // dropdown at all (it used to offer the one option). The invoice block keeps
+    // its two options.
     await page.goto(AUTOMATION_URL);
+
+    const invoice = invoiceBlock(page);
+    await invoice.getByRole("switch").click();
+    await expect(invoice.getByLabel("Send Method")).toBeVisible();
 
     const statement = statementBlock(page);
     await statement.getByRole("switch").click();
-    await statement.getByLabel("Send Method").click();
+    // The block is enabled, so its email fields are on screen...
+    await expect(statement.getByLabel(/reply-to email/i)).toBeVisible();
+    // ...and Send Method is not one of them.
+    await expect(statement.getByLabel("Send Method")).toHaveCount(0);
 
-    await expect(page.getByRole("option", { name: /send from iso\+/i })).toBeVisible();
-    await expect(page.getByRole("option", { name: /accounting|xero/i })).toHaveCount(0);
-    await page.keyboard.press("Escape");
-
-    // The dropdown is not the only writer: the PUT is reachable without it.
+    // The dropdown was never the only writer: the PUT is reachable without it, and
+    // the server still refuses a statement that names the accounting platform.
     const response = await page.request.put(
       `${BACKEND}/api/workspaces/${WORKSPACE}/automation-settings`,
       { data: { statement: { enabled: false, sendMethod: "accounting" } } },

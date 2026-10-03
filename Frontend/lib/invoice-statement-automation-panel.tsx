@@ -18,7 +18,6 @@ import { hasInvalidEmail, mergeRecentDocuments } from "@/lib/automation-helpers"
 import {
   AUTOMATION_PANEL_POLL_MS,
   SEND_METHOD_OPTIONS,
-  STATEMENT_SEND_METHOD_OPTIONS,
   type AutomationKind,
 } from "@/constants/automation";
 import { withEmailDefaults } from "@/lib/automation-email-defaults";
@@ -71,7 +70,8 @@ type AutomationSectionProps = Readonly<{
   title: string;
   description: string;
   scheduleLabel: string;
-  sendMethodOptions: readonly AutomationSelectOption[];
+  /** Absent for a statement, which is always sent from ISO+ (KAN-299). */
+  sendMethodOptions?: readonly AutomationSelectOption[];
   value: AutomationBlock;
   onChange: (next: AutomationBlock) => void;
 }>;
@@ -364,7 +364,6 @@ export function InvoiceStatementAutomationPanel({
         title="Statement Automation"
         description="Generate and email client statements on a schedule."
         scheduleLabel="Generate Statements Every"
-        sendMethodOptions={STATEMENT_SEND_METHOD_OPTIONS}
         value={settings.statement}
         onChange={update("statement")}
       />
