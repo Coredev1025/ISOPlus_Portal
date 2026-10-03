@@ -44,8 +44,8 @@ export const KIND_STATEMENT = 'statement_automation';
  *
  * Touchpoints: utils/automationSettingsHelpers.js (validateBlock refuses any
  * other value; buildAutomationSettingsPayload reports a stored one as this).
- * The Frontend mirror is STATEMENT_SEND_METHOD_OPTIONS in
- * Frontend/constants/automation.ts.
+ * The Frontend has no mirror of this (KAN-299): the statement block shows no Send
+ * Method control, and the screen just saves the value it loaded.
  */
 export const STATEMENT_SEND_METHOD = 'isoplus';
 

@@ -563,7 +563,7 @@ describe('InvoiceStatementAutomationPanel', () => {
     );
   });
 
-  it('leaves the invoice send method as saved when a statement is edited', async () => {
+  it('saves the invoice send method as chosen and the statement as ISO+ in the same save', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     fetchMock.mockResolvedValue(
       settings({ enabled: true, sendMethod: 'accounting' }, { enabled: true })
