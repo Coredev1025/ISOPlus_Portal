@@ -812,7 +812,7 @@ describe('generateParticipantTaxInvoicePdf', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({
       message: 'Participant Tax Invoice generated successfully',
-      invoiceNumber: 'INV-1001 (ISO+™)',
+      invoiceNumber: 'INV-1001',
       fileUrl: 'https://s3.example.com/signed/invoice.pdf',
       itemCount: 2,
       // The figure this invoice billed — the participant contribution, since
@@ -836,12 +836,12 @@ describe('generateParticipantTaxInvoicePdf', () => {
     );
 
     expect(isoplus.setGeneratedField.mock.calls).toEqual([
-      ['ws_1', 'b_1', 'item_1', 'INV-1001 (ISO+™)'],
-      ['ws_1', 'b_1', 'item_2', 'INV-1001 (ISO+™)'],
+      ['ws_1', 'b_1', 'item_1', 'INV-1001'],
+      ['ws_1', 'b_1', 'item_2', 'INV-1001'],
     ]);
     expect(deps.saveInvoiceNumber.mock.calls).toEqual([
-      ['ws_1', 'b_1', 'item_1', 'INV-1001 (ISO+™)', 'PDF', 'https://s3.example.com/signed/invoice.pdf'],
-      ['ws_1', 'b_1', 'item_2', 'INV-1001 (ISO+™)', 'PDF', 'https://s3.example.com/signed/invoice.pdf'],
+      ['ws_1', 'b_1', 'item_1', 'INV-1001', 'PDF', 'https://s3.example.com/signed/invoice.pdf'],
+      ['ws_1', 'b_1', 'item_2', 'INV-1001', 'PDF', 'https://s3.example.com/signed/invoice.pdf'],
     ]);
 
     // The stored counter moved, not a field on an in-memory copy.
@@ -850,7 +850,7 @@ describe('generateParticipantTaxInvoicePdf', () => {
     expect(logAuditTrail).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: 'ws_1',
       action: 'Generate PDF Participant Tax Invoice',
-      detail: 'Invoice generated successfully, invoice number: INV-1001 (ISO+™), participant: Jane Citizen, items: 2, fileUrl: https://s3.example.com/signed/invoice.pdf',
+      detail: 'Invoice generated successfully, invoice number: INV-1001, participant: Jane Citizen, items: 2, fileUrl: https://s3.example.com/signed/invoice.pdf',
     }));
   });
 
@@ -872,7 +872,7 @@ describe('generateParticipantTaxInvoicePdf', () => {
     const numbers = [first, second, third].map(({ res }) => res.body.invoiceNumber);
     expect(new Set(numbers).size).toBe(3);
     expect([...numbers].sort()).toEqual([
-      'INV-1001 (ISO+™)', 'INV-1002 (ISO+™)', 'INV-1003 (ISO+™)',
+      'INV-1001', 'INV-1002', 'INV-1003',
     ]);
 
     const stored = await Business.findOne({ workspaceId: 'ws_1' }).lean();
@@ -888,7 +888,7 @@ describe('generateParticipantTaxInvoicePdf', () => {
     await expect(run()).rejects.toThrow(/pdfme exploded/);
 
     const { res } = await run();
-    expect(res.body.invoiceNumber).toBe('INV-1002 (ISO+™)');
+    expect(res.body.invoiceNumber).toBe('INV-1002');
   });
 
   // A workspace with no Business row cannot number an invoice, and inventing

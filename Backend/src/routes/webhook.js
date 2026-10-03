@@ -1414,8 +1414,9 @@ async function processWebhookInvoiceItem(req, res, workspaceId, boardId, busines
 
     const fileUrl = await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'Invoice', req, res);
-    await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
-    await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);
+    // KAN-294: stored and written back as issued, with no "(ISO+™)" suffix.
+    await setGeneratedField(workspaceId, boardId, item.id, invoiceNumber);
+    await saveInvoiceNumber(workspaceId, boardId, item.id, invoiceNumber, 'PDF', fileUrl);
 }
 
 router.post('/:workspaceId/:boardId/invoice', async (req, res) => {

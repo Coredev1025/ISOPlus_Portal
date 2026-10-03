@@ -666,3 +666,65 @@ describe('buildStatementLedger — three invoices on one statement', () => {
     }
   });
 });
+
+// KAN-294. New invoices are numbered without the "(ISO+™)" suffix, but every
+// invoice issued before then carries it, in the document ledger and on the items
+// it billed. A statement matches a payment to its invoice by comparing those
+// strings exactly, so a statement that spans both has to keep working: each
+// invoice and the payments against it use the same form, old or new.
+describe('buildStatementLedger — invoices numbered before and after KAN-294', () => {
+  const OLD = 'INV-24 (ISO+™)';
+  const NEW = 'INV-25';
+  const invoices = [
+    invoice(OLD, '2026-07-01', 100, '2026-07-15'),
+    invoice(NEW, '2026-08-01', 200, '2026-08-15'),
+  ];
+
+  it('lists both forms as charges, exactly as stored', () => {
+    const { ledger } = buildStatementLedger({
+      invoices, items: [], period: PERIOD, openingBalance: 0, timezone: TZ,
+    });
+    expect(ledger.rows.map((r) => [r.reference, r.charge])).toEqual([[OLD, 100], [NEW, 200]]);
+    expect(ledger.closingBalance).toBe(300);
+  });
+
+  it('applies a payment to the old-form invoice and a payment to the new-form invoice', () => {
+    const items = [paidItem(OLD, 40, '2026-07-20'), paidItem(NEW, 50, '2026-08-20')];
+
+    const { ledger, payments, unmatchedPayments } = buildStatementLedger({
+      invoices, items, period: PERIOD, openingBalance: 0, timezone: TZ,
+    });
+
+    expect(unmatchedPayments).toEqual([]);
+    expect(payments.map((p) => [p.invoiceNumber, p.amount]).sort())
+      .toEqual([[NEW, 50], [OLD, 40]].sort());
+    expect(ledger.closingBalance).toBe(210);
+  });
+
+  it('keeps the old and the new number as two invoices, never one', () => {
+    // The same digits in the two forms are two different strings. They only meet
+    // if an invoice is re-issued under its own number, which does not happen: a
+    // new invoice always takes a new number.
+    const same = [
+      invoice('INV-30 (ISO+™)', '2026-07-01', 10, '2026-07-15'),
+      invoice('INV-31', '2026-07-02', 20, '2026-07-16'),
+    ];
+    const { ledger } = buildStatementLedger({
+      invoices: same, items: [], period: PERIOD, openingBalance: 0, timezone: TZ,
+    });
+    expect(ledger.rows).toHaveLength(2);
+  });
+
+  it('does not match a payment recorded under one form to an invoice stored under the other', () => {
+    // Why every writer must use one form per invoice: a mismatch is dropped as
+    // unmatched, never applied to the wrong invoice.
+    const items = [paidItem('INV-24', 40, '2026-07-20')];
+
+    const { ledger, unmatchedPayments } = buildStatementLedger({
+      invoices, items, period: PERIOD, openingBalance: 0, timezone: TZ,
+    });
+
+    expect(unmatchedPayments).toHaveLength(1);
+    expect(ledger.closingBalance).toBe(300);
+  });
+});

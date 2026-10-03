@@ -91,7 +91,8 @@ export async function generateNdisInvoiceGeneratorPdf({
   const profileItem = prepared.participantProfileItem;
   const timezone = business?.headOfficeTimezone || DEFAULT_TIMEZONE;
   const invoiceNumberBase = await allocateInvoiceNumberBase(workspaceId);
-  const invoiceNumber = `${invoiceNumberBase} (ISO+™)`;
+  // KAN-294: the number is stored and shown as issued, with no "(ISO+™)" suffix.
+  const invoiceNumber = invoiceNumberBase;
 
   const allRows = await collectNdisInvoiceRows({
     masterItems,

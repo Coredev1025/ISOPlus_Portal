@@ -276,12 +276,14 @@ export async function processWebhookNdisInvoicePdfItem({
     // month it claims rather than on the day it happened to be generated.
     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Invoice', req, res, {
       participant: clientDetails['Participant Name'] || '',
-      invoiceNumber: `${invoiceNumber} (ISO+™)`,
+      invoiceNumber,
       invoiceTotal: Number(total),
       invoiceDate,
     });
-    await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
-    await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);
+    // KAN-294: the invoice number is stored and written back as issued, with no
+    // "(ISO+™)" suffix. Older invoices keep theirs and are still read as before.
+    await setGeneratedField(workspaceId, boardId, item.id, invoiceNumber);
+    await saveInvoiceNumber(workspaceId, boardId, item.id, invoiceNumber, 'PDF', fileUrl);
   } catch (err) {
     await handlePDFError(err, workspaceId, boardId, item.id, 'Generate PDF NDIS Invoice', req, res);
   }

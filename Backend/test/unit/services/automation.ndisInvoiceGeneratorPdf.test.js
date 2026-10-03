@@ -110,7 +110,7 @@ describe('generateNdisInvoiceGeneratorPdf', () => {
     });
 
     expect(result.empty).toBeFalsy();
-    expect(result.invoiceNumber).toBe('IN-40 (ISO+™)');
+    expect(result.invoiceNumber).toBe('IN-40');
     expect(result.fileUrl).toContain('/api/local-files/');
     expect(result.fileUrl).toContain('NDIS-invoices/');
     expect(result.fileUrl).not.toContain('/auto/');
@@ -120,7 +120,7 @@ describe('generateNdisInvoiceGeneratorPdf', () => {
     expect(readFileSync(stored).subarray(0, 5).toString()).toBe('%PDF-');
 
     const recorded = await InvoiceNumber.findOne({ workspaceId: WS, itemId: MASTER_ID, type: 'PDF' }).lean();
-    expect(recorded.invoiceNumber).toBe('IN-40 (ISO+™)');
+    expect(recorded.invoiceNumber).toBe('IN-40');
     expect(recorded.pdfLink).toBe(result.fileUrl);
 
     const business = await Business.findOne({ workspaceId: WS }).lean();
@@ -131,7 +131,7 @@ describe('generateNdisInvoiceGeneratorPdf', () => {
   // automation queue, so two boards in the same workspace are generated at the
   // same moment routinely. Read nextNumber, render a PDF, then write
   // nextNumber + 1 back is a lost update across two awaits: both runs read 40,
-  // both mint 'IN-40 (ISO+™)' for different participants, and the counter ends
+  // both mint 'IN-40' for different participants, and the counter ends
   // on 41 rather than 42. Two participants then hold the same invoice number,
   // which Xero and the customer's ledger both treat as one invoice.
   it('never mints the same invoice number for two concurrent generations', async () => {
@@ -149,7 +149,7 @@ describe('generateNdisInvoiceGeneratorPdf', () => {
     ]);
 
     expect([first.invoiceNumber, second.invoiceNumber].sort()).toEqual([
-      'IN-40 (ISO+™)', 'IN-41 (ISO+™)',
+      'IN-40', 'IN-41',
     ]);
     const business = await Business.findOne({ workspaceId: WS }).lean();
     expect(business.documentNumbering.invoice.nextNumber).toBe(42);

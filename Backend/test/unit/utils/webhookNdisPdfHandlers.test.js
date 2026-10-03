@@ -347,7 +347,7 @@ describe('processWebhookNdisInvoicePdfItem', () => {
     ]);
 
     const numbers = [first, second, third].map((args) => args.saveInvoiceNumber.mock.calls[0][3]);
-    expect([...numbers].sort()).toEqual(['INV-41 (ISO+™)', 'INV-42 (ISO+™)', 'INV-43 (ISO+™)']);
+    expect([...numbers].sort()).toEqual(['INV-41', 'INV-42', 'INV-43']);
     expect(new Set(numbers).size).toBe(3);
     expect(await storedInvoiceCounter()).toBe(44);
   });
@@ -411,14 +411,14 @@ describe('processWebhookNdisInvoicePdfItem', () => {
       'ws_1', 'bd_1', 'itm_master_1', 'https://s3.example.com/signed.pdf', 'NDIS Invoice', args.req, args.res,
       {
         participant: 'Jane Roe',
-        invoiceNumber: 'INV-41 (ISO+™)',
+        invoiceNumber: 'INV-41',
         invoiceTotal: 139.62,
         invoiceDate: '2025-03-15T00:00:00',
       },
     );
-    expect(isoplus.setGeneratedField).toHaveBeenCalledWith('ws_1', 'bd_1', 'itm_master_1', 'INV-41 (ISO+™)');
+    expect(isoplus.setGeneratedField).toHaveBeenCalledWith('ws_1', 'bd_1', 'itm_master_1', 'INV-41');
     expect(args.saveInvoiceNumber).toHaveBeenCalledWith(
-      'ws_1', 'bd_1', 'itm_master_1', 'INV-41 (ISO+™)', 'PDF', 'https://s3.example.com/signed.pdf',
+      'ws_1', 'bd_1', 'itm_master_1', 'INV-41', 'PDF', 'https://s3.example.com/signed.pdf',
     );
     // The counter is claimed in the database (KAN-288); the in-memory business
     // the route passes in is no longer written back.

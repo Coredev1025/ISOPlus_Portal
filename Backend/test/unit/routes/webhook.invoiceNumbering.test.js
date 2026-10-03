@@ -99,7 +99,7 @@ describe('POST /api/pdf/:workspaceId/:boardId/invoice numbering', () => {
     await vi.waitFor(() => expect(saveInvoiceNumber).toHaveBeenCalledTimes(3), { timeout: 10_000 });
 
     const numbers = saveInvoiceNumber.mock.calls.map((call) => call[3]).sort();
-    expect(numbers).toEqual(['INV-41 (ISO+™)', 'INV-42 (ISO+™)', 'INV-43 (ISO+™)']);
+    expect(numbers).toEqual(['INV-41', 'INV-42', 'INV-43']);
 
     const stored = await Business.findOne({ workspaceId: 'ws_inv' }).lean();
     expect(stored.documentNumbering.invoice.nextNumber).toBe(44);

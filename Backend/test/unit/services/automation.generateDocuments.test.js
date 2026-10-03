@@ -330,7 +330,7 @@ describe('generateInvoicesForBoard — Invoice Generator pipeline', () => {
     });
 
     expect(results).toHaveLength(1);
-    expect(results[0].invoiceNumber).toBe('IN-500 (ISO+™)');
+    expect(results[0].invoiceNumber).toBe('IN-500');
     expect(results[0].pdfUrl).toContain('NDIS-invoices/');
     expect(results[0].pdfUrl).not.toContain('/auto/');
 
@@ -341,7 +341,7 @@ describe('generateInvoicesForBoard — Invoice Generator pipeline', () => {
     const recorded = await InvoiceNumber.findOne({
       workspaceId: WS, itemId: MASTER_ID, type: 'PDF',
     }).lean();
-    expect(recorded.invoiceNumber).toBe('IN-500 (ISO+™)');
+    expect(recorded.invoiceNumber).toBe('IN-500');
 
     const link = await PDFLink.findOne({ workspaceId: WS, itemId: MASTER_ID }).lean();
     expect(link.type).toBe('NDIS Invoice');
@@ -356,7 +356,7 @@ describe('generateInvoicesForBoard — Invoice Generator pipeline', () => {
     );
     expect(listed.invoiced).toBeGreaterThan(0);
     expect(listed.pending).toBe(0);
-    expect(listed.items[0].invoiceNumber).toBe('IN-500 (ISO+™)');
+    expect(listed.items[0].invoiceNumber).toBe('IN-500');
   });
 
   it('is idempotent per slot: a re-run reuses URLs and does not consume a second number', async () => {

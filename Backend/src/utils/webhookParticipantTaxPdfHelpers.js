@@ -436,20 +436,21 @@ export async function generateParticipantTaxInvoicePdf({
   const fileUrl = await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
   await Promise.all(dbItems.map(async (item) => {
     await setIntegrationMessage(workspaceId, boardId, item.itemId, 'Invoice generated successfully');
-    await setGeneratedField(workspaceId, boardId, item.itemId, `${invoiceNumber} (ISO+™)`);
-    await saveInvoiceNumber(workspaceId, boardId, item.itemId, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);
+    // KAN-294: stored and written back as issued, with no "(ISO+™)" suffix.
+    await setGeneratedField(workspaceId, boardId, item.itemId, invoiceNumber);
+    await saveInvoiceNumber(workspaceId, boardId, item.itemId, invoiceNumber, 'PDF', fileUrl);
   }));
 
   logAuditTrail({
     workspaceId,
     action: 'Generate PDF Participant Tax Invoice',
-    detail: `Invoice generated successfully, invoice number: ${invoiceNumber} (ISO+™), participant: ${participantName}, items: ${dbItems.length}, fileUrl: ${fileUrl}`,
+    detail: `Invoice generated successfully, invoice number: ${invoiceNumber}, participant: ${participantName}, items: ${dbItems.length}, fileUrl: ${fileUrl}`,
     req,
   });
 
   return res.status(200).json({
     message: 'Participant Tax Invoice generated successfully',
-    invoiceNumber: `${invoiceNumber} (ISO+™)`,
+    invoiceNumber,
     fileUrl,
     itemCount: dbItems.length,
     invoiceTotal: Number(invoiceTotalRaw) || 0,

@@ -494,10 +494,10 @@ describe('startAutomationWorker', () => {
       // {{statement_number}} has no data-model backing, and {{mystery_token}}
       // is unknown — both must survive verbatim, never become 'undefined'.
       expect(written.subject).toBe(
-        'Invoices IN-900 (ISO+™) for Samuel Rivers — Worker Gen Biz {{statement_number}}',
+        'Invoices IN-900 for Samuel Rivers — Worker Gen Biz {{statement_number}}',
       );
       expect(written.body).toBe(
-        'Dear Samuel Rivers, invoices IN-900 (ISO+™) attached. {{mystery_token}}',
+        'Dear Samuel Rivers, invoices IN-900 attached. {{mystery_token}}',
       );
       // The outbox attachments contract is unchanged: an array of pdfUrl strings.
       expect(written.attachments).toHaveLength(1);
@@ -1166,7 +1166,7 @@ describe('startAutomationWorker', () => {
       expect(args).toMatchObject({ workspaceId: 'ws-1', boardId: 'board-a', periodKey: '20260116-0900' });
       // The documents the run actually generated, not a re-derivation.
       expect(args.documents).toHaveLength(1);
-      expect(args.documents[0].invoiceNumber).toBe('IN-900 (ISO+™)');
+      expect(args.documents[0].invoiceNumber).toBe('IN-900');
     });
 
     // Same guarantee composeAndDeliver already makes for email: deliverability
