@@ -38,6 +38,7 @@
  */
 
 import { PROVISIONAL_CLAIM_PREFIX } from '../constants/invoiceSelection.js';
+import { ATTEMPT_TOKEN_SEPARATOR } from '../constants/invoiceLedger.js';
 import { info, warn } from './logger.js';
 import {
   claimItemsForInvoice,
@@ -52,9 +53,19 @@ import {
  * distinguishable from a real claim when someone goes looking — those are the
  * items that were marked but never billed, and they are the ones safe to
  * clear.
+ *
+ * A scheduled run keeps the deterministic token above: a retried slot must
+ * re-claim its own items. A manual invoice has no slot, so two concurrent
+ * invoices for one participant would share a token and both claim the same
+ * items (the claim accepts its own token), billing them twice. A manual
+ * producer passes an `attemptId` unique to the request, which makes the tokens
+ * differ, so the second claim is refused (KAN-302).
  */
-export function provisionalClaimToken({ type, periodKey, participant }) {
-  return `${PROVISIONAL_CLAIM_PREFIX}${type}:${periodKey}:${participant}`;
+export function provisionalClaimToken({
+  type, periodKey, participant, attemptId = null,
+}) {
+  const token = `${PROVISIONAL_CLAIM_PREFIX}${type}:${periodKey}:${participant}`;
+  return attemptId ? `${token}${ATTEMPT_TOKEN_SEPARATOR}${attemptId}` : token;
 }
 
 /**
@@ -76,9 +87,11 @@ export function provisionalClaimToken({ type, periodKey, participant }) {
  * not an error, and it must produce no invoice and no email.
  */
 export async function generateUnderClaim({
-  workspaceId, boardId, itemIds, type, periodKey, participant, produce, record = null,
+  workspaceId, boardId, itemIds, type, periodKey, participant, produce, record = null, attemptId = null,
 }) {
-  const token = provisionalClaimToken({ type, periodKey, participant });
+  const token = provisionalClaimToken({
+    type, periodKey, participant, attemptId,
+  });
   const { claimed, rejected } = await claimItemsForInvoice({
     workspaceId, boardId, itemIds, invoiceNumber: token, periodKey,
   });

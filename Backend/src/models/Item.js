@@ -52,6 +52,14 @@ const itemSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  // The invoice this item currently belongs to (KAN-302): the `invoices` record
+  // that lists it, as the marker above names that invoice's number. Set together
+  // with the marker when an invoice is confirmed, and null until then. Top-level
+  // for the same reason as the marker: sync rewrites `data`, never this.
+  activeInvoiceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    default: null
+  },
   // The period the claiming run covered, as the scheduler's period key. Kept
   // for support questions ("why was this on the January invoice") and for the
   // migration's reverse.

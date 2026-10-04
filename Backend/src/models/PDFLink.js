@@ -64,6 +64,9 @@ const PDFLinkSchema = new Schema({
     // where it is carried.
     invoiceTotal: { type: Number },
     invoiceNumber: { type: String },
+    // The `invoices` record this document belongs to (KAN-302). Absent on every
+    // row written before the invoice ledger, and until the backfill stamps it.
+    invoiceId: { type: Schema.Types.ObjectId },
     // The date the document itself carries — the slot a scheduled run billed,
     // or the `Invoice Date` an operator set on the item before generating by
     // hand. Distinct from `createdAt`, which is when this row was written; the

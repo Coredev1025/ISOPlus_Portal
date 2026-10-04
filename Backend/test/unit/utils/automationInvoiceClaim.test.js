@@ -174,3 +174,40 @@ describe('generateUnderClaim — the ledger row comes before the marker', () => 
     expect(await invoicedBy('a')).toMatch(/^pending:/);
   });
 });
+
+describe('the per-attempt token for a manual invoice (KAN-302)', () => {
+  it('leaves the deterministic token unchanged when there is no attempt id', () => {
+    expect(provisionalClaimToken({ type: TYPE, periodKey: PERIOD, participant: PARTICIPANT }))
+      .toBe('pending:NDIS Invoice:2025-01:Jane Doe');
+  });
+
+  it('appends the attempt id after a separator when there is one', () => {
+    expect(provisionalClaimToken({
+      type: TYPE, periodKey: PERIOD, participant: PARTICIPANT, attemptId: 'req-1',
+    })).toBe('pending:NDIS Invoice:2025-01:Jane Doe#req-1');
+  });
+
+  it('lets only one of two concurrent manual attempts for the same items claim them', async () => {
+    let releaseFirst;
+    const firstHolds = new Promise((resolve) => { releaseFirst = resolve; });
+    let firstHasClaimed;
+    const claimed = new Promise((resolve) => { firstHasClaimed = resolve; });
+    const first = generateUnderClaim({
+      ...base, attemptId: 'req-1', itemIds: ['a', 'b'],
+      produce: async () => { firstHasClaimed(); await firstHolds; return { invoiceNumber: 'INV-1' }; },
+    });
+    // produce runs only after the claim is taken, so this is a signal, not a guess.
+    await claimed;
+
+    const second = await generateUnderClaim({
+      ...base, attemptId: 'req-2', itemIds: ['a', 'b'],
+      produce: async () => ({ invoiceNumber: 'INV-2' }),
+    });
+    expect(second).toBeNull();
+
+    releaseFirst();
+    const winner = await first;
+    expect(winner.invoiceNumber).toBe('INV-1');
+    expect(await invoicedBy('a')).toBe('INV-1');
+  });
+});

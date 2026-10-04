@@ -489,3 +489,38 @@ The invariants, which the audit script and a test both check:
 * **The release after:** phase 5, then the KAN-289 rules.
 
 If D1 goes the other way and the ledger ships in this release, the section 7 gates still apply: the soak in phase 3 is the part that cannot be shortened.
+
+## Changes since approval
+
+Where the implementation departed from this document, and why.
+
+* **`duplicateOrdinal`, not `duplicateNumber` (KAN-304).** Sections 4.1 and 6.3 describe a
+  `duplicateNumber: true` flag on a backfilled invoice that shares a number with a different
+  real one, under a partial unique index. A partial index filter cannot test for an absent
+  field, and a default of `false` would be stored on every invoice and take it out of the
+  index. The model uses `duplicateOrdinal` (0 for the invoice that owns the number, 1, 2, ...
+  for flagged duplicates) and the unique index is on `(workspaceId, source, number,
+  duplicateOrdinal)`. Anything that reads "flagged duplicate" reads `duplicateOrdinal > 0`.
+* **The claim token (KAN-304).** Section 4.2 says manual producers add a per-attempt id to the
+  claim token. `provisionalClaimToken` and `generateUnderClaim` take an optional `attemptId`
+  for that, appended after `#`. The deterministic token a scheduled run uses is unchanged.
+  Writing the test showed the gap is real: two concurrent attempts with the same
+  deterministic token both claim the same items.
+* **`issueInvoice()` composes the existing protocol (KAN-304).** It wraps `generateUnderClaim`
+  rather than replacing it: the producer's own older writes run as `record`, the invoice is
+  committed under the claim, then the marker is rewritten and the items are pointed at the
+  invoice. With the write flag off it is exactly the old protocol.
+* **A failed commit keeps the claim pending (KAN-304).** Section 4.2 says a failure before
+  the commit point releases the claim. That holds when the producer's `produce` fails. When
+  the producer's older writes or the commit itself fail, the claim stays pending, as
+  `generateUnderClaim` already does for its `record` step: some of the older rows may exist,
+  and handing the items back could bill them twice.
+* **Repair only takes what is its own (KAN-304).** `repairInvoice` accepts a marker that is
+  absent, a form of this invoice's own number for its source, or exactly the claim token
+  stored on the invoice (`claimToken`). It never takes another run's pending claim, a
+  plain number for a Xero invoice, or anything on a void invoice. The audit's invariants 1
+  and 2 compare number and source, not the number alone.
+* **The unique index is a precondition (KAN-304).** Mongoose does not build this collection's
+  indexes on boot; the migration does. `commitInvoice` refuses to write without the unique
+  index, so the migration must run before `INVOICE_LEDGER_WRITE` is switched on. Added to
+  the runbook rollout.

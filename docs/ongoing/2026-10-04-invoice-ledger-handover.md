@@ -4,7 +4,7 @@ For whoever picks this up in a new session. Read this first, then the design. **
 with every PR in the series; if it disagrees with the code, the code wins and this
 file is stale.** Delete when the work is merged and the old stores are retired.
 
-Last updated: 2026-10-04 (evening, after PR 964 merged).
+Last updated: 2026-10-04 (night, KAN-304 built).
 
 ## What this is
 
@@ -36,7 +36,7 @@ Every PR keeps behaviour identical until `INVOICE_LEDGER_WRITE` / `INVOICE_LEDGE
 | # | Ticket / branch | What | State |
 |---|---|---|---|
 | 1 | KAN-303 (PR 964) | 59 tests in `Backend/test/characterization` pinning today's writes and reads, a lettered case list, a case-to-test table and the known gaps | **Merged** (3717ae13) |
-| 2 | to create | `invoices` model, index migration, `invoiceLedger` reader, `issueInvoice()` writer, the two flags (not wired to anything) | Not started |
+| 2 | KAN-304 `feature/KAN-304_invoice_ledger_model` | `invoices` model, index migration `1791102300000-invoice-ledger-indexes`, `invoiceLedger` reader (`utils/invoiceLedger/read.js`), `issueInvoice()`/`commitInvoice()`/`repairInvoice()` (`issue.js`), the two flags (`flags.js`), number parsing (`numbers.js`), the invariant audit (`audit.js`), per-attempt claim token. Not wired to any producer or reader yet | Built, in review |
 | 3 | to create | Producers onto `issueInvoice()`: scheduled runs; manual NDIS + webhooks; manual Age Care + Xero + draft push (`stampXero`) | Not started |
 | 4 | to create | Readers onto `invoiceLedger` with READ off / shadow / on and the shadow comparator | Not started |
 | 5 | to create | Marker backfill, invoice backfill (dry run, apply, undo, report), audit script, scrub script | Not started |
