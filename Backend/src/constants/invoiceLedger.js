@@ -49,12 +49,21 @@ export const INVOICE_STATUS = { ISSUED: 'issued', VOID: 'void' };
  */
 export const INVOICE_SOURCE = { PORTAL: 'portal', XERO: 'xero' };
 
-export const INVOICE_KIND = { NDIS: 'ndis', AGE_CARE: 'age_care' };
+/**
+ * `job`: a Job Management invoice (the `/invoice` webhook), billed to a client rather than a participant.
+ * Touchpoints: models/Invoice.js (enum), utils/invoiceLedger/issue.js, services/automation/generateDocuments.js,
+ * routes/webhook.js, utils/webhookNdisPdfHandlers.js.
+ */
+export const INVOICE_KIND = { NDIS: 'ndis', AGE_CARE: 'age_care', JOB: 'job' };
 
+/**
+ * Touchpoints: models/Invoice.js (enum), services/automation/generateDocuments.js,
+ * routes/webhook.js, utils/webhookNdisPdfHandlers.js.
+ */
 export const INVOICE_TRIGGER = { AUTOMATION: 'automation', MANUAL: 'manual' };
 
 /**
- * `live`: issued by `issueInvoice()`. `backfill`: built by the prefill script.
+ * `live`: issued by `issueInvoice()` or `recordIssuedInvoice()`. `backfill`: built by the prefill script.
  * Touchpoints: models/Invoice.js, and the backfill script (not yet written).
  */
 export const INVOICE_ORIGIN = { LIVE: 'live', BACKFILL: 'backfill' };

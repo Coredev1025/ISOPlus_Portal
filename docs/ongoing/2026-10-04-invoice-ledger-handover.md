@@ -4,7 +4,7 @@ For whoever picks this up in a new session. Read this first, then the design. **
 with every PR in the series; if it disagrees with the code, the code wins and this
 file is stale.** Delete when the work is merged and the old stores are retired.
 
-Last updated: 2026-10-04 (night, KAN-304 merged, KAN-305 built).
+Last updated: 2026-10-04 (night): KAN-303, 304, 305 merged; KAN-306 (PR 967) reviewed, fixes pushed, waiting on CI.
 
 ## What this is
 
@@ -37,14 +37,24 @@ Every PR keeps behaviour identical until `INVOICE_LEDGER_WRITE` / `INVOICE_LEDGE
 |---|---|---|---|
 | 1 | KAN-303 (PR 964) | 59 tests in `Backend/test/characterization` pinning today's writes and reads, a lettered case list, a case-to-test table and the known gaps | **Merged** (3717ae13) |
 | 2 | KAN-304 (PR 965, merged f198a82d) | `invoices` model, index migration `1791102300000-invoice-ledger-indexes`, `invoiceLedger` reader (`utils/invoiceLedger/read.js`), `issueInvoice()`/`commitInvoice()`/`repairInvoice()` (`issue.js`), the two flags (`flags.js`), number parsing (`numbers.js`), the invariant audit (`audit.js`), per-attempt claim token. Not wired to any producer or reader yet | **Merged** |
-| 3a | KAN-305 `feature/KAN-305_scheduled_runs_issue_invoice` | Scheduled NDIS and Age Care runs call `issueInvoice()` (`generateDocuments.js`), with line amounts from the selected rows (`utils/invoiceLedger/lineAmounts.js`). Flag off: unchanged; flag on: an `invoices` record per invoice, ledger rows linked, items pointed at it | Built, in review |
-| 3b | to create | Manual NDIS generator and the `/invoicendis` and `/invoice` webhooks onto `issueInvoice()`, per-attempt tokens | Not started |
-| 3c | to create | Manual Age Care, the Xero routes and the Xero draft push (`stampXero`) | Not started |
+| 3a | KAN-305 `feature/KAN-305_scheduled_runs_issue_invoice` | Scheduled NDIS and Age Care runs call `issueInvoice()` (`generateDocuments.js`), with line amounts from the selected rows (`utils/invoiceLedger/lineAmounts.js`). Flag off: unchanged; flag on: an `invoices` record per invoice, ledger rows linked, items pointed at it | Merged (PR 966) |
+| 3b | KAN-306 `feature/KAN-306_manual_ndis_and_webhooks_issue_invoice` | Manual NDIS generator route, `/invoicendis` and `/invoice` webhooks write the invoice record through `recordIssuedInvoice()` (`utils/invoiceLedger/issue.js`), behind the write flag. These producers generate the document first and claim per item afterwards, so there is no claim for `issueInvoice` to wrap: the record is added after their own writes, never throws, and points only items whose marker already names the invoice. Generator returns `lineAmounts` from the rows it printed. New invoice kind `job` for the `/invoice` webhook. Dates come from the operator's original UTC values | In review (PR 967; independent review found no blockers, fixes applied: printed dates returned by the generator, plain-number test through the real marker and pointer) |
+| 3c | to create | Manual Age Care (`/invoiceparticipanttax`), the Xero routes and the Xero draft push (`stampXero`) | Not started |
 | 4 | to create | Readers onto `invoiceLedger` with READ off / shadow / on and the shadow comparator | Not started |
 | 5 | to create | Marker backfill, invoice backfill (dry run, apply, undo, report), audit script, scrub script | Not started |
 | 6 | to create | Dev fixtures write invoices, Playwright tests (including the row highlight and the "Invoiced" badge in the table and the pop-up), docs and runbook finalised | Not started |
 
 Related docs-only PR: **961** (design, runbook, rehearsal notes, this handover).
+
+## Wiring notes for the next producers (3c and after)
+
+* Scheduled producers use `issueInvoice()` (claim first). Manual producers generate the document first and claim per item afterwards (`saveInvoiceNumber`), so they call `recordIssuedInvoice()` after their own writes. It never throws and does nothing with the flag off.
+* Pass the operator's original UTC date strings, not the zone-stripped ones the handlers build for the PDF (a zoneless string reads differently per server timezone).
+* Line amounts must come from the rows the document printed (the generators), keyed by the id the marker uses. Scheduled runs still use the list rows (known gap, `commitInvoice` warns on mismatch).
+* The `/invoice` webhook is kind `job` (billed to a client). Its ledger rows carry no invoice number, so they are never linked by `invoiceId`; the audit and backfill must treat `job` explicitly.
+* The write flag needs the `invoice-ledger-indexes` migration first. Backfill must run before `INVOICE_LEDGER_READ` is switched on, or an item whose earlier invoice has no record can show a re-posted duplicate as active.
+* Placeholder participant names (`Participant`, `Client`) differ from the empty string the old ledger rows carry; the shadow comparator will report that as a known difference.
+* Concurrent manual claims for one participant (case o) are still open; fix with per-attempt tokens when manual producers move onto a claim-first flow.
 
 ## Rules for this work
 
@@ -76,6 +86,17 @@ Related docs-only PR: **961** (design, runbook, rehearsal notes, this handover).
 * Google sign-in, `main` versus `develop` reconcile (three hotfix commits only on `main`, six conflicting files), and a confirmed production backup procedure all gate the real release (runbook "To confirm"). Not part of this series.
 * The client was told the release is held until statements are fixed properly. Message drafts are in the conversation, not in the repo.
 * KAN-296 and KAN-297 close when reads are switched on after the comparison period.
+
+## Practical notes from the build
+
+* **Tickets:** KAN-302 (the epic, keep updated), KAN-303 characterization, KAN-304 model and writer, KAN-305 scheduled runs, KAN-306 manual NDIS and webhooks. 3c and later get their own. Jira transitions in project KAN: 11 To Do, 21 In Progress, 31 In Review, 41 Done, 42 Test failed.
+* **Worktrees:** one per PR from `origin/develop`. A worktree has no `node_modules`; symlink the main checkout's `Backend/node_modules` to run tests, and **remove the symlink before `git add`**.
+* **Full Backend suite takes about 5 minutes locally and 12 in CI.** Two tests are known to fail under load and pass alone: a `pdfLink.route` 401 and `business.xero-mapping.route` "saves line-item mapping". Re-run the single file before suspecting your change.
+* **Complexity:** the gate is per function (< 15). `eslint-plugin-sonarjs` is not installed in the repo; install eslint 8 with sonarjs 0.25 in a scratch directory to score changed functions. `processWebhookNdisInvoicePdfItem` is at 14, so extract helpers before adding to it.
+* **Timezones:** run date-sensitive tests under `TZ=UTC` as well as your local zone; production is UTC and a laptop is not.
+* **Reviews:** each PR gets an independent review by a different model, then fixes, a full run, green CI, merge. Do not merge several PRs at once.
+* **Production copy cleanup, only after the rehearsal is signed off:** `docker rm -f prod-snap prod-copy-db`, then delete `prod-db-backup/extracted`, `copy-premigration.archive.gz`, and last the `.tgz`. Until then do not remove them.
+* **Do not bypass sandbox blocks.** If a command is refused, stop and ask the owner instead of finding another way. Never put a production connection string in chat or in the repo.
 
 ## How to resume
 

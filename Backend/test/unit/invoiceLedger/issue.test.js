@@ -12,7 +12,7 @@ vi.mock('../../../src/utils/logger.js', async (importOriginal) => {
 });
 
 const markerModule = await import('../../../src/utils/invoicedMarker.js');
-const { issueInvoice, commitInvoice, repairInvoice, resetIndexCheckForTests } = await import('../../../src/utils/invoiceLedger/issue.js');
+const { issueInvoice, commitInvoice, recordIssuedInvoice, repairInvoice, resetIndexCheckForTests } = await import('../../../src/utils/invoiceLedger/issue.js');
 const { generateUnderClaim } = await import('../../../src/utils/automationInvoiceClaim.js');
 const { warn } = await import('../../../src/utils/logger.js');
 
@@ -444,5 +444,74 @@ describe('repairInvoice', () => {
     const invoice = await issuedInvoice({ status: 'void' });
     await expect(repairInvoice(invoice._id)).rejects.toThrow(/not issued/i);
     expect(await markerOf('a')).toBeNull();
+  });
+});
+
+/**
+ * recordIssuedInvoice (KAN-306): for the manual producers, whose document exists
+ * before anything is claimed. They claim per item with the real number and write
+ * their own rows; this adds the invoice record afterwards. It never throws, because
+ * the document has already been sent and failing the request would not unsend it.
+ */
+describe('recordIssuedInvoice', () => {
+  const manual = (over = {}) => ({
+    workspaceId: WS,
+    boardId: BOARD,
+    itemIds: ['a', 'b'],
+    generated: { invoiceNumber: 'INV-7', fileUrl: 'https://s3/7.pdf', invoiceTotal: 90 },
+    kind: 'ndis',
+    participant: { name: 'Jane Smith' },
+    trigger: 'manual',
+    lineAmounts: { a: 40, b: 50 },
+    invoiceDate: new Date('2026-09-01T00:00:00Z'),
+    dueDate: new Date('2026-09-15T00:00:00Z'),
+    ...over,
+  });
+
+  const markAs = (number) => Item.updateMany({ workspaceId: WS }, { $set: { invoicedBy: number } });
+
+  it('writes the invoice, stamps its rows and points the items that carry its number', async () => {
+    await markAs('INV-7');
+    await PDFLink.insertMany(['a', 'b'].map((itemId) => ({
+      itemId, workspaceId: WS, boardId: BOARD, type: TYPE, pdfLink: 'https://s3/7.pdf', invoiceNumber: 'INV-7', invoiceTotal: 90,
+    })));
+
+    const invoice = await recordIssuedInvoice(manual());
+
+    expect(invoice).toMatchObject({ number: 'INV-7', trigger: 'manual', total: 90, status: 'issued' });
+    expect(invoice.lines).toEqual([{ itemId: 'a', amount: 40 }, { itemId: 'b', amount: 50 }]);
+    expect(String(await activeOf('a'))).toBe(String(invoice._id));
+    expect((await PDFLink.find({ workspaceId: WS }).lean()).every((r) => String(r.invoiceId) === String(invoice._id))).toBe(true);
+  });
+
+  it('does not point an item whose marker names a different invoice', async () => {
+    await Item.updateOne({ itemId: 'a' }, { $set: { invoicedBy: 'INV-1' } });
+    await Item.updateOne({ itemId: 'b' }, { $set: { invoicedBy: 'INV-7' } });
+
+    await recordIssuedInvoice(manual());
+
+    expect(await activeOf('a')).toBeNull();
+    expect(await activeOf('b')).not.toBeNull();
+  });
+
+  it('writes nothing with the flag off', async () => {
+    process.env.INVOICE_LEDGER_WRITE = 'off';
+    expect(await recordIssuedInvoice(manual())).toBeNull();
+    expect(await Invoice.countDocuments({})).toBe(0);
+  });
+
+  it('never throws: a failure is warned about and the caller carries on', async () => {
+    await Invoice.collection.dropIndexes();
+    resetIndexCheckForTests();
+
+    expect(await recordIssuedInvoice(manual())).toBeNull();
+    expect(warn).toHaveBeenCalledWith('InvoiceLedger', expect.stringMatching(/not recorded/), expect.any(Object));
+  });
+
+  it('is idempotent for the same number and items', async () => {
+    const first = await recordIssuedInvoice(manual());
+    const second = await recordIssuedInvoice(manual());
+    expect(String(second._id)).toBe(String(first._id));
+    expect(await Invoice.countDocuments({})).toBe(1);
   });
 });

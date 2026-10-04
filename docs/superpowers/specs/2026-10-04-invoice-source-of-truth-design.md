@@ -524,3 +524,20 @@ Where the implementation departed from this document, and why.
   indexes on boot; the migration does. `commitInvoice` refuses to write without the unique
   index, so the migration must run before `INVOICE_LEDGER_WRITE` is switched on. Added to
   the runbook rollout.
+* **Manual producers record the invoice after the fact (KAN-306).** Section 5 puts every
+  producer behind `issueInvoice()`. The manual NDIS generator, `/invoicendis` and `/invoice`
+  generate the document first and claim per item with the real number afterwards
+  (`saveInvoiceNumber`), so there is no provisional claim to wrap. They call
+  `recordIssuedInvoice()` once their own writes are done. It commits the invoice, stamps
+  the ledger rows and points only the items whose marker already names this invoice (an
+  item an earlier invoice holds keeps pointing at that one, as invariant 2 requires). It
+  never throws: the document is already sent, and a missing record is what the backfill and
+  the audit are for. The concurrent double claim on manual producers (case o) is not
+  changed by this PR.
+* **A third invoice kind, `job` (KAN-306).** The `/invoice` webhook raises a Job Management
+  invoice, billed to the client on the job planning item rather than to a participant.
+  Without a kind of its own its markers would show up as audit violations.
+* **Line amounts come from what the document printed (KAN-306).** The manual NDIS generator
+  returns `lineAmounts` computed from the rows it rendered. The scheduled runs still take
+  them from the list read before the claim (review of KAN-305 noted the gap; `commitInvoice`
+  now warns when the lines do not add up to the total).

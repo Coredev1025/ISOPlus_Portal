@@ -213,6 +213,39 @@ export async function issueInvoice({
   return { ...result, invoiceId: committed._id };
 }
 
+/**
+ * The manual producers (KAN-306) generate the document first and claim per item with
+ * the real number afterwards, so there is no claim for `issueInvoice` to wrap. They
+ * call this once their own writes are done. It adds the invoice record, stamps the
+ * rows, and points only the items whose marker already names this invoice (an item an
+ * earlier invoice holds keeps pointing at that one). With the write flag off it does
+ * nothing. It never throws: the document is already sent, so a failure is warned about
+ * and left for the backfill and the audit.
+ */
+export async function recordIssuedInvoice({ workspaceId, boardId, itemIds, ...rest }) {
+  if (!invoiceLedgerWriteEnabled()) return null;
+  try {
+    const invoice = await commitInvoice({
+      workspaceId, boardId, itemIds, source: INVOICE_SOURCE.PORTAL, ...rest,
+    });
+    await Item.updateMany(
+      {
+        workspaceId: mongoEq(String(workspaceId)),
+        boardId: mongoEq(String(boardId)),
+        itemId: { $in: itemIds.map((id) => mongoEq(String(id))) },
+        invoicedBy: { $in: ownMarkers(invoice) },
+      },
+      { $set: { activeInvoiceId: invoice._id } },
+    );
+    return invoice;
+  } catch (err) {
+    warn('InvoiceLedger', 'Invoice record not recorded; the backfill will find it', {
+      workspaceId, boardId, number: rest.generated?.invoiceNumber, message: err.message,
+    });
+    return null;
+  }
+}
+
 /** The marker strings that name this invoice, in the form the older code writes. */
 function ownMarkers(invoice) {
   if (invoice.source === INVOICE_SOURCE.XERO) return [`${invoice.number}${LEGACY_SUFFIX.XERO}`];

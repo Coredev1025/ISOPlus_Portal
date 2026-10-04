@@ -115,6 +115,13 @@ describe('generateNdisInvoiceGeneratorPdf', () => {
     expect(result.fileUrl).toContain('NDIS-invoices/');
     expect(result.fileUrl).not.toContain('/auto/');
 
+    expect(result.invoiceDate).toBe('2026-08-14T09:00:00.000Z');
+    expect(result.dueDate).toBe('2026-08-28T09:00:00.000Z');
+    // KAN-306: what each item contributed, from the rows the document printed.
+    const billed = Object.values(result.lineAmounts).reduce((sum, amount) => sum + amount, 0);
+    expect(Object.keys(result.lineAmounts)).toEqual([MASTER_ID]);
+    expect(billed).toBeCloseTo(result.invoiceTotal, 2);
+
     const stored = join(root, decodeURIComponent(result.fileUrl.split('/api/local-files/')[1]));
     expect(existsSync(stored)).toBe(true);
     expect(readFileSync(stored).subarray(0, 5).toString()).toBe('%PDF-');

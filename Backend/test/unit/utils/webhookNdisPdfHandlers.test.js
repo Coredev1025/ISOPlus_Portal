@@ -1,4 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import mongoose from 'mongoose';
+import Invoice from '../../../src/models/Invoice.js';
+import { up as buildInvoiceIndexes } from '../../../migrations/1791102300000-invoice-ledger-indexes.js';
+import { resetIndexCheckForTests } from '../../../src/utils/invoiceLedger/issue.js';
 
 // External boundaries only: PDF rendering, the ISO+ HTTP API and S3. The
 // templates in src/assets are read for real, the quote/invoice line maths runs
@@ -424,6 +428,56 @@ describe('processWebhookNdisInvoicePdfItem', () => {
     // the route passes in is no longer written back.
     expect(await storedInvoiceCounter()).toBe(42);
     expect(business.save).not.toHaveBeenCalled();
+  });
+
+  // KAN-306: the same request also records the invoice, behind INVOICE_LEDGER_WRITE.
+  describe('the invoice record', () => {
+    const saved = process.env.INVOICE_LEDGER_WRITE;
+    afterEach(() => {
+      if (saved === undefined) delete process.env.INVOICE_LEDGER_WRITE; else process.env.INVOICE_LEDGER_WRITE = saved;
+    });
+
+    const run = async () => {
+      isoplus.getNDISMasterPlanReferencedItems.mockResolvedValue(MASTER_PLAN_REFS);
+      buildNdisMasterPlanInvoiceLines.mockResolvedValue(NDIS_LINES);
+      const args = makeHandlerArgs();
+      await processWebhookNdisInvoicePdfItem({ ...args, business: makeBusiness(), item: invoiceItem() });
+      return args;
+    };
+
+    it('is written with the item as its one line and the dates the operator set', async () => {
+      process.env.INVOICE_LEDGER_WRITE = 'on';
+      await buildInvoiceIndexes(mongoose.connection);
+      resetIndexCheckForTests();
+      const args = await run();
+
+      expect(args.handlePDFError).not.toHaveBeenCalled();
+      const invoices = await Invoice.find({ workspaceId: 'ws_1' }).lean();
+      expect(invoices).toHaveLength(1);
+      expect(invoices[0]).toMatchObject({
+        number: 'INV-41', kind: 'ndis', trigger: 'manual', total: 139.62, boardId: 'bd_1',
+        participant: { name: 'Jane Roe' },
+        lines: [{ itemId: 'itm_master_1', amount: 139.62 }],
+      });
+      expect(invoices[0].issuedAt.toISOString()).toBe('2025-03-15T00:00:00.000Z');
+      expect(invoices[0].dueDate.toISOString()).toBe('2025-03-29T00:00:00.000Z');
+    });
+
+    it('is not written with the flag off', async () => {
+      delete process.env.INVOICE_LEDGER_WRITE;
+      await run();
+      expect(await Invoice.countDocuments({ workspaceId: 'ws_1' })).toBe(0);
+    });
+
+    it('does not fail the request when it cannot be written', async () => {
+      process.env.INVOICE_LEDGER_WRITE = 'on';
+      await Invoice.collection.dropIndexes();
+      resetIndexCheckForTests();
+      const args = await run();
+
+      expect(args.handlePDFError).not.toHaveBeenCalled();
+      expect(args.saveInvoiceNumber).toHaveBeenCalled();
+    });
   });
 
   it('builds the client block from the stored participant profile when one exists', async () => {

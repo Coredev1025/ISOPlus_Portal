@@ -17,6 +17,8 @@ import { processWebhookNdisQuotePdfItem, processWebhookNdisInvoicePdfItem } from
 import { handleParticipantTaxInvoiceRoute } from '../utils/webhookParticipantTaxPdfHelpers.js';
 import { generateNdisInvoiceGeneratorPdf } from '../services/automation/ndisInvoiceGeneratorPdf.js';
 import { recordPdfLinks } from '../services/automation/generateDocuments.js';
+import { recordIssuedInvoice } from '../utils/invoiceLedger/issue.js';
+import { INVOICE_KIND, INVOICE_TRIGGER } from '../constants/invoiceLedger.js';
 import { PDFLINK_TYPE_NDIS_INVOICE } from '../constants/automation.js';
 import { parseInvoiceGeneratorMasterItemIds } from '../utils/xeroNdisRouteHandlers.js';
 import {
@@ -1417,6 +1419,21 @@ async function processWebhookInvoiceItem(req, res, workspaceId, boardId, busines
     // KAN-294: stored and written back as issued, with no "(ISO+™)" suffix.
     await setGeneratedField(workspaceId, boardId, item.id, invoiceNumber);
     await saveInvoiceNumber(workspaceId, boardId, item.id, invoiceNumber, 'PDF', fileUrl);
+    // KAN-306: the invoice record, behind INVOICE_LEDGER_WRITE. Never throws.
+    await recordIssuedInvoice({
+        workspaceId,
+        boardId,
+        itemIds: [item.id],
+        generated: { invoiceNumber, fileUrl, invoiceTotal: Number(total) },
+        kind: INVOICE_KIND.JOB,
+        participant: { name: contactValues.client || 'Client' },
+        trigger: INVOICE_TRIGGER.MANUAL,
+        lineAmounts: { [item.id]: Number(total) },
+        // The operator's own values, with their zone: `invoiceDate` above has it stripped
+        // for the PDF, and a zoneless string reads differently on different servers.
+        invoiceDate: invoiceValues['Issue Date'] || undefined,
+        dueDate: invoiceValues['Due Date'] || undefined,
+    });
 }
 
 router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
@@ -1736,6 +1753,19 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
             participant: req.body?.participantName,
             pdfUrl: result.fileUrl,
             type: PDFLINK_TYPE_NDIS_INVOICE,
+        });
+        // KAN-306: the invoice record, behind INVOICE_LEDGER_WRITE. Never throws.
+        await recordIssuedInvoice({
+            workspaceId,
+            boardId,
+            itemIds: parseInvoiceGeneratorMasterItemIds(req.body),
+            generated: result,
+            kind: INVOICE_KIND.NDIS,
+            participant: { name: req.body?.participantName || 'Participant' },
+            trigger: INVOICE_TRIGGER.MANUAL,
+            lineAmounts: result.lineAmounts,
+            invoiceDate: req.body?.invoiceDate || undefined,
+            dueDate: req.body?.dueDate || undefined,
         });
         return res.json({
             invoiceNumber: result.invoiceNumber,

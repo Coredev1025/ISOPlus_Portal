@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 
 // The generator itself is the boundary here: it renders a PDF and uploads it to
@@ -12,6 +12,11 @@ const { generateNdisInvoiceGeneratorPdf } = await import(
 );
 const { createApp } = await import('../../src/app.js');
 const PDFLink = (await import('../../src/models/PDFLink.js')).default;
+const Invoice = (await import('../../src/models/Invoice.js')).default;
+const Item = (await import('../../src/models/Item.js')).default;
+const mongoose = (await import('mongoose')).default;
+const { up: buildInvoiceIndexes } = await import('../../migrations/1791102300000-invoice-ledger-indexes.js');
+const { resetIndexCheckForTests } = await import('../../src/utils/invoiceLedger/issue.js');
 
 const app = createApp();
 const WORKSPACE = '55369';
@@ -25,6 +30,7 @@ beforeEach(async () => {
     invoiceTotal: 12393.3,
     itemCount: 2,
     lineCount: 7,
+    lineAmounts: { 'shift-aug': 5000.3, 'shift-sep': 7393 },
   });
 });
 
@@ -106,5 +112,87 @@ describe('an invoice raised from the Invoice Generator', () => {
     await post();
 
     expect(await PDFLink.countDocuments({ workspaceId: WORKSPACE })).toBe(0);
+  });
+});
+
+/**
+ * KAN-306: with INVOICE_LEDGER_WRITE on, the same request also records the invoice
+ * (one document, its lines the amounts the generator rendered). Off, nothing new.
+ */
+describe('the invoice record (INVOICE_LEDGER_WRITE)', () => {
+  // The number the portal writes since KAN-294, with no suffix, as marker and as the generator's result.
+  beforeEach(() => {
+    generateNdisInvoiceGeneratorPdf.mockResolvedValue({
+      invoiceNumber: 'INV-1210',
+      fileUrl: 'https://s3.example/inv-1210.pdf',
+      invoiceTotal: 12393.3,
+      itemCount: 2,
+      lineCount: 7,
+      lineAmounts: { 'shift-aug': 5000.3, 'shift-sep': 7393 },
+      invoiceDate: '2026-09-01T00:00:00.000Z',
+      dueDate: '2026-09-15T00:00:00.000Z',
+    });
+  });
+
+  const saved = process.env.INVOICE_LEDGER_WRITE;
+
+  beforeEach(async () => {
+    await Invoice.deleteMany({});
+    await Item.deleteMany({});
+    await Item.insertMany(['shift-aug', 'shift-sep'].map((itemId) => ({
+      workspaceId: WORKSPACE, boardId: BOARD, folderId: 'f', itemId, data: {}, invoicedBy: 'INV-1210',
+    })));
+    await buildInvoiceIndexes(mongoose.connection);
+    resetIndexCheckForTests();
+  });
+
+  afterEach(() => {
+    if (saved === undefined) delete process.env.INVOICE_LEDGER_WRITE; else process.env.INVOICE_LEDGER_WRITE = saved;
+  });
+
+  it('records one manual invoice with the rendered line amounts, and points the items at it', async () => {
+    process.env.INVOICE_LEDGER_WRITE = 'on';
+    await post();
+
+    const invoices = await Invoice.find({ workspaceId: WORKSPACE }).lean();
+    expect(invoices).toHaveLength(1);
+    expect(invoices[0]).toMatchObject({
+      number: 'INV-1210', legacyNumbers: [], kind: 'ndis', trigger: 'manual', total: 12393.3,
+      participant: { name: 'Masoud Test' },
+    });
+    expect(invoices[0].lines).toEqual([{ itemId: 'shift-aug', amount: 5000.3 }, { itemId: 'shift-sep', amount: 7393 }]);
+    expect(invoices[0].issuedAt.toISOString()).toBe('2026-09-01T00:00:00.000Z');
+    expect(invoices[0].dueDate.toISOString()).toBe('2026-09-15T00:00:00.000Z');
+    const rows = await PDFLink.find({ workspaceId: WORKSPACE }).lean();
+    expect(rows.every((r) => String(r.invoiceId) === String(invoices[0]._id))).toBe(true);
+    expect((await Item.find({ workspaceId: WORKSPACE }).lean()).every((i) => String(i.activeInvoiceId) === String(invoices[0]._id))).toBe(true);
+  });
+
+  it('dates the invoice from what the document printed when the request leaves the dates out', async () => {
+    process.env.INVOICE_LEDGER_WRITE = 'on';
+    await post({ invoiceDate: '', dueDate: undefined });
+
+    const [invoice] = await Invoice.find({ workspaceId: WORKSPACE }).lean();
+    expect(invoice.issuedAt.toISOString()).toBe('2026-09-01T00:00:00.000Z');
+    expect(invoice.dueDate.toISOString()).toBe('2026-09-15T00:00:00.000Z');
+  });
+
+  it('writes no invoice with the flag off, and the response is the same', async () => {
+    delete process.env.INVOICE_LEDGER_WRITE;
+    const res = await post();
+
+    expect(res.body).toMatchObject({ invoiceNumber: 'INV-1210', itemCount: 2, lineCount: 7 });
+    expect(await Invoice.countDocuments({})).toBe(0);
+  });
+
+  it('still answers with the invoice when the record cannot be written', async () => {
+    process.env.INVOICE_LEDGER_WRITE = 'on';
+    await Invoice.collection.dropIndexes();
+    resetIndexCheckForTests();
+    const res = await post();
+
+    expect(res.status).toBe(200);
+    expect(res.body.invoiceNumber).toBe('INV-1210');
+    expect(await PDFLink.countDocuments({ workspaceId: WORKSPACE })).toBe(2);
   });
 });

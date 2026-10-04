@@ -26,6 +26,8 @@ import {
 } from '../constants/storage.js';
 import { buildOutputKey } from '../utils/s3OutputKey.js';
 import { claimInvoiceNumber } from '../utils/documentNumberAllocator.js';
+import { recordIssuedInvoice } from './invoiceLedger/issue.js';
+import { INVOICE_KIND, INVOICE_TRIGGER } from '../constants/invoiceLedger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -284,6 +286,21 @@ export async function processWebhookNdisInvoicePdfItem({
     // "(ISO+™)" suffix. Older invoices keep theirs and are still read as before.
     await setGeneratedField(workspaceId, boardId, item.id, invoiceNumber);
     await saveInvoiceNumber(workspaceId, boardId, item.id, invoiceNumber, 'PDF', fileUrl);
+    // KAN-306: the invoice record, behind INVOICE_LEDGER_WRITE. Never throws.
+    await recordIssuedInvoice({
+      workspaceId,
+      boardId,
+      itemIds: [item.id],
+      generated: { invoiceNumber, fileUrl, invoiceTotal: Number(total) },
+      kind: INVOICE_KIND.NDIS,
+      participant: { name: clientDetails['Participant Name'] || 'Participant' },
+      trigger: INVOICE_TRIGGER.MANUAL,
+      lineAmounts: { [item.id]: Number(total) },
+      // The operator's own values, with their zone: `invoiceDate` above has it stripped
+      // for the PDF, and a zoneless string reads differently on different servers.
+      invoiceDate: invoiceValues['Invoice Date'] || undefined,
+      dueDate: invoiceValues['Due Date'] || undefined,
+    });
   } catch (err) {
     await handlePDFError(err, workspaceId, boardId, item.id, 'Generate PDF NDIS Invoice', req, res);
   }

@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { lineAmountsFrom } from '../../utils/invoiceLedger/lineAmounts.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -156,6 +157,11 @@ export async function generateNdisInvoiceGeneratorPdf({
     invoiceNumber,
     fileUrl,
     invoiceTotal,
+    // The dates the document printed, with their zone (KAN-306).
+    invoiceDate: invoiceDateRaw,
+    dueDate: dueDateInput || dueDate,
+    // What each item contributed, from the rows the document printed (KAN-306).
+    lineAmounts: lineAmountsFrom(allRows, 'sourceItemId', (row) => row.totalAmount),
     itemCount: masterItems.length,
     lineCount: allRows.length,
   };
