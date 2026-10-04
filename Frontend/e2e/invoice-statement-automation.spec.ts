@@ -68,24 +68,36 @@ function invoiceBlock(page: Page) {
   return page.getByRole("region", { name: /invoice automation/i });
 }
 
+/** The Run At field: the button that shows the time and opens the spinner. */
+function runAtField(block: ReturnType<typeof invoiceBlock>) {
+  return block.getByRole("button", { name: /^run at$/i });
+}
+
 /**
- * Set Run At through the three selects KAN-263 replaced the native time input
- * with. Each is chosen by its own aria-label, because "Run At" names the row
- * rather than any one control.
+ * Set Run At the way a user does (KAN-263): open the ISO+-style spinner, click
+ * each column's up arrow until it shows the wanted value, then press Select.
+ * Arrows wrap, so at most 59 clicks reach any minute.
  */
 async function setRunAt(
   page: Page,
   block: ReturnType<typeof invoiceBlock>,
   { hour, minute, meridiem }: { hour: string; minute: string; meridiem: "AM" | "PM" },
 ) {
-  for (const [label, option] of [
-    [/run at hour/i, hour],
-    [/run at minute/i, minute],
-    [/run at am or pm/i, meridiem],
+  await runAtField(block).click();
+  const panel = page.getByRole("dialog", { name: /choose the run at time/i });
+  for (const [label, wanted] of [
+    ["Hour", hour],
+    ["Minute", minute],
+    ["AM or PM", meridiem],
   ] as const) {
-    await block.getByRole("combobox", { name: label }).click();
-    await page.getByRole("option", { name: option, exact: true }).click();
+    const column = panel.getByRole("spinbutton", { name: label, exact: true });
+    for (let click = 0; click < 60 && (await column.textContent())?.trim() !== wanted; click += 1) {
+      await panel.getByRole("button", { name: `Increase ${label.toLowerCase()}` }).click();
+    }
+    await expect(column).toHaveText(wanted);
   }
+  await panel.getByRole("button", { name: "Select", exact: true }).click();
+  await expect(panel).toHaveCount(0);
 }
 
 /** The statement block, which is configured entirely independently. */
@@ -634,12 +646,7 @@ test.describe("Invoice & Statement Automation", () => {
       await page.reload();
 
       const reloaded = invoiceBlock(page);
-      await expect(
-        reloaded.getByRole("combobox", { name: /run at hour/i }),
-      ).toHaveText("9");
-      await expect(
-        reloaded.getByRole("combobox", { name: /run at am or pm/i }),
-      ).toHaveText("AM");
+      await expect(runAtField(reloaded)).toHaveText("9:00 AM");
 
       // The invariant, independent of the date the scheduler picks: every run of
       // this schedule happens at 09:00 in its own zone, so the time half of Next
@@ -828,8 +835,9 @@ test.describe("email template defaults", () => {
  * KAN-263 — the Run At picker.
  *
  * The native `<input type="time">` rendered a different widget in every
- * browser and showed AM/PM only when the reader's locale said so. It is now
- * three selects, matching the controls beside it, saying AM/PM outright. The
+ * browser and showed AM/PM only when the reader's locale said so. The client
+ * asked for the ISO+ "Scheduled Shift Start Date & Time" spinner instead —
+ * hour : minute with up/down arrows, Cancel and Select — with AM/PM added. The
  * stored value is unchanged — HH:mm on a 24-hour clock — which is the part
  * that must survive.
  */
@@ -839,14 +847,18 @@ test.describe("the Run At picker", () => {
     await resetAutomationSettings(page);
   });
 
-  test("offers hour, minute and AM/PM rather than a native time input", async ({ page }) => {
+  test("opens an hour / minute / AM-PM spinner rather than a native time input", async ({ page }) => {
     await page.goto(AUTOMATION_URL);
     const invoice = invoiceBlock(page);
     await invoice.getByRole("switch").click();
 
-    await expect(invoice.getByRole("combobox", { name: /run at hour/i })).toBeVisible();
-    await expect(invoice.getByRole("combobox", { name: /run at minute/i })).toBeVisible();
-    await expect(invoice.getByRole("combobox", { name: /run at am or pm/i })).toBeVisible();
+    await runAtField(invoice).click();
+    const panel = page.getByRole("dialog", { name: /choose the run at time/i });
+    await expect(panel.getByRole("spinbutton", { name: "Hour", exact: true })).toBeVisible();
+    await expect(panel.getByRole("spinbutton", { name: "Minute", exact: true })).toBeVisible();
+    await expect(panel.getByRole("spinbutton", { name: "AM or PM", exact: true })).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Cancel", exact: true })).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Select", exact: true })).toBeVisible();
 
     // The control the client called old-school is gone, not merely hidden.
     await expect(invoice.locator('input[type="time"]')).toHaveCount(0);
@@ -864,9 +876,7 @@ test.describe("the Run At picker", () => {
     await page.reload();
 
     const reloaded = invoiceBlock(page);
-    await expect(reloaded.getByRole("combobox", { name: /run at hour/i })).toHaveText("5");
-    await expect(reloaded.getByRole("combobox", { name: /run at minute/i })).toHaveText("30");
-    await expect(reloaded.getByRole("combobox", { name: /run at am or pm/i })).toHaveText("PM");
+    await expect(runAtField(reloaded)).toHaveText("5:30 PM");
 
     // The half that proves the conversion: 5:30 PM must have been stored as
     // 17:30, and Next Run is computed from the stored value.
@@ -887,8 +897,23 @@ test.describe("the Run At picker", () => {
     await page.reload();
 
     const reloaded = invoiceBlock(page);
-    await expect(reloaded.getByRole("combobox", { name: /run at hour/i })).toHaveText("12");
-    await expect(reloaded.getByRole("combobox", { name: /run at am or pm/i })).toHaveText("AM");
+    await expect(runAtField(reloaded)).toHaveText("12:00 AM");
     await expect(reloaded.getByLabel(/next run/i)).toHaveValue(/12:00 AM$/);
+  });
+
+  // An abandoned panel must not retime a client's automation.
+  test("Cancel leaves Run At as it was", async ({ page }) => {
+    await page.goto(AUTOMATION_URL);
+    const invoice = invoiceBlock(page);
+    await invoice.getByRole("switch").click();
+    const before = (await runAtField(invoice).textContent())?.trim();
+
+    await runAtField(invoice).click();
+    const panel = page.getByRole("dialog", { name: /choose the run at time/i });
+    await panel.getByRole("button", { name: "Increase hour" }).click();
+    await panel.getByRole("button", { name: "Cancel", exact: true }).click();
+
+    await expect(panel).toHaveCount(0);
+    await expect(runAtField(invoice)).toHaveText(before ?? "");
   });
 });

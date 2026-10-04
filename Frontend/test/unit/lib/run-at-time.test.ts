@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { parseRunAt, toRunAt, HOUR_OPTIONS, MINUTE_OPTIONS, MERIDIEM_OPTIONS } from "@/lib/run-at-time";
+import { parseRunAt, toRunAt, stepRunAt, type RunAtParts } from "@/lib/run-at-time";
 
 /**
- * KAN-263. The picker is three dropdowns, but the stored value is unchanged:
+ * KAN-263. The picker is an hour / minute / AM-PM spinner, but the stored value is unchanged:
  * `HH:mm` on a 24-hour clock, which is what RUN_AT_PATTERN validates and what
  * the scheduler reads. These two functions are the whole conversion, so the
  * midnight and noon corners live or die here.
@@ -76,23 +76,44 @@ describe("the round trip", () => {
   });
 });
 
-describe("the options offered", () => {
-  it("offers 1 to 12, not 0 to 23", () => {
-    expect(HOUR_OPTIONS.map((o) => o.value)).toEqual(
-      ["12", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"],
-    );
+describe("stepRunAt", () => {
+  const at = (hour: string, minute: string, meridiem: RunAtParts["meridiem"]): RunAtParts =>
+    ({ hour, minute, meridiem });
+
+  it("steps the hour up and down by one", () => {
+    expect(stepRunAt(at("9", "00", "AM"), "hour", 1)).toEqual(at("10", "00", "AM"));
+    expect(stepRunAt(at("9", "00", "AM"), "hour", -1)).toEqual(at("8", "00", "AM"));
   });
 
-  // All 60, not 5-minute steps: the native input this replaces accepted any
-  // minute, and a workspace already on 09:07 must not be silently moved.
-  it("offers every minute, so no stored value becomes unreachable", () => {
-    expect(MINUTE_OPTIONS).toHaveLength(60);
-    expect(MINUTE_OPTIONS[0]).toEqual({ value: "00", label: "00" });
-    expect(MINUTE_OPTIONS[7]).toEqual({ value: "07", label: "07" });
-    expect(MINUTE_OPTIONS[59]).toEqual({ value: "59", label: "59" });
+  // A clock face goes 11, 12, 1 — never 0 and never 13.
+  it("wraps the hour round the clock face", () => {
+    expect(stepRunAt(at("11", "00", "AM"), "hour", 1)).toEqual(at("12", "00", "AM"));
+    expect(stepRunAt(at("12", "00", "AM"), "hour", 1)).toEqual(at("1", "00", "AM"));
+    expect(stepRunAt(at("1", "00", "AM"), "hour", -1)).toEqual(at("12", "00", "AM"));
   });
 
-  it("offers AM and PM, which is what the client asked for", () => {
-    expect(MERIDIEM_OPTIONS.map((o) => o.value)).toEqual(["AM", "PM"]);
+  // Every minute is reachable: a workspace already on 00:27 must not be moved
+  // to a five-minute step by the next save.
+  it("steps the minute by one, padded", () => {
+    expect(stepRunAt(at("9", "07", "AM"), "minute", 1)).toEqual(at("9", "08", "AM"));
+    expect(stepRunAt(at("9", "07", "AM"), "minute", -1)).toEqual(at("9", "06", "AM"));
+  });
+
+  // Wrapping the minute does not carry into the hour: each column spins on its
+  // own, like the ISO+ picker this copies.
+  it("wraps the minute without touching the hour", () => {
+    expect(stepRunAt(at("9", "59", "AM"), "minute", 1)).toEqual(at("9", "00", "AM"));
+    expect(stepRunAt(at("9", "00", "AM"), "minute", -1)).toEqual(at("9", "59", "AM"));
+  });
+
+  it("flips AM and PM in either direction", () => {
+    expect(stepRunAt(at("9", "00", "AM"), "meridiem", 1)).toEqual(at("9", "00", "PM"));
+    expect(stepRunAt(at("9", "00", "PM"), "meridiem", -1)).toEqual(at("9", "00", "AM"));
+  });
+
+  it("does not change the parts it was given", () => {
+    const parts = at("9", "00", "AM");
+    stepRunAt(parts, "hour", 1);
+    expect(parts).toEqual(at("9", "00", "AM"));
   });
 });
