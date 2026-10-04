@@ -1,7 +1,7 @@
 import Invoice from '../../models/Invoice.js';
 import Item from '../../models/Item.js';
 import PDFLink from '../../models/PDFLink.js';
-import { INVOICE_STATUS } from '../../constants/invoiceLedger.js';
+import { INVOICE_KIND, INVOICE_STATUS } from '../../constants/invoiceLedger.js';
 import { mongoEq } from '../securityHelpers.js';
 import { numberForms, parseInvoiceNumber } from './numbers.js';
 
@@ -33,11 +33,20 @@ export async function byNumber(workspaceId, rawNumber) {
   }).sort({ duplicateOrdinal: 1 }).lean();
 }
 
-/** Of the issued invoices that list an item, the one it points at, else the latest. */
-function chooseActive(candidates, activeInvoiceId) {
+/**
+ * Of the issued invoices that list an item: the one it points at, else the one its marker
+ * names (design 4.4: for existing data the active invoice is the one the marker names),
+ * else the latest.
+ */
+function chooseActive(candidates, activeInvoiceId, marker) {
   if (activeInvoiceId) {
     const pointed = candidates.find((inv) => String(inv._id) === String(activeInvoiceId));
     if (pointed) return pointed;
+  }
+  const forms = numberForms(marker);
+  if (forms.length > 0) {
+    const named = candidates.find((inv) => forms.includes(inv.number) || (inv.legacyNumbers || []).some((n) => forms.includes(n)));
+    if (named) return named;
   }
   return [...candidates].sort((a, b) => new Date(b.issuedAt || 0) - new Date(a.issuedAt || 0))[0];
 }
@@ -56,13 +65,13 @@ export async function activeForItems(workspaceId, itemIds) {
   }).lean();
   const pointers = await Item.find({
     workspaceId: workspace, itemId: eqAll(ids),
-  }).select('itemId activeInvoiceId').lean();
-  const pointerOf = new Map(pointers.map((i) => [i.itemId, i.activeInvoiceId]));
+  }).select('itemId activeInvoiceId invoicedBy').lean();
+  const pointerOf = new Map(pointers.map((i) => [i.itemId, i]));
 
   const result = new Map();
   for (const id of ids) {
     const candidates = invoices.filter((inv) => inv.lines.some((l) => l.itemId === id));
-    if (candidates.length > 0) result.set(id, chooseActive(candidates, pointerOf.get(id)));
+    if (candidates.length > 0) result.set(id, chooseActive(candidates, pointerOf.get(id)?.activeInvoiceId, pointerOf.get(id)?.invoicedBy));
   }
   return result;
 }
@@ -77,6 +86,8 @@ export async function forParticipant({ workspaceId, boardId, participant }) {
     boardId: mongoEq(String(boardId)),
     'participant.name': mongoEq(String(participant)),
     status: INVOICE_STATUS.ISSUED,
+    // The statement is for NDIS and Age Care invoices, as the old document types were.
+    kind: { $in: [INVOICE_KIND.NDIS, INVOICE_KIND.AGE_CARE] },
   }).sort({ issuedAt: 1, createdAt: 1 }).lean();
 }
 

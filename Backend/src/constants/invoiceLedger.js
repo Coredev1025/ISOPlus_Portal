@@ -97,3 +97,31 @@ export const LEGACY_SUFFIX = {
  * Touchpoints: utils/invoiceLedger/issue.js.
  */
 export const ATTEMPT_TOKEN_SEPARATOR = '#';
+
+/**
+ * The classes a difference between the old stores and the invoice record may have when the
+ * statement is built from both (shadow mode, KAN-309). Known classes are the expected
+ * changes of design section 6.6; the unexpected ones stop the switch to `on`.
+ * Touchpoints: utils/invoiceLedger/shadow.js.
+ */
+export const SHADOW_CLASS = {
+  LEDGER_ONLY_INVOICE: 'ledger_only_invoice',
+  PAYMENT_NEWLY_APPLIED: 'payment_newly_applied',
+  UNAPPLIED_PAYMENT: 'unapplied_payment',
+  LEGACY_ONLY_INVOICE: 'legacy_only_invoice',
+  TOTAL_DIFFERS: 'total_differs',
+  DATE_DIFFERS: 'date_differs',
+  PAYMENT_NO_LONGER_APPLIED: 'payment_no_longer_applied',
+  DUPLICATE_NUMBER: 'duplicate_number',
+  DUE_DATE_DIFFERS: 'due_date_differs',
+  CLOSING_DIFFERS: 'closing_differs',
+};
+
+/** The subset of SHADOW_CLASS that is never expected. Touchpoints: utils/invoiceLedger/shadow.js. */
+export const UNEXPECTED_SHADOW_CLASSES = [
+  SHADOW_CLASS.LEGACY_ONLY_INVOICE,
+  SHADOW_CLASS.TOTAL_DIFFERS,
+  SHADOW_CLASS.DATE_DIFFERS,
+  SHADOW_CLASS.PAYMENT_NO_LONGER_APPLIED,
+  SHADOW_CLASS.CLOSING_DIFFERS,
+];

@@ -43,6 +43,12 @@ import { findParticipantProfile } from '../email/recipients.js';
 import { getS3FileUrl, uploadFileToS3 } from '../../utils/uploadS3.js';
 import { mongoEq } from '../../utils/securityHelpers.js';
 import { info, warn } from '../../utils/logger.js';
+import { READ_MODE, UNEXPECTED_SHADOW_CLASSES } from '../../constants/invoiceLedger.js';
+import { invoiceLedgerReadMode } from '../../utils/invoiceLedger/flags.js';
+import { activeForItems, forParticipant } from '../../utils/invoiceLedger/read.js';
+import { invoicesFromLedger, itemsOnActiveInvoices, unusableInvoices } from '../../utils/invoiceLedger/statementSource.js';
+import { withoutDeletedDocuments } from '../../utils/invoiceLedger/deletedDocuments.js';
+import { compareStatementInputs } from '../../utils/invoiceLedger/shadow.js';
 
 /** The itemId a statement of account is filed under, distinct from the budget statement's. */
 export function statementOfAccountItemId(boardId, participant) {
@@ -123,7 +129,7 @@ async function participantPaymentItemsByProfile(workspaceId, boardId, participan
     // matched here rather than resolved in application code so the lookup
     // stays a single indexed-scope query instead of a full board scan.
     $or: [{ [profileField]: profileId }, { [`${profileField}.id`]: profileId }],
-  }).select('data invoicedBy').lean();
+  }).select('itemId data invoicedBy').lean();
 }
 
 /**
@@ -145,10 +151,82 @@ async function participantPaymentItems(workspaceId, boardId, participant, nameFi
       workspaceId: mongoEq(String(workspaceId)),
       boardId: mongoEq(String(boardId)),
       [`data.${nameField}`]: mongoEq(String(participant)),
-    }).select('data invoicedBy').lean(),
+    }).select('itemId data invoicedBy').lean(),
     participantPaymentItemsByProfile(workspaceId, boardId, participant),
   ]);
   return uniqBy([...byText, ...byProfile], (item) => String(item._id));
+}
+
+/**
+ * The statement's inputs from the invoice record (KAN-309): its invoices, and the payment
+ * records with the number of the invoice each is currently on. `items` are the records
+ * already read for this participant.
+ */
+async function inputsFromLedger({ workspaceId, boardId, participant, items }) {
+  const [listed, active] = await Promise.all([
+    forParticipant({ workspaceId, boardId, participant }),
+    activeForItems(workspaceId, items.map((item) => item.itemId)),
+  ]);
+  // The same documents the old statement uses: one whose documents were all deleted is out.
+  const { kept, excluded } = await withoutDeletedDocuments(workspaceId, boardId, listed);
+  const unusable = unusableInvoices(kept);
+  if (unusable.length > 0 || excluded.length > 0) {
+    warn('InvoiceLedger', 'Invoices left out of the statement', {
+      workspaceId, boardId, participant,
+      withoutTotalOrDate: unusable.map((inv) => inv.number),
+      deletedDocuments: excluded.map((inv) => inv.number),
+    });
+  }
+  return { invoices: invoicesFromLedger(kept), items: itemsOnActiveInvoices(items, active) };
+}
+
+/** Shadow mode: build the statement both ways and log every difference with its class. */
+async function logShadowDifferences({
+  legacy, scope, period, timezone, asAt, periodKey,
+}) {
+  try {
+    const ledger = await inputsFromLedger({ ...scope, items: legacy.items });
+    const result = compareStatementInputs({
+      legacy, ledger, period, asAt, timezone,
+    });
+    const context = {
+      workspaceId: scope.workspaceId, boardId: scope.boardId, participant: scope.participant, periodKey,
+    };
+    // Expected classes are informational; an unexpected one warns, which is what the gate watches.
+    for (const difference of result.differences) {
+      const log = UNEXPECTED_SHADOW_CLASSES.includes(difference.class) ? warn : info;
+      log('InvoiceLedger', 'Shadow difference', { ...difference, ...context });
+    }
+    info('InvoiceLedger', 'Shadow summary', {
+      ...context, differences: result.differences.length, unexpected: result.unexpected, closing: result.closing,
+    });
+  } catch (err) {
+    warn('InvoiceLedger', 'Statement could not be compared with the invoice record', {
+      workspaceId: scope.workspaceId, boardId: scope.boardId, participant: scope.participant, message: err.message,
+    });
+  }
+}
+
+/**
+ * The invoices and payment records the statement is built from, by `INVOICE_LEDGER_READ`:
+ * `off` the old stores, `shadow` the old stores with the differences from the invoice
+ * record logged, `on` the invoice record.
+ */
+async function statementInputs({
+  scope, nameField, period, timezone, asAt, periodKey,
+}) {
+  const { workspaceId, boardId, participant } = scope;
+  const mode = invoiceLedgerReadMode();
+  const items = await participantPaymentItems(workspaceId, boardId, participant, nameField);
+  if (mode === READ_MODE.ON) return inputsFromLedger({ ...scope, items });
+
+  const legacy = { invoices: await participantInvoices(workspaceId, boardId, participant), items };
+  if (mode === READ_MODE.SHADOW) {
+    await logShadowDifferences({
+      legacy, scope, period, timezone, asAt, periodKey,
+    });
+  }
+  return legacy;
 }
 
 /**
@@ -207,8 +285,10 @@ async function uploadStatement(pdfBytes, { workspaceId, boardId, participant, pe
 export async function generateStatementOfAccount({
   workspaceId, boardId, participant, period, timezone, periodKey, claimStatementNumber, nameField,
 }) {
-  const invoices = await participantInvoices(workspaceId, boardId, participant);
-  const items = await participantPaymentItems(workspaceId, boardId, participant, nameField);
+  const asAt = new Date();
+  const { invoices, items } = await statementInputs({
+    scope: { workspaceId, boardId, participant }, nameField, period, timezone, asAt, periodKey,
+  });
   // KAN-274: every invoice and payment ever recorded now becomes its own line
   // item (see chargeRows/paymentRows in statementLedger.js), not only this
   // period's — so there is nothing left for an opening balance to carry
@@ -220,7 +300,7 @@ export async function generateStatementOfAccount({
   // an invoice generated moments — or cycles — before it, rather than only
   // ever catching up one statement late.
   const { ledger, ageing, unmatchedPayments } = buildStatementLedger({
-    invoices, items, period, openingBalance: 0, timezone, asAt: new Date(),
+    invoices, items, period, openingBalance: 0, timezone, asAt,
   });
 
   // KAN-286: money recorded against an invoice this participant has no record

@@ -1,5 +1,5 @@
 import {
-  describe, it, expect, vi, beforeEach,
+  describe, it, expect, vi, beforeEach, afterEach,
 } from 'vitest';
 
 /**
@@ -126,7 +126,15 @@ async function seed() {
   });
 }
 
+// These pin the old-stores behaviour whatever Backend/.env says (KAN-309).
+const savedReadMode = process.env.INVOICE_LEDGER_READ;
+
+afterEach(() => {
+  if (savedReadMode === undefined) delete process.env.INVOICE_LEDGER_READ; else process.env.INVOICE_LEDGER_READ = savedReadMode;
+});
+
 beforeEach(async () => {
+  delete process.env.INVOICE_LEDGER_READ;
   uploadedKeys.length = 0;
   renderedInputs.length = 0;
   // The store is read for the letterhead on both documents, so the call log

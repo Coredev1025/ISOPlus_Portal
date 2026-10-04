@@ -366,6 +366,7 @@ The backfill itself changes nothing a customer sees: until the read flag is swit
 | **Invoices that are invisible today appear as charges** | Marker-only and log-only invoices (INV-3, INV-6 on dev; **all 31 production invoices**), manual Age Care and Xero-only invoices now have an invoice record | `marker-only` and `log-only` counts and totals |
 | **Payments that are dropped today are applied** | Their invoice is now listed, so the payment matches | The statement logs already count dropped payments as unmatched |
 | **An "unapplied payments" line appears** | A payment that still cannot be placed is shown, not dropped | Dry-run category counts |
+| **Due dates and ageing follow the invoice** (added in KAN-309) | The old statement always printed and aged on issue plus fourteen days. The invoice record keeps the due date the schedule (issue plus the business's receivable terms) or the operator set, and the statement uses it. An invoice with a different due date moves between ageing buckets and shows a different Due Date | The `due_date_differs` shadow class |
 | Statements for invoices that already agreed do not change | Same board, same participant name, same invoices | The shadow comparison (section 7) |
 
 This is a visible change to customer statements, so D3 asks for it to be accepted, and for a decision on telling clients.
@@ -560,3 +561,24 @@ Where the implementation departed from this document, and why.
   invoice that already carries a different Xero number is not overwritten
   (`xero-already-attached`). Items with no marker at all (from before markers existed) are not
   caught by the second guard and are the backfill's job.
+* **Readers are split by consumer (KAN-309).** The statement moves first (4a), then generator
+  lists, exports and the pdf-link lookup (4b), then the selection guard (4c). The statement
+  keeps `buildStatementLedger` unchanged: the invoice record is adapted into the shapes it
+  already takes (`utils/invoiceLedger/statementSource.js`), and each payment record takes the
+  number of the invoice it is on, so a payment is matched by the record, never by number text.
+  Shadow mode builds the statement both ways and logs each difference with a class
+  (`utils/invoiceLedger/shadow.js`); due dates are not compared, because the invoice record
+  keeps the date the operator set while the old path always derived issue plus fourteen days.
+  The printed "unapplied payments" line is not built yet: a payment on a record that is on no
+  invoice is still left off and logged, as before.
+* **Statement reader hardening from review (KAN-309).** Each payment record carries the record
+  id of its invoice and each invoice a `key` (`statementLedger.js` uses `key ?? number`), so two
+  invoices that print one number are told apart and each payment lands on its own. An invoice
+  whose documents are all deleted is left out, as the old statement does, because deleting a
+  document does not void the record; an invoice with no total or issue date is left out and
+  reported; job invoices are not statement invoices. The active-invoice fallback now prefers
+  the invoice the item's marker names (4.4) over the latest. The shadow comparator groups by
+  number as a multiset, compares days in the statement's timezone, and adds the classes
+  `duplicate_number` and `due_date_differs` (known) and `closing_differs` (unexpected: the
+  closing balance differs with nothing to explain it). Known classes log at info with a
+  per-participant summary; unexpected ones warn.

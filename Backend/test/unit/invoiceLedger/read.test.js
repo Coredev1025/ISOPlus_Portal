@@ -105,6 +105,23 @@ describe('activeForItems', () => {
     expect((await activeForItems(WS, ['a'])).get('a').number).toBe('INV-2');
   });
 
+  // Section 4.4: for existing data the active invoice is the one the marker names.
+  it('with no pointer, prefers the invoice the item marker names over the latest', async () => {
+    await make('INV-1', { lines: [{ itemId: 'a', amount: 1 }], issuedAt: new Date('2026-07-01Z') });
+    await make('INV-2', { lines: [{ itemId: 'a', amount: 1 }], issuedAt: new Date('2026-07-10Z') });
+    await item('a', { invoicedBy: 'INV-1 (ISO+™)' });
+
+    expect((await activeForItems(WS, ['a'])).get('a').number).toBe('INV-1');
+  });
+
+  it('a marker that names no listed invoice falls back to the latest', async () => {
+    await make('INV-1', { lines: [{ itemId: 'a', amount: 1 }], issuedAt: new Date('2026-07-01Z') });
+    await make('INV-2', { lines: [{ itemId: 'a', amount: 1 }], issuedAt: new Date('2026-07-10Z') });
+    await item('a', { invoicedBy: 'INV-99' });
+
+    expect((await activeForItems(WS, ['a'])).get('a').number).toBe('INV-2');
+  });
+
   it('ignores a void invoice', async () => {
     await make('INV-1', { lines: [{ itemId: 'a', amount: 1 }], status: 'void' });
     expect((await activeForItems(WS, ['a'])).size).toBe(0);
@@ -116,6 +133,14 @@ describe('activeForItems', () => {
 });
 
 describe('forParticipant', () => {
+  it('leaves out job invoices: the statement is for NDIS and Age Care only', async () => {
+    await make('INV-1');
+    await make('INV-2', { kind: 'job' });
+    await make('INV-3', { kind: 'age_care', lowCat: false });
+    const found = await forParticipant({ workspaceId: WS, boardId: BOARD, participant: 'Jane Smith' });
+    expect(found.map((i) => i.number).sort()).toEqual(['INV-1', 'INV-3']);
+  });
+
   it('returns the issued invoices for a participant on a board, oldest first', async () => {
     await make('INV-2', { issuedAt: new Date('2026-08-01Z') });
     await make('INV-1', { issuedAt: new Date('2026-07-01Z') });

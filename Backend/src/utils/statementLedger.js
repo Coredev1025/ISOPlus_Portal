@@ -93,11 +93,25 @@ export function collectPayments(items) {
     if (!invoiceNumber) continue;
     const amount = roundMoney(parseAmount(readField(item, STATEMENT_AMOUNT_RECEIVED)));
     if (amount === 0) continue;
-    const payment = { invoiceNumber, amount, date: readField(item, STATEMENT_PAYMENT_DATE) };
+    const payment = {
+      invoiceNumber,
+      // The record id of the invoice, when the invoice record supplied one (KAN-309).
+      ...(item?.invoiceKey ? { invoiceKey: item.invoiceKey } : {}),
+      amount,
+      date: readField(item, STATEMENT_PAYMENT_DATE),
+    };
     if (isDated(payment)) payments.push(payment);
   }
   return payments;
 }
+
+/**
+ * What ties a payment to an invoice: the invoice's record id when the invoice record
+ * supplied one (`key` on the invoice, `invoiceKey` on the payment, KAN-309), else the
+ * printed number. Two invoices can print one number; their keys differ.
+ */
+const keyOfInvoice = (inv) => inv.key ?? inv.invoiceNumber;
+const keyOfPayment = (p) => p.invoiceKey ?? p.invoiceNumber;
 
 /**
  * Splits payments into those that refer to an invoice actually on this
@@ -121,11 +135,11 @@ export function collectPayments(items) {
  */
 function splitPaymentsByInvoice(payments, invoices, asAt, tz) {
   const known = new Set(
-    invoices.filter((inv) => raisedBy(inv.createdAt, asAt, tz)).map((inv) => inv.invoiceNumber),
+    invoices.filter((inv) => raisedBy(inv.createdAt, asAt, tz)).map(keyOfInvoice),
   );
   return {
-    matched: payments.filter((p) => known.has(p.invoiceNumber)),
-    unmatched: payments.filter((p) => !known.has(p.invoiceNumber)),
+    matched: payments.filter((p) => known.has(keyOfPayment(p))),
+    unmatched: payments.filter((p) => !known.has(keyOfPayment(p))),
   };
 }
 
@@ -151,9 +165,9 @@ const raisedBy = (value, asAt, tz) => {
   return at <= new Date(asAt).getTime();
 };
 
-const paidAgainst = (payments, invoiceNumber) => roundMoney(
+const paidAgainst = (payments, key) => roundMoney(
   payments
-    .filter((p) => p.invoiceNumber === invoiceNumber)
+    .filter((p) => keyOfPayment(p) === key)
     .reduce((sum, p) => sum + p.amount, 0),
 );
 
@@ -170,8 +184,8 @@ const paidAgainst = (payments, invoiceNumber) => roundMoney(
 function firstOfEachNumber(invoices) {
   const seen = new Set();
   return invoices.map((inv) => {
-    const first = !seen.has(inv.invoiceNumber);
-    seen.add(inv.invoiceNumber);
+    const first = !seen.has(keyOfInvoice(inv));
+    seen.add(keyOfInvoice(inv));
     return first;
   });
 }
@@ -206,7 +220,7 @@ function chargeRows(invoices, payments, asAt, datedPayments, tz) {
       // invoice has none, so the renderer leaves the cell blank.
       dueDate: inv.dueDate,
       charge: roundMoney(parseAmount(inv.invoiceTotal)),
-      payment: takesPayment[index] ? paidAgainst(netted, inv.invoiceNumber) : 0,
+      payment: takesPayment[index] ? paidAgainst(netted, keyOfInvoice(inv)) : 0,
       sequence: index * 2,
     }));
 }
@@ -275,7 +289,7 @@ function outstandingByInvoice(invoices, payments) {
       dueDate: inv.dueDate,
       amount: roundMoney(
         parseAmount(inv.invoiceTotal)
-          - (takesPayment[index] ? paidAgainst(payments, inv.invoiceNumber) : 0),
+          - (takesPayment[index] ? paidAgainst(payments, keyOfInvoice(inv)) : 0),
       ),
     }))
     .filter((entry) => entry.amount !== 0);
