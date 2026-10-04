@@ -63,14 +63,21 @@ note rather than skipping it.
 6. **List environment changes.** New or changed Elastic Beanstalk properties
    (for example `SCHEDULER_API_KEY`, `AUTOMATION_ENABLED`, `EMAIL_FROM`). They
    have to be set in production by hand, and a missing one often fails silently.
-7. **Take a database backup or snapshot and note its time.** How is **(to
+7. **Rehearse on a copy of the production database, run locally.** Restore a
+   copy into its own local database, scrub it, run every pending migration in
+   order with its duration recorded, run the new code against it, and compare
+   what it produces with what the old code produces. Required before any release
+   that carries a migration or touches billing. The procedure, the handling rules
+   (the copy holds real data and may hold live credentials) and the pass criteria
+   are in "Rehearsing on a copy of production" below.
+8. **Take a database backup or snapshot and note its time.** How is **(to
    confirm)**. A migration is effectively irreversible without one.
-8. **Pick the time.** Avoid the scheduled automation slots of the workspaces that
+9. **Pick the time.** Avoid the scheduled automation slots of the workspaces that
    matter most, and avoid starting a deploy while a run is in flight. Slot times
    are per workspace in the `scheduledjobs` collection.
-9. **Name who is doing it and who can roll it back.** Whoever holds the production
+10. **Name who is doing it and who can roll it back.** Whoever holds the production
    database and AWS credentials is **(to confirm)**.
-10. **Record the version currently running**, so rollback has a target:
+11. **Record the version currently running**, so rollback has a target:
 
     ```bash
     aws elasticbeanstalk describe-environments \
@@ -319,7 +326,7 @@ until they have run.
 | `1787097600000-audit-trail-workspace-category-index` | Creates `workspaceId_1_category_1_createdAt_-1` on `audittrails`. | Index build on a large collection. | `down` drops the index. |
 | `1787186180650-pdflink-invoice-period` | Drops and recreates the **unique** partial index `automation_period_item_unique` (the double-billing guard) after the duplicate check. It does not add the period fields themselves; they are optional fields written by automation runs. | It checks for duplicate rows first and refuses to build, with a clear message naming them, if any exist; no index is left behind. If it refuses, the duplicates must be understood, not deleted blindly. | `down` drops the index and removes `periodStart`, `periodEnd`, `invoiceType` and `invoiceTotal` from rows that have them. `periodKey` is left alone. |
 | `1787291724206-disable-portal-board-sync-schedule` | Sets `enabled: false` on the old EventBridge-era `scheduledjobs` row with `kind: 'board_sync'` and `targetId: 'portal'`. | That row must stay disabled or a tick claims it with no handler. Check: `db.scheduledjobs.find({kind: 'board_sync', targetId: 'portal'})`. | `down` sets it back to enabled, which you do not want. |
-| `1791050490815-backfill-document-numbering-initialized` (KAN-292, PR #953) | The row above. | The row above. | The row above. |
+| `1791050490815-backfill-document-numbering-initialized` (KAN-292, PR #953) | The row above. | The row above. On the 2026-10-03 production snapshot it flags 93 of 95 businesses as initialized, because production counters started at 1000 (83 businesses sit at 1000/1000/1000/1 and have most likely issued nothing); for them the first-numbers screen is read-only. **Accepted (Masoud, 2026-10-04)**: a business that asks is updated by a support script. | The row above. |
 
 Before running any of them in production: take the backup (section 1), then
 `MONGODB_URI='<production uri>' npm run migrate -- list` to see exactly which are
@@ -412,6 +419,231 @@ Decide quickly. The longer a bad release runs, the more data it writes.
 - **The database.** Restoring from backup loses everything written since, so it is
   the last resort and a decision for more than one person.
 
+## Rehearsing on a copy of production
+
+Done before the backup and the deploy, on the machine of whoever runs the release.
+It exists because dev data is small and was damaged differently from production,
+so it cannot show how the migrations, a backfill or new billing code behave on the
+real shapes and volumes. The design behind it is section 8 of
+[`2026-10-04-invoice-source-of-truth-design.md`](superpowers/specs/2026-10-04-invoice-source-of-truth-design.md).
+
+**Handling.** The copy holds real participant and business data and may hold live
+credentials. Keep it outside the repo and only in the local Mongo, in its own
+database (for example `isoplus-prod-copy`); never commit it; delete the dump, any
+extracted files and the database when the rehearsal is signed off. Do not copy, log
+or use any credential found in it.
+
+1. **Restore into a separate database, explicitly.** Do not put the dump in `seed/`:
+   `npm run seed` restores the newest `*.gz` there into the shared development
+   database with `--drop`, and only restores a database named `isoplus`. Use
+   `mongorestore --nsFrom=<production db>.* --nsTo=isoplus-prod-copy.*`.
+   If the copy is an **Atlas snapshot download** (a `.tgz` of raw storage files),
+   extract it, open it with a throwaway `mongod` of a compatible version started
+   with no network and no published port, dump from that, and restore as above. Find
+   the version first: the snapshot's `WiredTiger.turtle` names the storage engine
+   release, and the cluster page shows the MongoDB version.
+2. **Scrub before the backend ever starts against the copy**, then check it with
+   count queries. Offline mode does not cover Xero, so the only protection is that
+   no token exists. Unset `businesses.xeroTokens`; drop or clear `sessions`; clear
+   `oauthtickets.accessToken` and `xeroconnecttickets`; set `enabled: false` on every
+   `scheduledjobs` row and every `AutomationSettings`; clear queued delivery state;
+   treat `users` (real emails and password hashes) as sensitive and replace or remove
+   them where the rehearsal does not need them. This will be a reviewed script in the
+   repo *(to be written)*; until then write down exactly what was run.
+3. **Run the backend fully offline**: `ISOPLUS_OFFLINE=1`, `AUTOMATION_ENABLED`
+   unset, the offline email backend. Nothing may reach ISO+, S3 or SES. Point the
+   backend at the copy with a Compose override kept outside the repo (the recipe in
+   [`testing-kan10-end-to-end.md`](testing-kan10-end-to-end.md) shows the shape).
+4. **Run the migrations as production will**: `list`, then each pending migration
+   with `--single`, oldest first, timing each one. The unique index in
+   `1787186180650-pdflink-invoice-period` refuses to build if the copy holds
+   duplicate rows; if it does, that is the finding.
+5. **Test each `down` on a separate throwaway restore**, never on the copy the rest
+   of the rehearsal uses. Several `down`s delete data (see the migration table), and
+   re-running `up` does not bring it back. Drop the throwaway restore afterwards.
+6. **Run the audit** (next section) and read every category.
+7. **For a release that ships the invoice ledger**: set `INVOICE_LEDGER_WRITE=on`,
+   run the backfill script's dry run, then `--apply`, then run it again (it must
+   create nothing), then `--undo` on a throwaway restore; check the invariants; set
+   `INVOICE_LEDGER_READ=shadow` and generate statements and generator lists for a
+   sample of real workspaces. The only differences allowed are the classes in the
+   design (section 7), with counts matching the audit.
+8. **Do not run the Backend unit suite or the e2e suites against the copy.** The unit
+   suite starts its own in-memory database and replaces the connection string, so it
+   never sees the copy; the e2e suites load fixtures into workspace 55390 and would
+   pollute it. They run as usual on a normal checkout.
+9. **Write the result** to a file under `docs/ongoing/` (migration timings, the audit
+   report, any differences and what explained them) and link it from the release note.
+
+**Pass criteria.** Every migration runs in order and rolls back; the audit is
+understood; the backfill is idempotent and reversible; the invariants hold; every
+difference between old and new statements and lists is in a known class; production
+timings can be estimated.
+
+## Invoice ledger rollout
+
+Applies only to the release that ships the invoice ledger (KAN-302). Nothing in
+this section is built yet; the commands marked *(to be written)* are finalised
+with the code. The design, the phases and the reasoning are in
+[`2026-10-04-invoice-source-of-truth-design.md`](superpowers/specs/2026-10-04-invoice-source-of-truth-design.md).
+
+Phases 0 to 4 are reversible by turning a flag off. Phase 5 is not, which is why
+it is its own later release. **Customer statements change at phase 4**, in the
+ways listed in the design (section 6.6), and that has to have been accepted
+beforehand (decision D3).
+
+### Phase 0: audit production, read only
+
+Run the queries below on the rehearsal copy first. On production, run them against
+a secondary or off-peak: their lookups are not indexed, so each scans the items or
+the ledger per number. They read only, and they work today on the existing
+collections. In an interactive `mongosh` session paste each as is; from a script
+file wrap each in `printjson(... .toArray())`.
+
+```js
+// 1. Markers with no ledger row for an invoice document: the invoice exists only
+// as a marker on its items (INV-3 and INV-6 on dev). Xero-only markers
+// ("(Xero)") appear here by design. A ledger row of another type, a soft-deleted
+// row, or one whose number differs only by a suffix also shows up here, so read
+// each result before treating it as marker-only.
+db.items.aggregate([
+  { $match: { invoicedBy: { $type: 'string', $not: /^pending:/ } } },
+  { $group: { _id: { w: '$workspaceId', n: '$invoicedBy' }, items: { $sum: 1 } } },
+  { $lookup: { from: 'pdflinks', let: { w: '$_id.w', n: '$_id.n' },
+      pipeline: [
+        { $match: { type: { $in: ['NDIS Invoice', 'Participant Tax Invoice'] }, isDeleted: { $ne: true } } },
+        { $match: { $expr: { $and: [{ $eq: ['$workspaceId', '$$w'] },
+                                     { $eq: ['$invoiceNumber', '$$n'] }] } } },
+        { $limit: 1 }],
+      as: 'ledger' } },
+  { $match: { ledger: { $size: 0 } } },
+  { $project: { _id: 0, workspaceId: '$_id.w', marker: '$_id.n', items: 1 } },
+  { $sort: { workspaceId: 1, marker: 1 } },
+])
+
+// 2. Stale log numbers: in the old per-item log, on no item and in no ledger row
+// (INV-22 on dev). The Invoice Generator shows these. The log keeps only the
+// latest number per item, so this proves nothing about earlier invoices.
+db.invoicenumbers.aggregate([
+  { $match: { type: 'PDF' } },
+  { $group: { _id: { w: '$workspaceId', n: '$invoiceNumber' }, rows: { $sum: 1 } } },
+  { $lookup: { from: 'items', let: { w: '$_id.w', n: '$_id.n' },
+      pipeline: [{ $match: { $expr: { $and: [{ $eq: ['$workspaceId', '$$w'] },
+                                              { $eq: ['$invoicedBy', '$$n'] }] } } },
+                 { $limit: 1 }], as: 'marked' } },
+  { $lookup: { from: 'pdflinks', let: { w: '$_id.w', n: '$_id.n' },
+      pipeline: [{ $match: { $expr: { $and: [{ $eq: ['$workspaceId', '$$w'] },
+                                              { $eq: ['$invoiceNumber', '$$n'] }] } } },
+                 { $limit: 1 }], as: 'ledger' } },
+  { $match: { marked: { $size: 0 }, ledger: { $size: 0 } } },
+  { $project: { _id: 0, workspaceId: '$_id.w', number: '$_id.n', rows: 1 } },
+  { $sort: { workspaceId: 1, number: 1 } },
+])
+
+// 3. Provisional claims still held. A fresh one belongs to a live run; one older
+// than an hour is stale and needs a person to decide.
+db.items.aggregate([
+  { $match: { invoicedBy: /^pending:/ } },
+  { $group: { _id: '$workspaceId', tokens: { $sum: 1 }, oldest: { $min: '$invoicedAt' } } },
+])
+
+// 4. Items on more than one invoice number in the ledger (the KAN-289 double
+// billing). This sees only double billing that reached the ledger.
+db.pdflinks.aggregate([
+  { $match: { type: { $in: ['NDIS Invoice', 'Participant Tax Invoice'] },
+              invoiceNumber: { $type: 'string' }, isDeleted: { $ne: true } } },
+  { $group: { _id: { w: '$workspaceId', item: '$itemId' }, numbers: { $addToSet: '$invoiceNumber' } } },
+  { $match: { 'numbers.1': { $exists: true } } },
+  { $project: { _id: 0, workspaceId: '$_id.w', itemId: '$_id.item', numbers: 1 } },
+])
+
+// 5. Items whose marker differs from the number the old log holds for them. This
+// catches the double billing that never reached the ledger (manual Age Care, Xero)
+// and any marker that drifted from the log. It uses the unique itemId index.
+db.invoicenumbers.aggregate([
+  { $match: { type: 'PDF' } },
+  { $lookup: { from: 'items', localField: 'itemId', foreignField: 'itemId', as: 'item' } },
+  { $unwind: '$item' },
+  { $match: { $expr: { $and: [
+      { $ne: [{ $ifNull: ['$item.invoicedBy', null] }, null] },
+      { $not: [{ $regexMatch: { input: '$item.invoicedBy', regex: '^pending:' } }] },
+      { $ne: ['$item.invoicedBy', '$invoiceNumber'] } ] } } },
+  { $project: { _id: 0, workspaceId: 1, itemId: 1, marker: '$item.invoicedBy', logNumber: '$invoiceNumber' } },
+])
+```
+
+These were checked on 2026-10-04 against a throwaway database holding one of each
+case: each reported exactly its case (query 1 also reported a marker whose only
+ledger row was a statement and one whose row was soft-deleted, as described), and
+each reported nothing on the clean local test database. A wrapper script
+(`npm run invoices:audit`, *(to be written)*) will run them per workspace and print
+one report. Read every row before continuing: the backfill treats each category
+differently (design section 6).
+
+### Before enabling automation: backfill the item markers
+
+Found on the production copy (2026-10-04, see
+[`docs/ongoing/2026-10-04-prod-copy-rehearsal.md`](ongoing/2026-10-04-prod-copy-rehearsal.md)):
+**no production item has `invoicedBy`**, because production runs the code from
+before the marker existed. Items invoiced by hand are recorded only in
+`invoicenumbers`. Today both scheduled paths already skip an item with a `PDF`
+log row (they list items with status `pending`, which the log decides), so the
+exposure is items whose **only** log row is `Xero`: 16 on the copy, all in one
+workspace, none logged since 28 August. The markers still have to be backfilled
+before automation is enabled, because the invoice-ledger work removes that log
+filter, after which all 368 existing logged items (149 PDF only, 16 Xero only,
+203 both) would be exposed, and because the marker is the guard that works when
+the log is not read.
+
+Keep `AUTOMATION_ENABLED` off, and every workspace's Invoice and Statement
+Automation toggle off, until the markers are backfilled. The audit query:
+
+```js
+// 6. Items that the old log says were invoiced, that still exist, and that carry
+// no marker. Must be empty before automation is enabled.
+db.invoicenumbers.aggregate([
+  { $lookup: { from: 'items', localField: 'itemId', foreignField: 'itemId', as: 'item' } },
+  { $unwind: '$item' },
+  { $match: { $or: [{ 'item.invoicedBy': null }, { 'item.invoicedBy': { $exists: false } }] } },
+  { $group: { _id: { w: '$workspaceId', t: '$type' }, items: { $addToSet: '$itemId' } } },
+  { $project: { _id: 0, workspaceId: '$_id.w', type: '$_id.t', unmarkedItems: { $size: '$items' } } },
+  { $sort: { workspaceId: 1, type: 1 } },
+])
+```
+
+The backfill *(to be written, `Backend/scripts/backfill-invoiced-markers.mjs`, dry run
+by default)* sets `invoicedBy` to the logged number, exactly as stored (including its
+`(ISO+™)` or `(Xero)` suffix, which is what the readers already accept), and
+`invoicedAt` to the log row's `createdAt`, on every item that has none. Where an item has
+both a `PDF` and a `Xero` row (203 existing items do on the copy), the earliest row
+wins, as the claim does today. The log keeps one row per item per type and 446 of
+its 597 rows were revisited after creation, so a row's `createdAt` can belong to an
+earlier invoice than its number; report how many rows were revisited, and treat the
+resulting `invoicedAt` as approximate. It never overwrites an existing marker. Run it on the copy first,
+then production; its `--undo` clears only the markers it set. After it, query 6 must be
+empty.
+
+### Phases 1 to 5
+
+| Phase | Do | Check before the next | Back out |
+|---|---|---|---|
+| 1. Ship, flags off | Deploy. `INVOICE_LEDGER_WRITE` and `INVOICE_LEDGER_READ` are unset or `off`. | Release checks in section 4. Behaviour is unchanged | Roll back the code (section 5) |
+| 2. Dual write, then backfill | Backup first. Set `INVOICE_LEDGER_WRITE=on` **first**, outside a scheduled slot (changing a property restarts the environment's processes). Then the backfill script's dry run, `--apply` with each category acknowledged, and a second run *(to be written)*. Write comes first so nothing issued during the backfill is missed | The audit invariants hold for every workspace; counts match the dry run; the second run creates nothing | Set `INVOICE_LEDGER_WRITE=off`; run the script with `--undo`, which removes only backfilled invoices |
+| 3. Shadow read | Set `INVOICE_LEDGER_READ=shadow`. The old answer is served; each difference is logged with a class | The agreed soak (a full week and a full statement cycle) with every difference in a known class, class counts matching the audit, and none unclassified | Set `INVOICE_LEDGER_READ=off` |
+| 4. Switch | Set `INVOICE_LEDGER_READ=on`. **Statements change here**, as accepted. Watch the first scheduled run and the first statement after it | Statements and generator lists for workspaces whose numbers are known; the expected changes and nothing else | Set it back to `shadow` or `off`. The old stores are still complete because dual write continues |
+| 5. Contract | A later release: stop writing the old log, remove the old read paths | Phase 4 stable for a full cycle | Redeploy the previous release. The old log is stale from here on, so this is the point of no easy return |
+
+If `INVOICE_LEDGER_WRITE` is turned off after it has been on, invoices issued
+while it was off exist only in the old stores: run the backfill again before turning
+`INVOICE_LEDGER_READ` back on.
+
+Environment flags are Elastic Beanstalk properties, set by hand. Changing one
+restarts the environment's processes, so set them outside a scheduled slot.
+
+What a flag change cannot undo: invoices already issued, PDFs already written,
+emails already sent, and invoices already pushed to Xero. If the release touched
+billing, list what was issued after each phase in the rollback note.
+
 ## Hotfix
 
 A `hotfix/<TICKET>_<description>` branch is cut from `origin/main` and its PR
@@ -438,6 +670,9 @@ Fill these in and delete this list.
 - The production backend host and the production frontend host.
 - How to take and restore a production database backup, and whether the production
   cluster has point-in-time recovery.
+- Who supplies the production database copy for the rehearsal, how it is delivered
+  (it contains real data), and who signs the rehearsal off. Not done until this has
+  an owner.
 - Who holds production AWS and database credentials, and how a migration is run
   against production in practice (from a laptop, a bastion, a CI job).
 - Whether there is a release window, a change-approval step or a release note
