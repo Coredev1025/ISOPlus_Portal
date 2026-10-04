@@ -1,3 +1,4 @@
+import { loadInvoiceMaps } from './invoiceLedger/listMaps.js';
 import {
   buildNdisMasterPlanServiceRows,
   buildNdisSupportCatalogueForServicePlan,
@@ -104,17 +105,10 @@ async function loadNdisRefItemsMap(workspaceId, boardId, refIdSets, deps) {
 }
 
 async function loadNdisInvoiceMaps(workspaceId, boardId, masterItems, InvoiceNumber) {
-  const itemIdsForInvoice = masterItems.map((i) => i.itemId);
-  const invoiceNumbers = await InvoiceNumber.find({
-    workspaceId,
-    boardId,
-    itemId: { $in: itemIdsForInvoice },
-    type: 'PDF',
-  }).lean();
-  return {
-    invoiceNumberMap: new Map(invoiceNumbers.map((inv) => [inv.itemId, inv.invoiceNumber])),
-    invoiceFileUrlMap: new Map(invoiceNumbers.map((inv) => [inv.itemId, inv.pdfLink || null])),
-  };
+  // The old log, the invoice record, or both compared (KAN-313).
+  return loadInvoiceMaps({
+    workspaceId, boardId, itemIds: masterItems.map((i) => i.itemId), InvoiceNumber,
+  });
 }
 
 function resolveRefDisplayName(refId, refItemsMap) {

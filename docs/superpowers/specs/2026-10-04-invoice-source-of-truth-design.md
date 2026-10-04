@@ -770,3 +770,25 @@ Fill these in and delete this list.
   marker (the invoice backfill points an item with no marker at the latest invoice, so the two
   agree by construction); a row with a number but no usable date still marks the item;
   `repairInvoice` clears the sentinel on a marker it re-confirms so undo leaves it.
+* **The other readers share one reader each (KAN-313).** Both Invoice Generator list builders and
+  both CSV exports take two maps (item to number, item to document link) from
+  `utils/invoiceLedger/listMaps.js`; the pdf-link lookup has `pdfLinkLookup.js`. Both follow the
+  statement's modes: `off` is the old query unchanged (the Age Care CSV's has no type filter, and
+  keeps none), `shadow` serves it and logs each differing item with a class, `on` serves the
+  invoice record. In `on` an item with a real marker and no record still counts as invoiced, so an
+  invoice the backfill could not place never reads as billable. The scheduled runs list through the
+  same builders, so with the read on their `pending` status comes from the record, and the claim
+  (the marker) remains the guard (4c removes the log filter from selection itself).
+  Review of the readers added: with the read `on`, an item with no marker and no invoice record
+  but a PDF row in the old log **still reads as invoiced** until 4c drops the log filter from
+  selection (the log row is then the guard still standing; `saveInvoiceNumber` says so when its
+  claim fails). Shadow compares the record's own answer, logs **one line per class per call**
+  (a count and 20 example items) rather than one per item, and treats an empty log number as no
+  number. The pdf-link lookup is per board (a duplicate of a number on another board is found,
+  an invoice with no board is never served). A regenerated invoice serves its **latest** document
+  (the backfill puts the latest first and keeps older ones as extra links, as the old log, which
+  keeps the newest per item, did). `activeForItems` maps items in one pass. **Known change to the
+  bulk-claim upload (accepted here, to be confirmed with D3):** in `on`, the NDIS CSV's claim
+  reference for a Xero-only or marker-only item is the stored number (for example `INV-0600
+  (Xero)`, which the export's sanitiser turns into `INV-0600_Xero`) where it was blank or the
+  synced "Generated NDIS Invoice Number" before; portal invoices keep the number as stored.

@@ -148,3 +148,28 @@ export const LEDGER_INVOICE_TYPES = ['NDIS Invoice', 'Participant Tax Invoice', 
  * Touchpoints: utils/invoiceLedger/markers/*.js, utils/invoiceLedger/issue.js (repairInvoice).
  */
 export const MARKER_BACKFILL_SENTINEL = 'backfill-from-log';
+
+/**
+ * Extra shadow classes for the readers that are not the statement (KAN-313). Known:
+ * `pdf_link_ledger_only` (the record finds an invoice the old log does not, which is the
+ * point). Unexpected: `pdf_link_legacy_only`, `pdf_link_differs`.
+ * Touchpoints: utils/invoiceLedger/pdfLinkLookup.js.
+ */
+export const PDF_LINK_SHADOW_CLASS = {
+  LEDGER_ONLY: 'pdf_link_ledger_only',
+  LEGACY_ONLY: 'pdf_link_legacy_only',
+  DIFFERS: 'pdf_link_differs',
+};
+
+/**
+ * Shadow classes for the Invoice Generator lists (KAN-313). Known: `list_invoiced_ledger_only`
+ * (an item the invoice record shows as invoiced that the old log does not: a marker-only,
+ * Xero-only or manual Age Care invoice). Unexpected: the other three.
+ * Touchpoints: utils/invoiceLedger/listMaps.js.
+ */
+export const LIST_SHADOW_CLASS = {
+  LEDGER_ONLY: 'list_invoiced_ledger_only',
+  LEGACY_ONLY: 'list_invoiced_legacy_only',
+  NUMBER_DIFFERS: 'list_number_differs',
+  LINK_DIFFERS: 'list_link_differs',
+};

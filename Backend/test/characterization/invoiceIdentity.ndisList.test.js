@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { getNdisInvoiceGeneratorData } from '../../src/utils/ndisInvoiceGeneratorRouteHelpers.js';
 import { bulkFetchReferenceItemsFromDB } from '../../src/utils/ndisInvoiceGeneratorInvoicing.js';
 import { isUuidLike } from '../../src/utils/ndisServiceRecords.js';
@@ -71,6 +71,13 @@ const list = (query = {}) => getNdisInvoiceGeneratorData(
   { workspaceId: WORKSPACE, boardId: BOARD, query, req: null }, deps(),
 );
 const rowOf = (result, itemId) => result.items.find((r) => r.sourceItemId === itemId);
+
+// These pin the old-log behaviour whatever Backend/.env says (KAN-313).
+const savedReadMode = process.env.INVOICE_LEDGER_READ;
+beforeEach(() => { delete process.env.INVOICE_LEDGER_READ; });
+afterEach(() => {
+  if (savedReadMode === undefined) delete process.env.INVOICE_LEDGER_READ; else process.env.INVOICE_LEDGER_READ = savedReadMode;
+});
 
 beforeEach(seedPlanAndParticipant);
 

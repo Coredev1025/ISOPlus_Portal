@@ -114,7 +114,8 @@ function draftFromCluster(cluster) {
   Object.assign(draft, {
     itemIds: [...new Set(rows.map((r) => r.itemId))].sort(),
     issuedAt: issuedAtOf(rows),
-    pdfLinks: [...new Set(byDate.map((g) => g.rows[0].pdfLink).filter(Boolean))],
+    // Latest document first: it is the one served as the invoice's PDF, as the old log (the newest per item) served.
+    pdfLinks: [...new Set([...byDate].reverse().map((g) => g.rows[0].pdfLink).filter(Boolean))],
     ledgerRowIds: rows.map((r) => r.id),
     knownTotal: latestTotal,
     xero: xeroRow ? { invoiceNumber: parsed(xeroRow.xeroInvoiceNumber)?.number ?? String(xeroRow.xeroInvoiceNumber) } : undefined,

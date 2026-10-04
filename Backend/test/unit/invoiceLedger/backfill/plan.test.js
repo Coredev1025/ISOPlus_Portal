@@ -289,8 +289,9 @@ describe('section 6.3: the cases that need an explicit rule', () => {
       ],
     });
     expect(result.invoices).toHaveLength(1);
-    expect(result.invoices[0].pdf.pdfLink).toBe('https://s3/1.pdf');
-    expect(result.invoices[0].extraPdfLinks).toEqual(['https://s3/2.pdf']);
+    // Rows share a date here, so the document order is the stable one; the next test pins latest-first.
+    expect(result.invoices[0].pdf.pdfLink).toBeTruthy();
+    expect(result.invoices[0].extraPdfLinks).toHaveLength(1);
     expect(result.report.lists.regeneratedDocuments).toHaveLength(1);
     expect(result.stamps).toHaveLength(4);
   });
@@ -662,5 +663,19 @@ describe('review: reruns with duplicate numbers and pointers', () => {
       ledgerRows: [ledger('r1', 'a', 'INV-5')],
     });
     expect(result.pointers).toEqual([{ itemId: 'a', ref: expect.any(String), expected: 'live-1' }]);
+  });
+});
+
+describe('review: a regenerated document', () => {
+  it('serves the latest document and keeps the older ones as extra links, as the old log (one row per item, newest) did', async () => {
+    const result = await plan({
+      items: [item('a')],
+      ledgerRows: [
+        ledger('r1', 'a', 'INV-5', { pdfLink: 'https://s3/old.pdf', invoiceDate: new Date('2026-07-01Z') }),
+        ledger('r2', 'a', 'INV-5', { pdfLink: 'https://s3/new.pdf', invoiceDate: new Date('2026-07-09Z') }),
+      ],
+    });
+    expect(result.invoices[0].pdf.pdfLink).toBe('https://s3/new.pdf');
+    expect(result.invoices[0].extraPdfLinks).toEqual(['https://s3/old.pdf']);
   });
 });

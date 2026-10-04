@@ -1,5 +1,5 @@
 import { accessSync, constants } from 'node:fs';
-import { beforeAll, afterAll, afterEach, vi } from 'vitest';
+import { beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { server } from './msw/server.js';
@@ -138,6 +138,13 @@ vi.mock('bullmq', () => {
 });
 
 let mongoServer;
+
+// The invoice ledger flags decide what a test sees, and Backend/.env is loaded into the test
+// process by the logger. Every test starts with both off and sets what it needs itself (KAN-313).
+beforeEach(() => {
+  delete process.env.INVOICE_LEDGER_WRITE;
+  delete process.env.INVOICE_LEDGER_READ;
+});
 
 beforeAll(async () => {
   process.env.NODE_ENV = 'test';

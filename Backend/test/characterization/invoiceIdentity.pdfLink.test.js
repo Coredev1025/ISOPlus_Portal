@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { authenticatedAgent } from '../helpers/auth.js';
 import Item from '../../src/models/Item.js';
@@ -15,6 +15,13 @@ import PDFLink from '../../src/models/PDFLink.js';
  * Design cases pinned: b (both directions), d, e, g, i, j, k, and the ledger being
  * ignored. The existing cases are in test/unit/routes/items.test.js.
  */
+
+// These pin the old-log behaviour whatever Backend/.env says (KAN-313).
+const savedReadMode = process.env.INVOICE_LEDGER_READ;
+beforeEach(() => { delete process.env.INVOICE_LEDGER_READ; });
+afterEach(() => {
+  if (savedReadMode === undefined) delete process.env.INVOICE_LEDGER_READ; else process.env.INVOICE_LEDGER_READ = savedReadMode;
+});
 
 const app = createApp();
 const WS = 'w-char';

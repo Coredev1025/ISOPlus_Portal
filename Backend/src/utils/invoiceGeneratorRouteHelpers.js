@@ -1,3 +1,4 @@
+import { loadInvoiceMaps } from './invoiceLedger/listMaps.js';
 import { parseListPagination, matchesStatusFilter } from './itemsRouteHelpers.js';
 import { getCachedTransform, setCachedTransform } from './transformCache.js';
 import { toRequiredQueryString, mongoEq } from './securityHelpers.js';
@@ -594,15 +595,13 @@ export async function getInvoiceGeneratorData({ workspaceId, boardId, query, req
     totalFound: refItemsMap.size,
   }, req ?? null);
 
-  const itemIdsForInvoice = items.map((p) => p.item.itemId);
-  const invoiceNumbers = await deps.InvoiceNumber.find({
+  // The old log, the invoice record, or both compared (KAN-313).
+  const { invoiceNumberMap, invoiceFileUrlMap } = await loadInvoiceMaps({
     workspaceId: safeWorkspaceId,
     boardId: safeBoardId,
-    itemId: { $in: itemIdsForInvoice },
-    type: 'PDF',
-  }).lean();
-  const invoiceNumberMap = new Map(invoiceNumbers.map((inv) => [inv.itemId, inv.invoiceNumber]));
-  const invoiceFileUrlMap = new Map(invoiceNumbers.map((inv) => [inv.itemId, inv.pdfLink || null]));
+    itemIds: items.map((p) => p.item.itemId),
+    InvoiceNumber: deps.InvoiceNumber,
+  });
 
   const transformContext = {
     workspaceId: safeWorkspaceId,

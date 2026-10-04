@@ -766,3 +766,16 @@ Fill these in and delete this list.
   that has to be sent.
 - Whether Elastic Beanstalk keeps every application version or prunes old ones
   (rollback depends on the previous version still existing).
+
+### Notes for switching the readers (KAN-309, KAN-313)
+
+* `INVOICE_LEDGER_READ=shadow` and `on` read the invoice record by `lines.itemId`: the
+  `invoice-ledger-indexes` migration (index `invoice_line_item`) must be applied in that
+  environment first, or those reads scan the collection.
+* Shadow logs one line per difference class per list, export or statement, with a count and a few
+  example ids. The classes marked unexpected (`legacy_only_invoice`, `total_differs`,
+  `date_differs`, `payment_no_longer_applied`, `closing_differs`, `pdf_link_legacy_only`,
+  `pdf_link_differs`, `list_invoiced_legacy_only`, `list_number_differs`, `list_link_differs`)
+  are warnings and stop the switch; the rest are informational.
+* With the read `on`, an item with a PDF row in the old log and no marker and no record still reads
+  as invoiced (the guard stays until 4c). Do the marker backfill first anyway.

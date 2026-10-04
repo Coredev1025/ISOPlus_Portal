@@ -127,6 +127,18 @@ describe('activeForItems', () => {
     expect((await activeForItems(WS, ['a'])).size).toBe(0);
   });
 
+  it('maps many items to their invoices in one pass (no per-item scan of every invoice)', async () => {
+    const items = Array.from({ length: 3000 }, (_, i) => `m${i}`);
+    for (let n = 0; n < 300; n += 1) {
+      await make(`INV-B${n}`, { lines: items.slice(n * 10, n * 10 + 10).map((itemId) => ({ itemId, amount: 1 })) });
+    }
+    const started = Date.now();
+    const found = await activeForItems(WS, items);
+    expect(found.size).toBe(3000);
+    expect(found.get('m25').number).toBe('INV-B2');
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
   it('returns an empty map for no items', async () => {
     expect((await activeForItems(WS, [])).size).toBe(0);
   });

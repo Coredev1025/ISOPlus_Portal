@@ -34,6 +34,22 @@ export async function byNumber(workspaceId, rawNumber) {
 }
 
 /**
+ * An invoice by number on one board, from any form of the number, the one that owns the number
+ * first. The pdf-link lookup answers per board (access is checked per board, and two boards can
+ * hold a duplicate of one number), so an invoice with no board is never served here.
+ */
+export async function byNumberOnBoard(workspaceId, boardId, rawNumber) {
+  const parsed = parseInvoiceNumber(rawNumber);
+  if (!parsed) return null;
+  return Invoice.findOne({
+    workspaceId: mongoEq(String(workspaceId)),
+    boardId: mongoEq(String(boardId)),
+    source: parsed.source,
+    $or: [{ number: parsed.number }, { legacyNumbers: eqAll(numberForms(rawNumber)) }],
+  }).sort({ duplicateOrdinal: 1 }).lean();
+}
+
+/**
  * Of the issued invoices that list an item: the one it points at, else the one its marker
  * names (design 4.4: for existing data the active invoice is the one the marker names),
  * else the latest.
@@ -68,10 +84,17 @@ export async function activeForItems(workspaceId, itemIds) {
   }).select('itemId activeInvoiceId invoicedBy').lean();
   const pointerOf = new Map(pointers.map((i) => [i.itemId, i]));
 
+  // One pass over the invoices' lines, not a scan of every invoice per item.
+  const wanted = new Set(ids);
+  const candidatesOf = new Map();
+  for (const invoice of invoices) {
+    for (const line of invoice.lines) {
+      if (wanted.has(line.itemId)) candidatesOf.set(line.itemId, [...(candidatesOf.get(line.itemId) || []), invoice]);
+    }
+  }
   const result = new Map();
-  for (const id of ids) {
-    const candidates = invoices.filter((inv) => inv.lines.some((l) => l.itemId === id));
-    if (candidates.length > 0) result.set(id, chooseActive(candidates, pointerOf.get(id)?.activeInvoiceId, pointerOf.get(id)?.invoicedBy));
+  for (const [id, candidates] of candidatesOf) {
+    result.set(id, chooseActive(candidates, pointerOf.get(id)?.activeInvoiceId, pointerOf.get(id)?.invoicedBy));
   }
   return result;
 }
