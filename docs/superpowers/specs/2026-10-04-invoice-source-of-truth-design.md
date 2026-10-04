@@ -541,3 +541,6 @@ Where the implementation departed from this document, and why.
   returns `lineAmounts` computed from the rows it rendered. The scheduled runs still take
   them from the list read before the claim (review of KAN-305 noted the gap; `commitInvoice`
   now warns when the lines do not add up to the total).
+* **Producer groups split further (KAN-307).** Section 5's third group is split: the manual
+  Age Care route is KAN-307, and the manual Xero routes (five call sites with different line
+  builders) and the Xero draft push are a following PR, so each stays reviewable.

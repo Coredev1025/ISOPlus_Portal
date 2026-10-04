@@ -24,6 +24,9 @@ import {
   OUTPUT_TYPE,
 } from '../constants/storage.js';
 import { buildOutputKey } from './s3OutputKey.js';
+import { recordIssuedInvoice } from './invoiceLedger/issue.js';
+import { lineAmountsFrom } from './invoiceLedger/lineAmounts.js';
+import { INVOICE_KIND, INVOICE_TRIGGER } from '../constants/invoiceLedger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -158,6 +161,7 @@ export function buildParticipantTaxOrders(dbItems, ctx) {
   const ordersArr = [];
   let totalParticipantContribution = 0;
   let totalAmountSum = 0;
+  const billedRows = [];
   const gstLabel = 'GST Free';
 
   for (const dbItem of dbItems) {
@@ -193,6 +197,7 @@ export function buildParticipantTaxOrders(dbItems, ctx) {
         ctx.formatCurrencyValue(totalAmount),
       ]);
       totalAmountSum += totalAmount;
+      billedRows.push({ itemId: dbItem.itemId, amount: totalAmount });
       continue;
     }
 
@@ -207,9 +212,14 @@ export function buildParticipantTaxOrders(dbItems, ctx) {
       ctx.formatCurrencyValue(participantContribution),
     ]);
     totalParticipantContribution += participantContribution;
+    billedRows.push({ itemId: dbItem.itemId, amount: participantContribution });
   }
 
-  return { ordersArr, totalParticipantContribution, totalAmountSum };
+  // What each item billed (KAN-307), from the same values the rows print.
+  const lineAmounts = lineAmountsFrom(billedRows, 'itemId', (row) => row.amount);
+  return {
+    ordersArr, totalParticipantContribution, totalAmountSum, lineAmounts,
+  };
 }
 
 /**
@@ -232,6 +242,32 @@ async function claimInvoiceNumber(workspaceId) {
     throw new Error(`Business not found for workspace ${workspaceId}; cannot number an invoice`);
   }
   return invoiceNumber;
+}
+
+/**
+ * The invoice record (KAN-307), behind INVOICE_LEDGER_WRITE. Its own function so the
+ * generator below gains no branch. `recordIssuedInvoice` never throws; the arguments
+ * built here read values the generator has already used.
+ */
+function recordAgeCareInvoice({
+  recordInvoice, workspaceId, boardId, dbItems, isLowCatBoard, participantName, invoiceNumber, fileUrl, invoiceTotal, lineAmounts, invoiceDate, dueDate,
+}) {
+  // The scheduled run calls this generator too and records its own invoice through
+  // issueInvoice(); only the manual route asks for the record to be written here.
+  if (!recordInvoice) return null;
+  return recordIssuedInvoice({
+    workspaceId,
+    boardId,
+    itemIds: dbItems.map((item) => item.itemId),
+    generated: { invoiceNumber, fileUrl, invoiceTotal: Math.round(invoiceTotal * 100) / 100 },
+    kind: INVOICE_KIND.AGE_CARE,
+    lowCat: Boolean(isLowCatBoard),
+    participant: { name: participantName?.trim() || 'Participant' },
+    trigger: INVOICE_TRIGGER.MANUAL,
+    lineAmounts,
+    invoiceDate,
+    dueDate,
+  });
 }
 
 export async function generateParticipantTaxInvoicePdf({
@@ -258,6 +294,7 @@ export async function generateParticipantTaxInvoicePdf({
   saveInvoiceNumber,
   info,
   error,
+  recordInvoice = false,
 }) {
   const templatePath = isLowCatBoard
     ? path.join(__dirname, '..', 'assets', 'taxInvoiceAG.json')
@@ -304,7 +341,9 @@ export async function generateParticipantTaxInvoicePdf({
     getParticipantNameFromProfile,
   });
 
-  const { ordersArr, totalParticipantContribution, totalAmountSum } = buildParticipantTaxOrders(dbItems, {
+  const {
+    ordersArr, totalParticipantContribution, totalAmountSum, lineAmounts,
+  } = buildParticipantTaxOrders(dbItems, {
     getValueFromFlatData,
     attributeNames,
     refAttributeNames,
@@ -440,6 +479,20 @@ export async function generateParticipantTaxInvoicePdf({
     await setGeneratedField(workspaceId, boardId, item.itemId, invoiceNumber);
     await saveInvoiceNumber(workspaceId, boardId, item.itemId, invoiceNumber, 'PDF', fileUrl);
   }));
+  await recordAgeCareInvoice({
+    recordInvoice,
+    workspaceId,
+    boardId,
+    dbItems,
+    isLowCatBoard,
+    participantName,
+    invoiceNumber,
+    fileUrl,
+    invoiceTotal: Number(invoiceTotalRaw) || 0,
+    lineAmounts,
+    invoiceDate,
+    dueDate,
+  });
 
   logAuditTrail({
     workspaceId,
@@ -478,6 +531,7 @@ export async function handleParticipantTaxInvoiceRoute(req, res, deps) {
       dbItems,
       isLowCatBoard,
       ...deps,
+      recordInvoice: true,
     });
   } catch (err) {
     const errorMessage = err?.message || 'Server error: An unknown error occurred. Please contact support via ISO+™ Portal.';

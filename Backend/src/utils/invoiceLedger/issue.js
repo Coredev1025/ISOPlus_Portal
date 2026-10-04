@@ -126,7 +126,9 @@ async function upsertInvoice(doc) {
  * the number comes from an atomic counter and a clash means something is inconsistent.
  * Stamps the invoice id on the document rows already written for this number.
  */
-export async function commitInvoice(args) {
+export async function commitInvoice(rawArgs) {
+  // A request can name one item twice; the invoice lists it once, with its summed amount.
+  const args = { ...rawArgs, itemIds: [...new Set(rawArgs.itemIds.map(String))] };
   const doc = invoiceDocument(args);
   await new Invoice(doc).validate();
   await assertNumberIndex();

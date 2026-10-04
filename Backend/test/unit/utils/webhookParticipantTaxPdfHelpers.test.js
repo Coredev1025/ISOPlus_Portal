@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import mongoose from 'mongoose';
 
 // External boundaries only: PDF rendering, the ISO+ HTTP API and the audit
 // collection. Everything the module actually computes — reference collection,
@@ -16,6 +17,9 @@ vi.mock('../../../src/utils/auditLogger.js', () => ({ logAuditTrail: vi.fn() }))
 const { generate } = await import('@pdfme/generator');
 const isoplus = await import('../../../src/services/isoplus.js');
 const { logAuditTrail } = await import('../../../src/utils/auditLogger.js');
+const Invoice = (await import('../../../src/models/Invoice.js')).default;
+const { up: buildInvoiceIndexes } = await import('../../../migrations/1791102300000-invoice-ledger-indexes.js');
+const { resetIndexCheckForTests } = await import('../../../src/utils/invoiceLedger/issue.js');
 const Board = (await import('../../../src/models/Board.js')).default;
 const Item = (await import('../../../src/models/Item.js')).default;
 const Business = (await import('../../../src/models/Business.js')).default;
@@ -448,6 +452,19 @@ describe('buildParticipantTaxOrders', () => {
     expect(totalParticipantContribution).toBe(0);
   });
 
+  // KAN-307: what each item contributed, from the same values the rows print.
+  it('returns what each item billed: the contribution, or the full amount on a low-cat board', () => {
+    const items = [deliveredRecord(), adjustmentRecord()];
+    expect(buildParticipantTaxOrders(items, orderCtx()).lineAmounts).toEqual({ item_1: 25.75, item_2: 20 });
+    expect(buildParticipantTaxOrders(items, orderCtx({ isLowCatBoard: true })).lineAmounts)
+      .toEqual({ item_1: 131, item_2: 20 });
+  });
+
+  it('sums the amounts of one item that appears twice and rounds them to cents', () => {
+    const twice = [deliveredRecord(), { ...deliveredRecord(), data: { ...deliveredRecord().data, 'Participant Contribution ($)': 0.106 } }];
+    expect(buildParticipantTaxOrders(twice, orderCtx()).lineAmounts).toEqual({ item_1: 25.86 });
+  });
+
   it('resolves a per-row participant name on a low-cat board from that row own profile', () => {
     const second = deliveredRecord();
     second.itemId = 'item_9';
@@ -600,7 +617,7 @@ describe('buildParticipantTaxOrders', () => {
 
   it('returns nothing to invoice for an empty item list', () => {
     expect(buildParticipantTaxOrders([], orderCtx())).toEqual({
-      ordersArr: [], totalParticipantContribution: 0, totalAmountSum: 0,
+      ordersArr: [], totalParticipantContribution: 0, totalAmountSum: 0, lineAmounts: {},
     });
   });
 });
@@ -1179,5 +1196,122 @@ describe('handleParticipantTaxInvoiceRoute', () => {
       { params: {}, body: { items: [{ id: 'item_ghost' }] } }, makeRes(), routeDeps(),
     )).rejects.toThrow('Item item_ghost not found');
   });
-});
 
+  // KAN-307: the invoice record, behind INVOICE_LEDGER_WRITE.
+  describe('the invoice record', () => {
+    const saved = process.env.INVOICE_LEDGER_WRITE;
+    afterEach(() => {
+      if (saved === undefined) delete process.env.INVOICE_LEDGER_WRITE; else process.env.INVOICE_LEDGER_WRITE = saved;
+    });
+
+    const generate_ = async (body = {}, deps = routeDeps()) => {
+      await Item.create({ workspaceId: 'ws_1', boardId: 'b_1', folderId: 'f_1', itemId: 'item_1', data: deliveredRecord().data });
+      await Item.create({ workspaceId: 'ws_1', boardId: 'b_1', folderId: 'f_1', itemId: 'item_2', data: adjustmentRecord().data });
+      const res = makeRes();
+      await handleParticipantTaxInvoiceRoute({ params: {}, body: { items: [{ id: 'item_1' }, { id: 'item_2' }], ...body } }, res, deps);
+      return res;
+    };
+
+    const enable = async () => {
+      process.env.INVOICE_LEDGER_WRITE = 'on';
+      await Invoice.deleteMany({});
+      await buildInvoiceIndexes(mongoose.connection);
+      resetIndexCheckForTests();
+    };
+
+    it('is written as an Age Care invoice billing the contributions, with the dates the operator set', async () => {
+      await enable();
+      const res = await generate_({ invoiceDate: '2026-04-01T00:00:00.000Z', dueDate: '2026-04-15T00:00:00.000Z' });
+
+      expect(res.statusCode).toBe(200);
+      const [invoice] = await Invoice.find({ workspaceId: 'ws_1' }).lean();
+      expect(invoice).toMatchObject({
+        number: res.body.invoiceNumber, kind: 'age_care', lowCat: false, trigger: 'manual', total: 45.75,
+        participant: { name: 'Jane Citizen' },
+        lines: [{ itemId: 'item_1', amount: 25.75 }, { itemId: 'item_2', amount: 20 }],
+      });
+      expect(invoice.issuedAt.toISOString()).toBe('2026-04-01T00:00:00.000Z');
+      expect(invoice.dueDate.toISOString()).toBe('2026-04-15T00:00:00.000Z');
+    });
+
+    it('points the items at it through the real marker claim, and leaves an item another invoice holds alone', async () => {
+      await enable();
+      const { saveInvoiceNumber } = await vi.importActual('../../../src/utils/invoicePdfSupport.js');
+      await Item.create({ workspaceId: 'ws_1', boardId: 'b_1', folderId: 'f_1', itemId: 'item_2', data: adjustmentRecord().data, invoicedBy: 'INV-0001' });
+      await Item.create({ workspaceId: 'ws_1', boardId: 'b_1', folderId: 'f_1', itemId: 'item_1', data: deliveredRecord().data });
+      const res = makeRes();
+      await handleParticipantTaxInvoiceRoute(
+        { params: {}, body: { items: [{ id: 'item_1' }, { id: 'item_2' }] } }, res, routeDeps({ saveInvoiceNumber }),
+      );
+
+      const [invoice] = await Invoice.find({ workspaceId: 'ws_1' }).lean();
+      const first = await Item.findOne({ itemId: 'item_1' }).lean();
+      const held = await Item.findOne({ itemId: 'item_2' }).lean();
+      expect(first.invoicedBy).toBe(res.body.invoiceNumber);
+      expect(String(first.activeInvoiceId)).toBe(String(invoice._id));
+      expect(held.invoicedBy).toBe('INV-0001');
+      expect(held.activeInvoiceId ?? null).toBeNull();
+    });
+
+    it('lists an item named twice once, with its summed amount', async () => {
+      await enable();
+      await Item.create({ workspaceId: 'ws_1', boardId: 'b_1', folderId: 'f_1', itemId: 'item_1', data: deliveredRecord().data });
+      await Item.create({ workspaceId: 'ws_1', boardId: 'b_1', folderId: 'f_1', itemId: 'item_2', data: adjustmentRecord().data });
+      await handleParticipantTaxInvoiceRoute(
+        { params: {}, body: { items: [{ id: 'item_1' }, { id: 'item_1' }, { id: 'item_2' }] } }, makeRes(), routeDeps(),
+      );
+
+      const [invoice] = await Invoice.find({ workspaceId: 'ws_1' }).lean();
+      expect(invoice.lines).toEqual([{ itemId: 'item_1', amount: 51.5 }, { itemId: 'item_2', amount: 20 }]);
+      expect(invoice.total).toBe(71.5);
+    });
+
+    it('is written on a low-cat board as the full amounts', async () => {
+      await enable();
+      await Board.create({ boardId: 'b_1', name: 'SaH', label: 'Care Management - SaH - Low Cat' });
+      await generate_();
+
+      const [invoice] = await Invoice.find({ workspaceId: 'ws_1' }).lean();
+      expect(invoice).toMatchObject({ lowCat: true, total: 151 });
+      expect(invoice.lines).toEqual([{ itemId: 'item_1', amount: 131 }, { itemId: 'item_2', amount: 20 }]);
+    });
+
+    it('is not written with the flag off, and the response is the same', async () => {
+      delete process.env.INVOICE_LEDGER_WRITE;
+      const res = await generate_();
+
+      expect(res.statusCode).toBe(200);
+      expect(Object.keys(res.body).sort()).toEqual(['fileUrl', 'invoiceNumber', 'invoiceTotal', 'itemCount', 'message']);
+      expect(await Invoice.countDocuments({})).toBe(0);
+    });
+
+    // The scheduled run calls the generator directly and records its own invoice
+    // through issueInvoice(); recording here as well would write it twice.
+    it('is not written when the generator is called without asking for it (the scheduled run)', async () => {
+      await enable();
+      await Item.create({ workspaceId: 'ws_1', boardId: 'b_1', folderId: 'f_1', itemId: 'item_1', data: deliveredRecord().data });
+      await generateParticipantTaxInvoicePdf({
+        req: { body: { invoiceDate: '2026-04-01T00:00:00.000Z' } },
+        res: makeRes(),
+        workspaceId: 'ws_1',
+        boardId: 'b_1',
+        business: makeBusiness(),
+        dbItems: [deliveredRecord()],
+        isLowCatBoard: false,
+        ...pdfDeps(),
+      });
+
+      expect(await Invoice.countDocuments({})).toBe(0);
+    });
+
+    it('does not fail the request when the record cannot be written', async () => {
+      await enable();
+      await Invoice.collection.dropIndexes();
+      resetIndexCheckForTests();
+      const res = await generate_();
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.invoiceTotal).toBe(45.75);
+    });
+  });
+});

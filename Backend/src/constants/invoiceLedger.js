@@ -52,13 +52,13 @@ export const INVOICE_SOURCE = { PORTAL: 'portal', XERO: 'xero' };
 /**
  * `job`: a Job Management invoice (the `/invoice` webhook), billed to a client rather than a participant.
  * Touchpoints: models/Invoice.js (enum), utils/invoiceLedger/issue.js, services/automation/generateDocuments.js,
- * routes/webhook.js, utils/webhookNdisPdfHandlers.js.
+ * routes/webhook.js, utils/webhookNdisPdfHandlers.js, utils/webhookParticipantTaxPdfHelpers.js.
  */
 export const INVOICE_KIND = { NDIS: 'ndis', AGE_CARE: 'age_care', JOB: 'job' };
 
 /**
  * Touchpoints: models/Invoice.js (enum), services/automation/generateDocuments.js,
- * routes/webhook.js, utils/webhookNdisPdfHandlers.js.
+ * routes/webhook.js, utils/webhookNdisPdfHandlers.js, utils/webhookParticipantTaxPdfHelpers.js.
  */
 export const INVOICE_TRIGGER = { AUTOMATION: 'automation', MANUAL: 'manual' };
 
