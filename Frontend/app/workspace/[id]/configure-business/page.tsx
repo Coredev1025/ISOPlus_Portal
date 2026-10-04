@@ -669,7 +669,7 @@ export default function ConfigureBusinessPage() {
                 removeLabel="Remove Default Logo"
                 variant="square"
                 helpText={[
-                  "Maximum file size: 1 MB",
+                  "Maximum file size: 1 MB.",
                   "Used for general application areas, profile displays, and generated PDF documents, including tax invoices.",
                 ]}
                 onRemove={() => handleRemoveLogo("default")}
@@ -685,7 +685,7 @@ export default function ConfigureBusinessPage() {
                 variant="square"
                 helpText={[
                   "Recommended dimensions: 512 × 512 px",
-                  "Maximum file size: 1 MB",
+                  "Maximum file size: 1 MB.",
                   "Used for digital forms, such as the Incident Report Form.",
                 ]}
                 onRemove={() => handleRemoveLogo("square")}
@@ -700,7 +700,7 @@ export default function ConfigureBusinessPage() {
                 removeLabel="Remove Wide Logo"
                 variant="wide"
                 helpText={[
-                  "Recommended dimensions: 820 × 312 px, with the logo centred within the middle third of the image. Maximum file size: 1 MB",
+                  "Recommended dimensions: 820 × 312 px, with the logo centred within the middle third of the image. Maximum file size: 1 MB.",
                   "Used for online documents, including policies and procedures.",
                 ]}
                 onRemove={() => handleRemoveLogo("wide")}

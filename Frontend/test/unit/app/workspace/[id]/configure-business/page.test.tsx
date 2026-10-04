@@ -371,7 +371,7 @@ describe('configure business page', () => {
     const squareCol = screen.getByRole('heading', { name: 'Square Logo' }).closest('div');
     const wideCol = screen.getByRole('heading', { name: 'Wide Logo' }).closest('div');
 
-    expect(within(defaultCol!).getByText('Maximum file size: 1 MB')).toBeInTheDocument();
+    expect(within(defaultCol!).getByText('Maximum file size: 1 MB.')).toBeInTheDocument();
     expect(
       within(defaultCol!).getByText(
         'Used for general application areas, profile displays, and generated PDF documents, including tax invoices.',
@@ -380,7 +380,7 @@ describe('configure business page', () => {
     expect(within(defaultCol!).queryByText(/Recommended dimensions/)).not.toBeInTheDocument();
 
     expect(within(squareCol!).getByText('Recommended dimensions: 512 × 512 px')).toBeInTheDocument();
-    expect(within(squareCol!).getByText('Maximum file size: 1 MB')).toBeInTheDocument();
+    expect(within(squareCol!).getByText('Maximum file size: 1 MB.')).toBeInTheDocument();
     expect(
       within(squareCol!).getByText(
         'Used for digital forms, such as the Incident Report Form.',
@@ -389,7 +389,7 @@ describe('configure business page', () => {
 
     expect(
       within(wideCol!).getByText(
-        'Recommended dimensions: 820 × 312 px, with the logo centred within the middle third of the image. Maximum file size: 1 MB',
+        'Recommended dimensions: 820 × 312 px, with the logo centred within the middle third of the image. Maximum file size: 1 MB.',
       ),
     ).toBeInTheDocument();
     expect(

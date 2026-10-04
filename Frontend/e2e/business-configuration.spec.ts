@@ -25,7 +25,7 @@ test.describe("business configuration logos", () => {
     const defaultLogo = page
       .getByRole("heading", { name: "Default Logo" })
       .locator("..");
-    await expect(defaultLogo.getByText("Maximum file size: 1 MB", { exact: true })).toBeVisible();
+    await expect(defaultLogo.getByText("Maximum file size: 1 MB.", { exact: true })).toBeVisible();
     await expect(
       defaultLogo.getByText(
         "Used for general application areas, profile displays, and generated PDF documents, including tax invoices.",
@@ -39,7 +39,7 @@ test.describe("business configuration logos", () => {
     await expect(
       squareLogo.getByText("Recommended dimensions: 512 × 512 px", { exact: true }),
     ).toBeVisible();
-    await expect(squareLogo.getByText("Maximum file size: 1 MB", { exact: true })).toBeVisible();
+    await expect(squareLogo.getByText("Maximum file size: 1 MB.", { exact: true })).toBeVisible();
     await expect(
       squareLogo.getByText("Used for digital forms, such as the Incident Report Form.", {
         exact: true,
@@ -49,7 +49,7 @@ test.describe("business configuration logos", () => {
     const wideLogo = page.getByRole("heading", { name: "Wide Logo" }).locator("..");
     await expect(
       wideLogo.getByText(
-        "Recommended dimensions: 820 × 312 px, with the logo centred within the middle third of the image. Maximum file size: 1 MB",
+        "Recommended dimensions: 820 × 312 px, with the logo centred within the middle third of the image. Maximum file size: 1 MB.",
         { exact: true },
       ),
     ).toBeVisible();
