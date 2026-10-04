@@ -11,7 +11,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "e2e": "playwright test",
-    "e2e:automation": "playwright test --workers=1 e2e/invoice-statement-automation.spec.ts e2e/care-management-automation.spec.ts",
+    "e2e:automation": "playwright test --workers=1 e2e/invoice-statement-automation.spec.ts e2e/care-management-automation.spec.ts e2e/invoice-ledger-invoiced-state.spec.ts",
     "e2e:install": "playwright install chromium",
     "e2e:ui": "playwright test --ui",
     "e2e:report": "playwright show-report"
