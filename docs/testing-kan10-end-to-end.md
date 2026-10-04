@@ -824,6 +824,9 @@ successful delivery either way. Do not spend an afternoon on it — see
 
 ## Related
 
+- `docs/testing-kan10-portal-dev.md` — the same automation driven on portal-dev, including a real SES send via `bypassEmail`
+- `docs/testing-kan11-end-to-end.md` — the System Health screens that report on these runs
+- `docs/testing-statement-of-account-particulars.md` — proving statement-of-account particulars on portal-dev
 - `docs/scheduling.md` — the endpoint, the two delivery policies, what to alert on
 - `docs/superpowers/specs/2026-08-12-invoice-statement-automation-design.md` — why the queue is where it stops
 - `docs/ongoing/webhooks-and-automation.md` — the 41-automation inventory
