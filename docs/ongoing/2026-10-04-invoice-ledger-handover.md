@@ -4,7 +4,7 @@ For whoever picks this up in a new session. Read this first, then the design. **
 with every PR in the series; if it disagrees with the code, the code wins and this
 file is stale.** Delete when the work is merged and the old stores are retired.
 
-Last updated: 2026-10-04 (night, KAN-304 built).
+Last updated: 2026-10-04 (night, KAN-304 merged, KAN-305 built).
 
 ## What this is
 
@@ -36,8 +36,10 @@ Every PR keeps behaviour identical until `INVOICE_LEDGER_WRITE` / `INVOICE_LEDGE
 | # | Ticket / branch | What | State |
 |---|---|---|---|
 | 1 | KAN-303 (PR 964) | 59 tests in `Backend/test/characterization` pinning today's writes and reads, a lettered case list, a case-to-test table and the known gaps | **Merged** (3717ae13) |
-| 2 | KAN-304 `feature/KAN-304_invoice_ledger_model` | `invoices` model, index migration `1791102300000-invoice-ledger-indexes`, `invoiceLedger` reader (`utils/invoiceLedger/read.js`), `issueInvoice()`/`commitInvoice()`/`repairInvoice()` (`issue.js`), the two flags (`flags.js`), number parsing (`numbers.js`), the invariant audit (`audit.js`), per-attempt claim token. Not wired to any producer or reader yet | Built, in review |
-| 3 | to create | Producers onto `issueInvoice()`: scheduled runs; manual NDIS + webhooks; manual Age Care + Xero + draft push (`stampXero`) | Not started |
+| 2 | KAN-304 (PR 965, merged f198a82d) | `invoices` model, index migration `1791102300000-invoice-ledger-indexes`, `invoiceLedger` reader (`utils/invoiceLedger/read.js`), `issueInvoice()`/`commitInvoice()`/`repairInvoice()` (`issue.js`), the two flags (`flags.js`), number parsing (`numbers.js`), the invariant audit (`audit.js`), per-attempt claim token. Not wired to any producer or reader yet | **Merged** |
+| 3a | KAN-305 `feature/KAN-305_scheduled_runs_issue_invoice` | Scheduled NDIS and Age Care runs call `issueInvoice()` (`generateDocuments.js`), with line amounts from the selected rows (`utils/invoiceLedger/lineAmounts.js`). Flag off: unchanged; flag on: an `invoices` record per invoice, ledger rows linked, items pointed at it | Built, in review |
+| 3b | to create | Manual NDIS generator and the `/invoicendis` and `/invoice` webhooks onto `issueInvoice()`, per-attempt tokens | Not started |
+| 3c | to create | Manual Age Care, the Xero routes and the Xero draft push (`stampXero`) | Not started |
 | 4 | to create | Readers onto `invoiceLedger` with READ off / shadow / on and the shadow comparator | Not started |
 | 5 | to create | Marker backfill, invoice backfill (dry run, apply, undo, report), audit script, scrub script | Not started |
 | 6 | to create | Dev fixtures write invoices, Playwright tests (including the row highlight and the "Invoiced" badge in the table and the pop-up), docs and runbook finalised | Not started |

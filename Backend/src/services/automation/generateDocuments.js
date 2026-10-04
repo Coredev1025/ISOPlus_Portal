@@ -20,7 +20,9 @@ import {
   isNdisBoardLabel,
 } from '../../utils/automationBoardFlags.js';
 import { invoiceDatesFromSlot } from '../../utils/automationInvoiceDates.js';
-import { generateUnderClaim } from '../../utils/automationInvoiceClaim.js';
+import { issueInvoice } from '../../utils/invoiceLedger/issue.js';
+import { lineAmountsFrom } from '../../utils/invoiceLedger/lineAmounts.js';
+import { INVOICE_KIND, INVOICE_TRIGGER } from '../../constants/invoiceLedger.js';
 import {
   attachProfileIds,
   generateGroupsIsolated,
@@ -291,17 +293,26 @@ async function generateNdisGeneratorInvoices({
   }
 
   const results = [...existing];
+  // What each item billed, for the invoice record's lines.
+  const lineAmounts = lineAmountsFrom(selected, 'sourceItemId', (row) => row.totalAmount);
   await generateGroupsIsolated(groups, async (group) => {
     // The claim is what stops a second run billing these items again, and it
     // hands the generator only the items it actually took — anything another
     // invoice already holds is left off this PDF rather than double billed.
-    const generated = await generateUnderClaim({
+    const generated = await issueInvoice({
       workspaceId,
       boardId,
       itemIds: group.itemIds,
       type: PDFLINK_TYPE_NDIS_INVOICE,
       periodKey,
-      participant: group.participant,
+      participant: { profileId: group.profileId, name: group.participant },
+      kind: INVOICE_KIND.NDIS,
+      trigger: INVOICE_TRIGGER.AUTOMATION,
+      lineAmounts,
+      invoiceDate: dates.invoiceDate,
+      dueDate: dates.dueDate,
+      periodStart: period?.start,
+      periodEnd: period?.end,
       produce: (claimedItemIds) => generateNdisInvoiceGeneratorPdf({
         workspaceId,
         boardId,
@@ -433,14 +444,26 @@ async function generateAgeCareGeneratorInvoices({
 
   const results = [...existing];
   const isLowCatBoard = isLowCatCareManagementLabel(label);
+  // Low Cat bills the full amount, every other Age Care board the participant contribution.
+  const lineAmounts = lineAmountsFrom(
+    selected, 'id', (row) => (isLowCatBoard ? row.totalAmount : row.participantContribution),
+  );
   await generateGroupsIsolated(groups, async (group) => {
-    const generated = await generateUnderClaim({
+    const generated = await issueInvoice({
       workspaceId,
       boardId,
       itemIds: group.itemIds,
       type: PDFLINK_TYPE_AGE_CARE_INVOICE,
       periodKey,
-      participant: group.participant,
+      participant: { profileId: group.profileId, name: group.participant },
+      kind: INVOICE_KIND.AGE_CARE,
+      trigger: INVOICE_TRIGGER.AUTOMATION,
+      lowCat: isLowCatBoard,
+      lineAmounts,
+      invoiceDate: dates.invoiceDate,
+      dueDate: dates.dueDate,
+      periodStart: period?.start,
+      periodEnd: period?.end,
       produce: (claimedItemIds) => produceAgeCareInvoice({
         workspaceId, boardId, business, dates, isLowCatBoard, itemIds: claimedItemIds, period,
       }),

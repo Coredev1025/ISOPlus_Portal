@@ -126,6 +126,29 @@ describe('with the write flag on', () => {
     expect((await Invoice.findOne({ number: 'INV-7' }).lean()).lines).toEqual([{ itemId: 'c', amount: 0 }]);
   });
 
+  it('records the dates and period the producer passes: the invoice date, due date and the window selection ran against', async () => {
+    await issueInvoice(base({
+      invoiceDate: new Date('2026-02-01T00:00:00Z'),
+      dueDate: new Date('2026-02-15T00:00:00Z'),
+      periodStart: new Date('2026-01-01T00:00:00Z'),
+      periodEnd: new Date('2026-01-31T23:59:59Z'),
+    }));
+
+    const invoice = await Invoice.findOne({ number: 'INV-5' }).lean();
+    expect(invoice.issuedAt).toEqual(new Date('2026-02-01T00:00:00Z'));
+    expect(invoice.dueDate).toEqual(new Date('2026-02-15T00:00:00Z'));
+    expect(invoice.periodStart).toEqual(new Date('2026-01-01T00:00:00Z'));
+    expect(invoice.periodEnd).toEqual(new Date('2026-01-31T23:59:59Z'));
+  });
+
+  it('dates the invoice now when the producer passes no invoice date', async () => {
+    const before = Date.now();
+    await issueInvoice(base());
+    const invoice = await Invoice.findOne({ number: 'INV-5' }).lean();
+    expect(invoice.issuedAt.getTime()).toBeGreaterThanOrEqual(before - 1000);
+    expect(invoice.dueDate ?? null).toBeNull();
+  });
+
   it('records Low Cat only when the producer says so', async () => {
     await issueInvoice(base({ kind: 'age_care', lowCat: true }));
     expect((await Invoice.findOne({ number: 'INV-5' }).lean()).lowCat).toBe(true);
@@ -310,12 +333,14 @@ describe('what is validated before anything is written', () => {
 });
 
 describe('the unique number index must exist before an invoice is committed', () => {
-  it('refuses to commit without it, and says which migration builds it', async () => {
+  it('refuses before claiming without it, and says which migration builds it', async () => {
     await Invoice.collection.dropIndexes();
     resetIndexCheckForTests();
 
-    await expect(issueInvoice(base())).rejects.toThrow(/invoice-ledger-indexes/);
-    expect(await markerOf('a')).toMatch(/^pending:/);
+    const args = base();
+    await expect(issueInvoice(args)).rejects.toThrow(/invoice-ledger-indexes/);
+    // It fails before anything is claimed or rendered, so nothing is left to repair.
+    expect(await markerOf('a')).toBeNull();
     expect(await Invoice.countDocuments({})).toBe(0);
   });
 });

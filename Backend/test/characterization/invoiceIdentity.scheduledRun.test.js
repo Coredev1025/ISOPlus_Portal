@@ -124,7 +124,11 @@ const state = async () => {
   };
 };
 
+const savedWriteFlag = process.env.INVOICE_LEDGER_WRITE;
+
 beforeEach(async () => {
+  // These pin the flag-off behaviour whatever Backend/.env says.
+  delete process.env.INVOICE_LEDGER_WRITE;
   vi.clearAllMocks();
   rendered = 0;
   failMarkOnce = false;
@@ -153,6 +157,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  if (savedWriteFlag === undefined) delete process.env.INVOICE_LEDGER_WRITE; else process.env.INVOICE_LEDGER_WRITE = savedWriteFlag;
   vi.restoreAllMocks();
 });
 

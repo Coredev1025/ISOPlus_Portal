@@ -71,7 +71,11 @@ const ledgerTotals = async (boardId) => {
   return Object.fromEntries([...new Map(rows.map((r) => [r.invoiceNumber, r.invoiceTotal]))]);
 };
 
+const savedWriteFlag = process.env.INVOICE_LEDGER_WRITE;
+
 beforeEach(async () => {
+  // These pin the flag-off behaviour whatever Backend/.env says.
+  delete process.env.INVOICE_LEDGER_WRITE;
   saved.offline = process.env.ISOPLUS_OFFLINE;
   saved.root = process.env.LOCAL_FILE_ROOT;
   process.env.ISOPLUS_OFFLINE = '1';
@@ -88,6 +92,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  if (savedWriteFlag === undefined) delete process.env.INVOICE_LEDGER_WRITE; else process.env.INVOICE_LEDGER_WRITE = savedWriteFlag;
   vi.restoreAllMocks();
   if (saved.offline === undefined) delete process.env.ISOPLUS_OFFLINE; else process.env.ISOPLUS_OFFLINE = saved.offline;
   if (saved.root === undefined) delete process.env.LOCAL_FILE_ROOT; else process.env.LOCAL_FILE_ROOT = saved.root;

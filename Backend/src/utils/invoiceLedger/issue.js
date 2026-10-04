@@ -76,6 +76,7 @@ function assertOneOf(label, value, allowed) {
 /** The fields of an invoice that come from what the producer generated. */
 function invoiceDocument({
   workspaceId, boardId, itemIds, generated, kind, source, participant, trigger, periodKey, lowCat, lineAmounts, claimToken,
+  invoiceDate, dueDate, periodStart, periodEnd,
 }) {
   const parsed = parseInvoiceNumber(generated.invoiceNumber);
   if (!parsed) throw new Error(`Cannot record an invoice without a usable number: ${generated.invoiceNumber}`);
@@ -90,11 +91,11 @@ function invoiceDocument({
     participant: normaliseParticipant(participant),
     lines: itemIds.map((itemId) => ({ itemId: String(itemId), amount: lineAmounts?.[itemId] ?? 0 })),
     total: generated.invoiceTotal,
-    issuedAt: generated.invoiceDate ?? new Date(),
-    dueDate: generated.dueDate,
+    issuedAt: invoiceDate ?? generated.invoiceDate ?? new Date(),
+    dueDate: dueDate ?? generated.dueDate,
     periodKey: periodKey ?? undefined,
-    periodStart: generated.periodStart,
-    periodEnd: generated.periodEnd,
+    periodStart: periodStart ?? generated.periodStart,
+    periodEnd: periodEnd ?? generated.periodEnd,
     trigger,
     claimToken,
     pdf: { pdfLink: generated.fileUrl },
@@ -130,6 +131,12 @@ export async function commitInvoice(args) {
   await new Invoice(doc).validate();
   await assertNumberIndex();
 
+  const lineSum = doc.lines.reduce((sum, l) => sum + l.amount, 0);
+  if (Math.abs(lineSum - doc.total) > 0.005) {
+    warn('InvoiceLedger', 'Invoice lines do not add up to the printed total', {
+      number: doc.number, total: doc.total, lineSum,
+    });
+  }
   const invoice = await upsertInvoice(doc);
   if (!sameItems(invoice.lines, args.itemIds)) {
     throw new Error(`Invoice ${doc.number} already exists for different items`);
@@ -161,16 +168,20 @@ const pointItemsAt = (workspaceId, boardId, itemIds, invoiceId) => Item.updateMa
  * `{ empty: true }`); `record(generated, claimedItemIds)` is the producer's older
  * writes. A scheduled producer keeps the deterministic claim token; a manual one passes
  * an `attemptId` unique to the request so two concurrent invoices cannot both claim the
- * same items. Returns the generated document with `itemIds` (and `invoiceId` when the
+ * same items. `invoiceDate`, `dueDate`, `periodStart` and `periodEnd` are what the producer
+ * knows and the generated document may not carry. Returns the generated document with `itemIds` (and `invoiceId` when the
  * record was written), or null when there was nothing to bill.
  */
 export async function issueInvoice({
   workspaceId, boardId, itemIds, type, periodKey = null, kind, source = INVOICE_SOURCE.PORTAL,
   participant, trigger, lowCat, lineAmounts, produce, record = null, attemptId = null,
+  invoiceDate, dueDate, periodStart, periodEnd,
 }) {
   assertOneOf('kind', kind, INVOICE_KIND);
   assertOneOf('source', source, INVOICE_SOURCE);
   const who = normaliseParticipant(participant);
+  // Fail before anything is claimed or rendered, not after the PDF is made.
+  if (invoiceLedgerWriteEnabled()) await assertNumberIndex();
   const claimToken = provisionalClaimToken({
     type, periodKey, participant: who.name, attemptId,
   });
@@ -181,6 +192,7 @@ export async function issueInvoice({
     if (!invoiceLedgerWriteEnabled()) return;
     committed = await commitInvoice({
       workspaceId, boardId, itemIds: claimed, generated, kind, source, participant: who, trigger, periodKey, lowCat, lineAmounts, claimToken,
+      invoiceDate, dueDate, periodStart, periodEnd,
     });
   };
 
