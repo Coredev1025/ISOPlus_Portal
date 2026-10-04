@@ -77,6 +77,8 @@ import {
 // finds these items unmarked and bills them again. This router used to keep a
 // private copy that only wrote the ledger row.
 import { saveInvoiceNumber } from '../utils/invoicePdfSupport.js';
+import { recordXeroInvoice, billedTotal } from '../utils/invoiceLedger/recordXero.js';
+import { INVOICE_KIND } from '../constants/invoiceLedger.js';
 import {
   handleXeroInvoicendis,
   handleXeroQuotendis,
@@ -410,6 +412,18 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
 
     await setGeneratedField(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`);
     await saveInvoiceNumber(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`, 'Xero');
+    // KAN-308: the invoice record, behind INVOICE_LEDGER_WRITE. Never throws.
+    await recordXeroInvoice({
+      workspaceId,
+      boardId,
+      itemIds: [item.id],
+      created: createdInvoice,
+      kind: INVOICE_KIND.JOB,
+      participant: { name: contactValues.client },
+      lineAmounts: { [item.id]: billedTotal(createdInvoice, invoice.lineItems) },
+      invoiceDate: invoice.date,
+      dueDate: invoice.dueDate,
+    });
 
     res.json(createdInvoice);
   } catch (err) {

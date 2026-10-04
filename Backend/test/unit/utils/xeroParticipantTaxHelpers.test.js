@@ -366,6 +366,7 @@ describe('buildParticipantTaxLineItems', () => {
         taxType: 'EXEMPTOUTPUT',
       }],
       totalAmount: 30,
+      lineAmounts: { itm_5001: 30 },
     });
   });
 
@@ -403,7 +404,7 @@ describe('buildParticipantTaxLineItems', () => {
 
   it('returns nothing for an empty item list', () => {
     const { ctx } = lineItemContext([]);
-    expect(buildParticipantTaxLineItems(ctx)).toEqual({ lineItems: [], totalAmount: 0 });
+    expect(buildParticipantTaxLineItems(ctx)).toEqual({ lineItems: [], totalAmount: 0, lineAmounts: {} });
   });
 
   it('treats a zero quantity as one unit', () => {

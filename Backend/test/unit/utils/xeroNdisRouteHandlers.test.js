@@ -50,6 +50,11 @@ const invoicing = await import('../../../src/utils/ndisInvoiceGeneratorInvoicing
 const serviceRecords = await import('../../../src/utils/ndisServiceRecords.js');
 const { resolveNdisPricingRuleForServicePlan } = await import('../../../src/utils/ndisPricingRules.js');
 const Business = (await import('../../../src/models/Business.js')).default;
+const Invoice = (await import('../../../src/models/Invoice.js')).default;
+const PDFLink = (await import('../../../src/models/PDFLink.js')).default;
+const mongoose = (await import('mongoose')).default;
+const { up: buildInvoiceIndexes } = await import('../../../migrations/1791102300000-invoice-ledger-indexes.js');
+const { resetIndexCheckForTests } = await import('../../../src/utils/invoiceLedger/issue.js');
 const Item = (await import('../../../src/models/Item.js')).default;
 
 const {
@@ -966,5 +971,172 @@ describe('handleXeroInvoiceParticipantTax', () => {
         expect.objectContaining({ participantName: 'Jane Roe' }),
       );
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// KAN-308: the invoice record for a Xero invoice, behind INVOICE_LEDGER_WRITE.
+// Xero returns no `total` in these doubles, so the total is the sum of the lines.
+// ---------------------------------------------------------------------------
+
+describe('the invoice record for a Xero invoice (INVOICE_LEDGER_WRITE)', () => {
+  const savedFlag = process.env.INVOICE_LEDGER_WRITE;
+
+  beforeEach(async () => {
+    await Invoice.deleteMany({});
+    await buildInvoiceIndexes(mongoose.connection);
+    resetIndexCheckForTests();
+    process.env.INVOICE_LEDGER_WRITE = 'on';
+  });
+
+  afterEach(() => {
+    if (savedFlag === undefined) delete process.env.INVOICE_LEDGER_WRITE; else process.env.INVOICE_LEDGER_WRITE = savedFlag;
+  });
+
+  const runInvoicendis = async () => {
+    isoplus.getNDISMasterPlanReferencedItems.mockResolvedValue(MASTER_REFS);
+    buildNdisMasterPlanInvoiceLines.mockResolvedValue(NDIS_LINES);
+    xero.createInvoice.mockResolvedValue({ invoiceNumber: 'INV-501', invoiceID: 'xid_1' });
+    await handleXeroInvoicendis(invoiceArgs());
+  };
+
+  it('/invoicendis records a Xero-source invoice for the one item', async () => {
+    await runInvoicendis();
+
+    const [invoice] = await Invoice.find({ workspaceId: 'ws_1' }).lean();
+    expect(invoice).toMatchObject({
+      number: 'INV-501', source: 'xero', legacyNumbers: ['INV-501 (Xero)'], kind: 'ndis', trigger: 'manual',
+      total: 141.87, participant: { name: 'Jane Roe' }, lines: [{ itemId: 'itm_master_1', amount: 141.87 }],
+    });
+    expect(invoice.issuedAt.toISOString()).toBe('2025-03-15T00:00:00.000Z');
+    expect(invoice.dueDate.toISOString()).toBe('2025-03-29T00:00:00.000Z');
+  });
+
+  it('/invoicendis dates the record from what Xero received when the item has no dates', async () => {
+    isoplus.getNDISMasterPlanReferencedItems.mockResolvedValue(MASTER_REFS);
+    buildNdisMasterPlanInvoiceLines.mockResolvedValue(NDIS_LINES);
+    xero.createInvoice.mockResolvedValue({ invoiceNumber: 'INV-503', invoiceID: 'xid_3' });
+    await handleXeroInvoicendis(invoiceArgs({ item: { ...MASTER_ITEM, values: { ...MASTER_ITEM.values, 'Invoice Date': '', 'Due Date': '' } } }));
+
+    const [invoice] = await Invoice.find({ workspaceId: 'ws_1' }).lean();
+    expect(invoice.issuedAt).toBeInstanceOf(Date);
+    expect(invoice.dueDate).toBeInstanceOf(Date);
+  });
+
+  it('/invoicendis records nothing with the flag off', async () => {
+    delete process.env.INVOICE_LEDGER_WRITE;
+    await runInvoicendis();
+    expect(await Invoice.countDocuments({})).toBe(0);
+  });
+
+  it('/invoicendis attaches the Xero number to the portal invoice the item is already on', async () => {
+    const portal = await Invoice.create({
+      workspaceId: 'ws_1', boardId: 'bd_1', number: 'INV-9', source: 'portal', kind: 'ndis',
+      participant: { name: 'Jane Roe' }, lines: [{ itemId: 'itm_master_1', amount: 141.87 }], total: 141.87,
+      issuedAt: new Date('2025-03-01T00:00:00Z'), trigger: 'manual', status: 'issued', origin: 'live',
+    });
+    await runInvoicendis();
+
+    expect(await Invoice.countDocuments({ workspaceId: 'ws_1' })).toBe(1);
+    expect((await Invoice.findById(portal._id).lean()).xero).toEqual({ invoiceNumber: 'INV-501', id: 'xid_1' });
+  });
+
+  it('the Invoice Generator records one Xero invoice for the master items, from the printed rows', async () => {
+    invoicing.getNdisInvoiceGeneratorContextFromMasterItems.mockResolvedValue(generatorContext());
+    invoicing.prepareParticipantForInvoiceGenerator.mockResolvedValue({
+      participantProfile: { fullName: 'Jane Roe', billingEmail: 'jane@example.com', billingAddress: '12 Smith St, Blacktown, NSW, 2148' },
+      participantProfileItem: { itemId: 'pp_1', data: { 'Full Name/Preferred Name': 'Jane Roe', 'NDIS Number': '430 123 456' } },
+      participantName: 'Jane Roe',
+      billingContact: 'Jane Roe',
+    });
+    serviceRecords.buildNdisMasterPlanServiceRows.mockReturnValue([
+      { sourceItemId: 'itm_master_1', service: 'Care', quantity: '2', unitPrice: '67.56', totalAmount: 135.12, serviceDeliveryDate: '2025-03-10T22:00:00Z', jobStatus: 'Completed' },
+      { sourceItemId: 'itm_master_1', service: 'Travel', quantity: 1, unitPrice: 60, totalAmount: 60, serviceDeliveryDate: '2025-03-10T22:00:00Z', jobStatus: 'Completed' },
+    ]);
+    xero.createInvoice.mockResolvedValue({ invoiceNumber: 'INV-777', total: 195.12 });
+    await handleXeroInvoicendisInvoiceGenerator(generatorArgs());
+
+    const [invoice] = await Invoice.find({ workspaceId: 'ws_1' }).lean();
+    expect(invoice).toMatchObject({
+      number: 'INV-777', source: 'xero', kind: 'ndis', total: 195.12,
+      participant: { name: 'Jane Roe' }, lines: [{ itemId: 'itm_master_1', amount: 195.12 }],
+    });
+  });
+
+  // The scheduled draft push goes through this handler: an invoice the portal already
+  // issued gets the Xero number, and no second invoice is billed.
+  it('the Invoice Generator, as the draft push calls it, stamps the portal invoice instead of adding one', async () => {
+    const portal = await Invoice.create({
+      workspaceId: 'ws_1', boardId: 'bd_1', number: 'IN-700', source: 'portal', kind: 'ndis',
+      participant: { name: 'Jane Roe' }, lines: [{ itemId: 'itm_master_1', amount: 195.12 }], total: 195.12,
+      issuedAt: new Date('2025-03-01T00:00:00Z'), trigger: 'automation', status: 'issued', origin: 'live',
+    });
+    await PDFLink.create({
+      workspaceId: 'ws_1', boardId: 'bd_1', itemId: 'itm_master_1', type: 'NDIS Invoice', invoiceNumber: 'IN-700',
+      pdfLink: 'https://s3/700.pdf', invoiceId: portal._id,
+    });
+    invoicing.getNdisInvoiceGeneratorContextFromMasterItems.mockResolvedValue(generatorContext());
+    invoicing.prepareParticipantForInvoiceGenerator.mockResolvedValue({
+      participantProfile: { fullName: 'Jane Roe', billingEmail: 'jane@example.com', billingAddress: '12 Smith St, Blacktown, NSW, 2148' },
+      participantProfileItem: { itemId: 'pp_1', data: { 'Full Name/Preferred Name': 'Jane Roe' } },
+      participantName: 'Jane Roe',
+      billingContact: 'Jane Roe',
+    });
+    serviceRecords.buildNdisMasterPlanServiceRows.mockReturnValue([
+      { sourceItemId: 'itm_master_1', service: 'Care', quantity: '2', unitPrice: '67.56', totalAmount: 135.12, serviceDeliveryDate: '2025-03-10T22:00:00Z', jobStatus: 'Completed' },
+    ]);
+    xero.createInvoice.mockResolvedValue({ invoiceNumber: 'INV-777', invoiceID: 'xid_7' });
+    await handleXeroInvoicendisInvoiceGenerator(generatorArgs());
+
+    expect(await Invoice.countDocuments({ workspaceId: 'ws_1' })).toBe(1);
+    expect((await Invoice.findById(portal._id).lean()).xero).toEqual({ invoiceNumber: 'INV-777', id: 'xid_7' });
+    expect((await PDFLink.findOne({ itemId: 'itm_master_1' }).lean()).xeroInvoiceNumber).toBe('INV-777');
+  });
+
+  it('the participant tax route records an Age Care invoice for the participant, not the billing contact', async () => {
+    await seedParticipantTaxFixtures();
+    xero.createInvoice.mockResolvedValue({ invoiceNumber: 'INV-900', invoiceID: 'xid_900' });
+    await handleXeroInvoiceParticipantTax(taxArgs());
+
+    const [invoice] = await Invoice.find({ workspaceId: 'ws_1' }).lean();
+    expect(invoice).toMatchObject({
+      number: 'INV-900', source: 'xero', kind: 'age_care', lowCat: false, total: 30,
+      participant: { name: 'Jane Roe' }, lines: [{ itemId: 'itm_5001', amount: 30 }],
+    });
+  });
+
+  it('the participant tax route, as the draft push calls it, stamps the portal invoice', async () => {
+    await seedParticipantTaxFixtures();
+    const portal = await Invoice.create({
+      workspaceId: 'ws_1', boardId: 'bd_1', number: 'IN-800', source: 'portal', kind: 'age_care', lowCat: false,
+      participant: { name: 'Jane Roe' }, lines: [{ itemId: 'itm_5001', amount: 30 }], total: 30,
+      issuedAt: new Date('2025-03-01T00:00:00Z'), trigger: 'automation', status: 'issued', origin: 'live',
+    });
+    xero.createInvoice.mockResolvedValue({ invoiceNumber: 'INV-910', invoiceID: 'xid_910' });
+    await handleXeroInvoiceParticipantTax(taxArgs());
+
+    expect(await Invoice.countDocuments({ workspaceId: 'ws_1' })).toBe(1);
+    expect((await Invoice.findById(portal._id).lean()).xero).toEqual({ invoiceNumber: 'INV-910', id: 'xid_910' });
+  });
+
+  it('the participant tax route on a low-cat board records the full amount', async () => {
+    await seedParticipantTaxFixtures();
+    xero.createInvoice.mockResolvedValue({ invoiceNumber: 'INV-901', invoiceID: 'xid_901' });
+    await handleXeroInvoiceParticipantTax(taxArgs({ isLowCat: true }));
+
+    const [invoice] = await Invoice.find({ workspaceId: 'ws_1' }).lean();
+    expect(invoice).toMatchObject({ lowCat: true, total: 120, lines: [{ itemId: 'itm_5001', amount: 120 }] });
+  });
+
+  it('a record that cannot be written does not change the response', async () => {
+    await Invoice.collection.dropIndexes();
+    resetIndexCheckForTests();
+    await seedParticipantTaxFixtures();
+    xero.createInvoice.mockResolvedValue({ invoiceNumber: 'INV-902', invoiceID: 'xid_902' });
+    const args = taxArgs();
+    await handleXeroInvoiceParticipantTax(args);
+
+    expect(args.res.status).toHaveBeenCalledWith(200);
+    expect(await Invoice.countDocuments({})).toBe(0);
   });
 });

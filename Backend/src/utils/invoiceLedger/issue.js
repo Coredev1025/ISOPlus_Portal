@@ -249,7 +249,7 @@ export async function recordIssuedInvoice({ workspaceId, boardId, itemIds, ...re
 }
 
 /** The marker strings that name this invoice, in the form the older code writes. */
-function ownMarkers(invoice) {
+export function ownMarkers(invoice) {
   if (invoice.source === INVOICE_SOURCE.XERO) return [`${invoice.number}${LEGACY_SUFFIX.XERO}`];
   return [invoice.number, `${invoice.number}${LEGACY_SUFFIX.ISOPLUS}`];
 }

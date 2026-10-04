@@ -1,3 +1,6 @@
+import { recordXeroInvoice } from './invoiceLedger/recordXero.js';
+import { lineAmountsFrom } from './invoiceLedger/lineAmounts.js';
+import { INVOICE_KIND } from '../constants/invoiceLedger.js';
 import Business from '../models/Business.js';
 import Item from '../models/Item.js';
 import { setIntegrationMessage, setGeneratedField, getQuoteNDISReferencedItems, getNDISMasterPlanReferencedItems, validateItemBelongsToTenant } from '../services/isoplus.js';
@@ -36,6 +39,7 @@ import {
   computeNdisServiceDate,
   ndisLinesToXeroItems,
   resolveNdisParticipantContact,
+  sumNdisLineAmounts,
 } from '../utils/ndisMasterPlanLineHelpers.js';
 import {
   buildNdisQuoteMappedAndXeroPayload,
@@ -314,6 +318,19 @@ export async function handleXeroInvoicendis({
     });
     await setGeneratedField(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`);
     await saveInvoiceNumber(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`, 'Xero');
+    // KAN-308: the invoice record, behind INVOICE_LEDGER_WRITE. Never throws.
+    await recordXeroInvoice({
+      workspaceId,
+      boardId,
+      itemIds: [item.id],
+      created: createdInvoice,
+      kind: INVOICE_KIND.NDIS,
+      participant: { name: participantProfileValues?.fullName },
+      lineAmounts: { [item.id]: Math.round(sumNdisLineAmounts(ndisLines) * 100) / 100 },
+      // What Xero received, not the item's own fields, which can be blank.
+      invoiceDate: invoice.date,
+      dueDate: invoice.dueDate,
+    });
     return res.json(createdInvoice);
   } catch (err) {
     const result = await handleError(err, workspaceId, boardId, item, req, 'invoice');
@@ -578,6 +595,18 @@ export async function handleXeroInvoicendisInvoiceGenerator({
     const createdInvoice = await createInvoice(invoice);
     const savedInvoiceNumber = `${createdInvoice.invoiceNumber} (Xero)`;
     await persistXeroInvoiceNumbers(masterItems, workspaceId, boardId, savedInvoiceNumber, saveInvoiceNumber);
+    // KAN-308: the invoice record, behind INVOICE_LEDGER_WRITE. Never throws.
+    await recordXeroInvoice({
+      workspaceId,
+      boardId,
+      itemIds: masterItems.map((item) => item.itemId),
+      created: createdInvoice,
+      kind: INVOICE_KIND.NDIS,
+      participant: { name: participantName },
+      lineAmounts: lineAmountsFrom(allRows, 'sourceItemId', (row) => row.totalAmount),
+      invoiceDate: invoice.date,
+      dueDate: invoice.dueDate,
+    });
 
     return res.json({
       invoiceNumber: createdInvoice.invoiceNumber,
@@ -671,7 +700,7 @@ export async function handleXeroInvoiceParticipantTax({
     });
     if (mismatchResponse) return mismatchResponse;
 
-    const { lineItems } = buildParticipantTaxLineItems({
+    const { lineItems, lineAmounts } = buildParticipantTaxLineItems({
       items,
       isLowCatBoard,
       salesAccountCode,
@@ -712,6 +741,20 @@ export async function handleXeroInvoiceParticipantTax({
       labels.successMessage,
       saveInvoiceNumber,
     );
+    // KAN-308: the invoice record, behind INVOICE_LEDGER_WRITE. Never throws. The
+    // participant is the person billed for, not the billing contact on the invoice.
+    await recordXeroInvoice({
+      workspaceId,
+      boardId,
+      itemIds: items.map((item) => item.id),
+      created: createdInvoice,
+      kind: INVOICE_KIND.AGE_CARE,
+      lowCat: Boolean(isLowCatBoard),
+      participant: { name: participantName },
+      lineAmounts,
+      invoiceDate,
+      dueDate: effectiveDueDate,
+    });
 
     logXeroAudit({
       workspaceId,

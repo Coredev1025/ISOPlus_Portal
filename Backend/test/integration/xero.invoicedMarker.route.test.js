@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
@@ -56,6 +56,10 @@ const { buildNdisMasterPlanInvoiceLines } = await import('../../src/utils/ndisMa
 const Business = (await import('../../src/models/Business.js')).default;
 const Item = (await import('../../src/models/Item.js')).default;
 const InvoiceNumber = (await import('../../src/models/InvoiceNumber.js')).default;
+const Invoice = (await import('../../src/models/Invoice.js')).default;
+const mongoose = (await import('mongoose')).default;
+const { up: buildInvoiceIndexes } = await import('../../migrations/1791102300000-invoice-ledger-indexes.js');
+const { resetIndexCheckForTests } = await import('../../src/utils/invoiceLedger/issue.js');
 const xeroRoutes = (await import('../../src/routes/xero.js')).default;
 
 const WS = 'ws_1';
@@ -130,5 +134,59 @@ describe('POST /api/xero/:workspaceId/:boardId/invoicendis', () => {
 
     const item = await Item.findOne({ itemId: ITEM_ID }).lean();
     expect(item.invoicedBy).toBe('INV-501 (Xero)');
+  });
+});
+
+// KAN-308: the Job Management Xero invoice also records the invoice, behind INVOICE_LEDGER_WRITE.
+describe('POST /api/xero/:workspaceId/:boardId/invoice (job)', () => {
+  const savedFlag = process.env.INVOICE_LEDGER_WRITE;
+  const JOB_ITEM = {
+    id: ITEM_ID,
+    values: {
+      'Job Number': ['JOB-1'],
+      'Job Duration (Hrs.)': 2,
+      'Service Fee Type': ['Standard'],
+      'Payable Service Fee($) - GST Excl.': 100,
+      'Payable Material Fee($) - GST Excl.': 0,
+      'Other Payable Fee($) - GST Excl.': 0,
+    },
+  };
+
+  beforeEach(async () => {
+    await Invoice.deleteMany({});
+    await buildInvoiceIndexes(mongoose.connection);
+    resetIndexCheckForTests();
+    isoplus.getJobReportingReferencedItems.mockResolvedValue([{ id: 'jp_1', jobNumber: 'JOB-1' }, { feeType: 'Hourly' }]);
+    isoplus.getJobPlanningReferencedItems.mockResolvedValue([
+      { client: 'Jane Roe', emailAddress: 'jane@example.com', updatedAt: '2020-01-01T00:00:00Z' },
+      { jobCode: 'J1', jobType: 'Fix' },
+    ]);
+    xero.findOrCreateItem.mockResolvedValue({});
+    xero.createInvoice.mockResolvedValue({ invoiceNumber: 'INV-601', invoiceID: 'xid_6', total: 110 });
+  });
+
+  afterEach(() => {
+    if (savedFlag === undefined) delete process.env.INVOICE_LEDGER_WRITE; else process.env.INVOICE_LEDGER_WRITE = savedFlag;
+  });
+
+  it('records a Xero-source job invoice for the client, with the total Xero returned', async () => {
+    process.env.INVOICE_LEDGER_WRITE = 'on';
+    const res = await request(app).post(`/api/xero/${WS}/${BOARD}/invoice`).send({ items: [JOB_ITEM] });
+
+    expect(res.status).toBe(200);
+    const [invoice] = await Invoice.find({ workspaceId: WS }).lean();
+    expect(invoice).toMatchObject({
+      number: 'INV-601', source: 'xero', kind: 'job', total: 110, participant: { name: 'Jane Roe' },
+      lines: [{ itemId: ITEM_ID, amount: 110 }],
+    });
+    expect((await Item.findOne({ itemId: ITEM_ID }).lean()).invoicedBy).toBe('INV-601 (Xero)');
+  });
+
+  it('records nothing with the flag off', async () => {
+    delete process.env.INVOICE_LEDGER_WRITE;
+    const res = await request(app).post(`/api/xero/${WS}/${BOARD}/invoice`).send({ items: [JOB_ITEM] });
+
+    expect(res.status).toBe(200);
+    expect(await Invoice.countDocuments({})).toBe(0);
   });
 });

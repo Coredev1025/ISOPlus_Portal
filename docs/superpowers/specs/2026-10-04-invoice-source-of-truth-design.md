@@ -544,3 +544,19 @@ Where the implementation departed from this document, and why.
 * **Producer groups split further (KAN-307).** Section 5's third group is split: the manual
   Age Care route is KAN-307, and the manual Xero routes (five call sites with different line
   builders) and the Xero draft push are a following PR, so each stays reviewable.
+* **The Xero producers stamp or record, they do not issue (KAN-308).** The four manual Xero
+  producers create the invoice in Xero first, so like the manual PDF producers they call a
+  recorder (`recordXeroInvoice`) afterwards rather than `issueInvoice`. The scheduled Xero
+  draft push needs no code of its own: it calls the same handlers, which find the portal
+  invoice the items are already on and attach the Xero number to it (D8). A Xero invoice
+  over items that sit on more than one portal invoice, or on only part of one, is reported
+  and not recorded, because recording it would bill the same work twice.
+  The live recorder differs from backfill rule 5 on purpose: a Xero number over several
+  portal invoices is attached to **none** of them and reported (`xero-spans-invoices`), because
+  attaching it to each would present one charge as several. Two more guards from review: a
+  Xero invoice over items marked as billed by an invoice the ledger does not hold yet (the
+  window between turning the write flag on and running the backfill) records nothing
+  (`xero-on-unrecorded-invoice`), or the item would end up on two invoices; and a portal
+  invoice that already carries a different Xero number is not overwritten
+  (`xero-already-attached`). Items with no marker at all (from before markers existed) are not
+  caught by the second guard and are the backfill's job.
