@@ -35,18 +35,31 @@ function markersWithoutInvoice(markedItems, issuedByItem) {
   }).map((i) => ({ itemId: i.itemId, marker: i.invoicedBy }));
 }
 
+/** Whether the item's pointer names an invoice that exists and lists it. */
+const pointsAtListingInvoice = (item, invoiceById) => {
+  const invoice = invoiceById.get(String(item.activeInvoiceId));
+  return Boolean(invoice) && invoice.lines.some((l) => l.itemId === item.itemId);
+};
+
 /**
  * Invariant 2: a pointer names an invoice that exists, lists the item, and carries the
- * number and source of the marker. A flagged duplicate is reported elsewhere.
+ * number and source of the marker. A flagged duplicate is reported elsewhere. An item with no
+ * marker yet (the marker backfill is a later step) has nothing to agree with: it is reported
+ * as `pointerWithoutMarker`, not failed, so it stays visible until the markers are written.
  */
 function activePointerMismatches(pointedItems, invoiceById) {
   return pointedItems.filter((i) => {
-    const invoice = invoiceById.get(String(i.activeInvoiceId));
-    if (!invoice || !invoice.lines.some((l) => l.itemId === i.itemId)) return true;
-    if (invoice.duplicateOrdinal > 0) return false;
+    if (!pointsAtListingInvoice(i, invoiceById)) return true;
     const marker = parseInvoiceNumber(i.invoicedBy);
-    return !marker || !namesInvoice(marker, invoice);
+    return Boolean(marker) && invoiceById.get(String(i.activeInvoiceId)).duplicateOrdinal === 0 && !namesInvoice(marker, invoiceById.get(String(i.activeInvoiceId)));
   }).map((i) => ({ itemId: i.itemId, marker: i.invoicedBy, activeInvoiceId: i.activeInvoiceId }));
+}
+
+/** Pointers on items that carry no real marker yet: expected until the marker backfill has run. */
+function pointersWithoutMarker(pointedItems, invoiceById) {
+  return pointedItems
+    .filter((i) => pointsAtListingInvoice(i, invoiceById) && !parseInvoiceNumber(i.invoicedBy))
+    .map((i) => ({ itemId: i.itemId, marker: i.invoicedBy ?? null }));
 }
 
 /** An item holding a provisional claim that an issued invoice listing it was issued under. */
@@ -129,6 +142,7 @@ export async function auditInvoices(workspaceId, { now = new Date() } = {}) {
       doubleBilled: [...issuedByItem].filter(([, list]) => list.length > 1).map(([itemId]) => ({ itemId })),
       duplicateNumbers: invoices.filter((i) => i.duplicateOrdinal > 0).map((i) => ({ number: i.number })),
       needsRepair,
+      pointerWithoutMarker: pointersWithoutMarker(pointedItems, invoiceById),
     },
   };
 }

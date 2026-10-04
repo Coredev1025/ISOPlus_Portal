@@ -109,34 +109,41 @@ const labelOrder = (a, b) => (a === '(xero only)') - (b === '(xero only)') || a.
  * second charge; an item on none becomes a Xero invoice. The earliest Xero row wins when an
  * item has two numbers. Returns the attachments for invoices that already exist.
  */
+/** One Xero row: attach it to the portal invoices the item is on, or place it as a Xero invoice. */
+function addXeroRow(row, state) {
+  const { ctx, drafts, report, attachments, label } = state;
+  const xero = parsed(row.invoiceNumber);
+  const item = ctx.itemsById.get(row.itemId);
+  if (!xero) return;
+  if (!item) {
+    note(report, 'deletedItems', { itemId: row.itemId, number: xero.number });
+    return;
+  }
+  const portals = portalInvoicesFor(drafts, ctx.existing, row.itemId);
+  portals.forEach((target) => {
+    attach(target, xero.number, attachments, report);
+    label(xero.number, target.number);
+  });
+  if (portals.length > 0 || ctx.suppressed.has(suppressKey(item.boardId, xero.source, xero.number))) return;
+  if (listedBy(drafts, ctx.existing, row.itemId, xero.source, xero.number)) return;
+  if (billedElsewhere(item)) {
+    note(report, 'staleLegacy', { itemId: row.itemId, number: xero.number, marker: item.invoicedBy });
+    return;
+  }
+  place(drafts, sighting(item, xero, BACKFILL_REASON.XERO_ONLY, { dates: [row.createdAt], revisited: isRevisited(row) }));
+  label(xero.number, '(xero only)');
+}
+
 export function addXeroRows(ctx, drafts, report) {
   const attachments = [];
   const spans = new Map();
+  const label = (xeroNumber, name) => spans.set(xeroNumber, new Set([...(spans.get(xeroNumber) || []), name]));
   const rows = ctx.logRows.filter((r) => r.type === 'Xero')
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt) || String(a.invoiceNumber).localeCompare(String(b.invoiceNumber)));
-  const label = (xeroNumber, name) => spans.set(xeroNumber, new Set([...(spans.get(xeroNumber) || []), name]));
-  for (const row of rows) {
-    const xero = parsed(row.invoiceNumber);
-    const item = ctx.itemsById.get(row.itemId);
-    if (!xero) continue;
-    if (!item) {
-      note(report, 'deletedItems', { itemId: row.itemId, number: xero.number });
-      continue;
-    }
-    const portals = portalInvoicesFor(drafts, ctx.existing, row.itemId);
-    portals.forEach((target) => {
-      attach(target, xero.number, attachments, report);
-      label(xero.number, target.number);
-    });
-    if (portals.length > 0 || ctx.suppressed.has(suppressKey(item.boardId, xero.source, xero.number))) continue;
-    if (listedBy(drafts, ctx.existing, row.itemId, xero.source, xero.number)) continue;
-    if (billedElsewhere(item)) {
-      note(report, 'staleLegacy', { itemId: row.itemId, number: xero.number, marker: item.invoicedBy });
-      continue;
-    }
-    place(drafts, sighting(item, xero, BACKFILL_REASON.XERO_ONLY, { dates: [row.createdAt], revisited: isRevisited(row) }));
-    label(xero.number, '(xero only)');
-  }
+  const state = {
+    ctx, drafts, report, attachments, label,
+  };
+  rows.forEach((row) => addXeroRow(row, state));
   for (const [xeroNumber, names] of spans) {
     if (names.size > 1) note(report, 'xeroSpansInvoices', { xeroNumber, invoices: [...names].sort(labelOrder) });
   }

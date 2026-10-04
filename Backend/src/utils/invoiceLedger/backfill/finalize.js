@@ -26,11 +26,12 @@ function problemWith(draft, board) {
  */
 async function priced(draft, board, deriveTotal, report) {
   const { kind, lowCat } = kindOfBoard(board);
-  const derived = await deriveTotal({
+  const answer = await deriveTotal({
     boardId: draft.boardId, kind, lowCat, itemIds: draft.itemIds, knownTotal: draft.knownTotal,
   });
-  if (!derived && draft.knownTotal === undefined) return { ...draft, problem: 'total-underivable' };
-  if (!derived) note(report, 'amountsUnknown', { number: draft.number });
+  const derived = answer && !answer.error ? answer : null;
+  if (!derived && draft.knownTotal === undefined) return { ...draft, problem: 'total-underivable', detail: answer?.error };
+  if (!derived) note(report, 'amountsUnknown', { number: draft.number, detail: answer?.error });
   return {
     ...draft,
     kind,
@@ -52,10 +53,16 @@ async function placeDrafts(drafts, ctx, deriveTotal, report) {
   return placed;
 }
 
-/** The existing invoice a draft is: same number and source, and the same items or the same participant. */
-const heldBy = (draft, existing) => existing.find((e) => e.source === draft.source && e.number === draft.number
-  && (e.itemIds.some((id) => draft.itemIds.includes(id))
-    || (e.participantKey && e.participantKey === draft.participantKey && e.boardId === draft.boardId)));
+/**
+ * The existing invoice a draft is: same number and source. One that lists the draft's items
+ * wins; only when none does is the same participant on the same board enough. (Two invoices
+ * can share a number and a participant, so the first with that participant must not win.)
+ */
+function heldBy(draft, existing) {
+  const sameNumber = existing.filter((e) => e.source === draft.source && e.number === draft.number);
+  return sameNumber.find((e) => e.itemIds.some((id) => draft.itemIds.includes(id)))
+    ?? sameNumber.find((e) => e.participantKey && e.participantKey === draft.participantKey && e.boardId === draft.boardId);
+}
 
 /**
  * Split into the drafts the collection already holds and the new ones. A draft with items
@@ -153,8 +160,11 @@ function pointersFor(invoices, recorded, existing, ctx) {
     ...recorded.flatMap(({ draft, held }) => draft.itemIds.filter((id) => held.itemIds.includes(id))),
   ]);
   return [...touched].sort().map((itemId) => {
-    const choice = chooseActive(byItem.get(itemId), parsed(ctx.itemsById.get(itemId)?.invoicedBy));
-    return choice.ref ? { itemId, ref: choice.ref } : { itemId, invoiceId: choice.invoiceId };
+    const item = ctx.itemsById.get(itemId);
+    const choice = chooseActive(byItem.get(itemId), parsed(item?.invoicedBy));
+    // `expected` is the pointer the item had at planning time: the write sets the pointer only if it still has it.
+    const expected = item?.activeInvoiceId ? String(item.activeInvoiceId) : null;
+    return choice.ref ? { itemId, ref: choice.ref, expected } : { itemId, invoiceId: choice.invoiceId, expected };
   });
 }
 
@@ -190,7 +200,7 @@ export async function finalize({
 }) {
   const placed = await placeDrafts(drafts, ctx, deriveTotal, report);
   placed.filter((d) => d.problem).forEach((d) => note(report, 'unplaceable', {
-    number: d.number, source: d.source, reason: d.problem, boardId: d.boardId, itemIds: d.itemIds,
+    number: d.number, source: d.source, reason: d.problem, boardId: d.boardId, itemIds: d.itemIds, ...(d.detail ? { detail: d.detail } : {}),
   }));
   const { recorded, fresh } = splitExisting(placed.filter((d) => !d.problem), ctx.existing, report);
   const invoices = assignOrdinals(fresh, ctx.existing, report).map((d) => toInvoice(d, ctx.workspaceId));

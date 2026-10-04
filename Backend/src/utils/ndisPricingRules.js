@@ -8,6 +8,14 @@ export const NEW_SUPPORT_ITEM_ATTR = 'Support Item Number';
 export const NEW_ACTIVITY_TRANSPORT_ITEM_ATTR = 'Activity Based Transport Item Number';
 
 const BOARD_RULE_CACHE_MS = 5 * 60 * 1000;
+
+// The invoice backfill (KAN-311) prices invoices from stored data only. With this on, a pricing
+// rule that cannot be read from the service plan fails instead of asking ISO+ (and, on any
+// failed reply, assuming legacy pricing). Off by default: invoicing is unchanged.
+let pricingNetworkBlocked = false;
+export function blockPricingNetwork(blocked) {
+    pricingNetworkBlocked = Boolean(blocked);
+}
 const boardRuleCache = new Map();
 
 export function hasSelectionValue(itemsValues, key) {
@@ -63,6 +71,9 @@ export async function boardUsesLegacyNdisPricing(workspaceId, boardId) {
         return cached.legacy;
     }
 
+    if (pricingNetworkBlocked) {
+        throw new Error('the pricing rule cannot be inferred from the service plan data, and the backfill does not ask ISO+');
+    }
     const result = await getBoardAttributes(workspaceId, boardId);
     if (result?.status !== 200) {
         boardRuleCache.set(cacheKey, { legacy: true, fetchedAt: Date.now() });

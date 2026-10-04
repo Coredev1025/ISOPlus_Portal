@@ -194,6 +194,12 @@ describe('rule 3: an invoice with no ledger group is built from the marker or th
     expect(result.report.lists.unplaceable[0]).toMatchObject({ number: 'INV-3', reason: 'participant-unknown' });
   });
 
+  it('says why when the total cannot be derived', async () => {
+    const result = await plan({ items: [item('a', { invoicedBy: 'INV-3' })] }, { deriveTotal: async () => ({ error: 'Some items were not found: a' }) });
+    expect(result.invoices).toEqual([]);
+    expect(result.report.lists.unplaceable[0]).toMatchObject({ reason: 'total-underivable', detail: 'Some items were not found: a' });
+  });
+
   it('is not created when the total cannot be derived', async () => {
     const result = await plan({ items: [item('a', { invoicedBy: 'INV-3' })] }, { deriveTotal: async () => null });
     expect(result.invoices).toEqual([]);
@@ -295,7 +301,7 @@ describe('section 6.3: the cases that need an explicit rule', () => {
       ledgerRows: [ledger('r1', 'a', 'INV-5'), ledger('r2', 'a', 'INV-6', { pdfLink: 'https://s3/6.pdf', createdAt: new Date('2026-08-01Z') })],
     });
     expect(result.invoices.map((i) => i.number).sort()).toEqual(['INV-5', 'INV-6']);
-    expect(result.pointers).toEqual([{ itemId: 'a', ref: byNumber(result, 'INV-5').ref }]);
+    expect(result.pointers).toEqual([{ itemId: 'a', ref: byNumber(result, 'INV-5').ref, expected: null }]);
     expect(result.report.lists.doubleBilled).toEqual([{ itemId: 'a', invoices: ['INV-5', 'INV-6'] }]);
   });
 
@@ -556,7 +562,7 @@ describe('review: production-shape inputs', () => {
       ledgerRows: [ledger('r1', 'a', 'INV-5')],
       existing: [{ id: 'inv-1', source: 'portal', number: 'INV-5', duplicateOrdinal: 0, itemIds: ['a'], issuedAt: new Date('2026-07-02Z') }],
     });
-    expect(result.pointers).toEqual([{ itemId: 'a', invoiceId: 'inv-1' }]);
+    expect(result.pointers).toEqual([{ itemId: 'a', invoiceId: 'inv-1', expected: null }]);
   });
 
   it('reports items a draft has beyond an invoice that already exists, instead of minting a duplicate', async () => {
@@ -620,5 +626,41 @@ describe('the invoices it plans are valid records', () => {
     });
     expect(result.invoices.length).toBeGreaterThanOrEqual(4);
     for (const doc of result.invoices) await expect(new Invoice(doc).validate()).resolves.toBeUndefined();
+  });
+});
+
+describe('review: reruns with duplicate numbers and pointers', () => {
+  const existing = (over) => ({
+    source: 'portal', number: 'INV-9', duplicateOrdinal: 0, boardId: NDIS, participantName: 'Jane Smith', issuedAt: new Date('2026-07-01Z'), ...over,
+  });
+
+  it('a rerun matches each draft to the existing invoice that lists its items, not to the first with the same participant', async () => {
+    const result = await plan({
+      items: [item('x'), item('y')],
+      ledgerRows: [
+        ledger('r1', 'x', 'INV-9', { pdfLink: 'https://s3/1.pdf', createdAt: new Date('2026-07-01Z') }),
+        ledger('r2', 'y', 'INV-9', { pdfLink: 'https://s3/2.pdf', createdAt: new Date('2026-07-05Z') }),
+      ],
+      existing: [
+        existing({ id: 'inv-0', duplicateOrdinal: 0, itemIds: ['x'] }),
+        existing({ id: 'inv-1', duplicateOrdinal: 1, itemIds: ['y'] }),
+      ],
+    });
+
+    expect(result.invoices).toEqual([]);
+    expect(result.report.lists.existingMissingItems).toEqual([]);
+    expect(result.stamps).toEqual(expect.arrayContaining([
+      { ledgerRowId: 'r1', invoiceId: 'inv-0' },
+      { ledgerRowId: 'r2', invoiceId: 'inv-1' },
+    ]));
+    expect(result.pointers).toEqual(expect.arrayContaining([{ itemId: 'x', invoiceId: 'inv-0', expected: null }, { itemId: 'y', invoiceId: 'inv-1', expected: null }]));
+  });
+
+  it('a pointer carries the pointer the item had when it was planned, so the write can refuse if it moved', async () => {
+    const result = await plan({
+      items: [item('a', { activeInvoiceId: 'live-1' })],
+      ledgerRows: [ledger('r1', 'a', 'INV-5')],
+    });
+    expect(result.pointers).toEqual([{ itemId: 'a', ref: expect.any(String), expected: 'live-1' }]);
   });
 });

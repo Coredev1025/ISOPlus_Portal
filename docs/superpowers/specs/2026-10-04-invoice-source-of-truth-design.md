@@ -615,3 +615,19 @@ Where the implementation departed from this document, and why.
   * A Xero number over several portal invoices is attached to each and reported
     (`xeroSpansInvoices`); a second, different Xero number on one invoice keeps the earliest and
     is reported (`xeroConflicts`). The live recorder attaches a spanning number to none.
+* **Findings from the first rehearsal on the production copy (KAN-311).** The runnable backfill
+  was run on a fresh scrubbed restore of the 2026-10-03 snapshot after the eight pending
+  migrations. It plans 49 invoices (34 log-only, 15 Xero-only) over 302 items in four
+  workspaces; 8 more candidate invoices are reported `unplaceable` with a reason (a deleted item,
+  an item with no participant name or profile, and three the NDIS generator cannot price because
+  an item has no participant profile reference or builds no rows); 19 ledger rows with no number
+  cannot be placed (the old routes stored no number or board); 27 log rows belong to deleted
+  items; 7 numbers are shared by several participants; 4 Xero numbers span invoices and 5
+  invoices carry two Xero numbers. Applying created exactly the planned records, a second run
+  created nothing, and `--undo` returned every old collection to a byte-identical state (the
+  `dbHash` of items, the log, the ledger and the businesses matched the pre-run values).
+  Three things it changed in the design's tooling: the participant name falls back to the
+  participant profile the item references (the statement resolves names the same way); a total
+  that cannot be derived says why; and the audit reports a pointer on an item with no marker as
+  `pointerWithoutMarker` instead of a violation, because the marker backfill is a later step
+  (it must be empty once that step has run).

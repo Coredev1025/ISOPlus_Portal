@@ -13,6 +13,8 @@
     "build-linux": "mkdir -p dist && cp -r src/* dist/",
     "migrate": "node scripts/migrate.mjs",
     "schema": "node scripts/schema.mjs",
+    "invoice-backfill": "node scripts/invoice-backfill.mjs",
+    "invoice-audit": "node scripts/invoice-audit.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

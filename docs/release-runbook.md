@@ -575,10 +575,64 @@ db.invoicenumbers.aggregate([
 These were checked on 2026-10-04 against a throwaway database holding one of each
 case: each reported exactly its case (query 1 also reported a marker whose only
 ledger row was a statement and one whose row was soft-deleted, as described), and
-each reported nothing on the clean local test database. A wrapper script
-(`npm run invoices:audit`, *(to be written)*) will run them per workspace and print
-one report. Read every row before continuing: the backfill treats each category
+each reported nothing on the clean local test database. The wrapper
+`npm run invoice-audit -- --workspace <id>` (or `--all`, from `Backend/`) checks the invariants
+per workspace, prints each violation and each reported case, and exits 1 if there is a
+violation (read only). Read every row before continuing: the backfill treats each category
 differently (design section 6).
+
+### Running the invoice backfill
+
+`Backend/scripts/invoice-backfill.mjs`, from `Backend/`:
+
+```bash
+npm run invoice-backfill -- --workspace <id>            # DRY RUN, the default: writes nothing, prints a plan hash
+npm run invoice-backfill -- --all --report-file /tmp/backfill.json
+npm run invoice-backfill -- --workspace <id> --apply --plan <hash> --ack double-billed=3 --ack stale-legacy=1
+npm run invoice-backfill -- --workspace <id> --undo              # PREVIEW only
+npm run invoice-backfill -- --workspace <id> --undo --apply      # does it
+npm run invoice-audit -- --workspace <id>                        # read only
+```
+
+* It reads the item markers, the document ledger and the old log and prints what a real run
+  would create (by reason: `ledger`, `marker-only`, `log-only`, `xero-only`) and every
+  category that needs a person: `unplaceable` (with the reason: `board-unknown`,
+  `participant-unknown`, `date-unknown`, `total-underivable` and why), `unplaceableLedgerRows`,
+  `staleLegacy`, `doubleBilled`, `duplicateNumbers`, `xeroSpansInvoices`, `xeroConflicts`,
+  `pendingTokens`, `deletedItems`, `deletedDocuments`, `markerMissing` and the others in the
+  report. Each category printed shows the exact `--ack` flag, and the dry run prints a
+  **plan hash**.
+* A real run (`--apply`) needs **the plan hash of the dry run you read** (`--plan <hash>`) and
+  **every category found acknowledged with its exact count**. If the stores or the invoices
+  changed since the dry run it refuses and asks for a new dry run. It plans each workspace
+  again immediately before writing it and stops if that workspace no longer matches; every
+  planned record is validated before the first write; it prints each workspace as it is
+  written, and if it stops part way, says which workspaces were done (re-running finishes the
+  rest). It refuses without the `invoice-ledger-indexes` migration, and refuses to take over a
+  number a live invoice now holds.
+* It only adds: invoices, `invoiceId` on ledger rows, `activeInvoiceId` on items (only where the
+  item still has the pointer it had when planned), a Xero number on an invoice that lacks one.
+  It never edits a marker, a log row or any other old field. Running it again creates nothing.
+* `--undo` only previews until `--apply` is added. It removes the invoices it made
+  (`origin: backfill`) and the stamps and pointers that name them, never a live-issued invoice,
+  and **leaves alone, and lists, any backfilled invoice live code has updated since** (a Xero
+  stamp, an adopted number) because deleting it would lose what it recorded. **Undo is only
+  safe while `INVOICE_LEDGER_READ` is `off`**: once readers use the new record, a rollback is
+  the flag, not a deletion.
+* Totals for invoices with no printed total are derived with the generators' own functions
+  (NDIS rows, priced per participant profile; Age Care contribution, or the full amount on Low
+  Cat) and marked `totalDerived`. A test pins each kind against real generated invoices. The
+  derivation **never calls ISO+**: a pricing rule that cannot be read from the service plan is
+  reported as `total-underivable`, not assumed. An NDIS item that builds no rows contributes 0.
+* The participant of an invoice comes from the item's `Participant Full Name`, else from the
+  participant profile the item references. An item with no profile reference cannot be priced
+  by the generators and its invoice is reported `unplaceable` with that reason, not guessed.
+* Safety: it refuses a database that is not local unless `--allow-remote` is given (a tunnel to
+  production on localhost passes that check, so check where `MONGODB_URI` really points before
+  every run). Name the workspaces with `--workspace` (repeatable) or pass `--all`; nothing runs
+  by default. The scripts do not write log entries to the database they work on. The
+  `--report-file` holds participant names: it is written readable by its owner only, and should
+  be deleted when it has been read.
 
 ### Before enabling automation: backfill the item markers
 
@@ -628,7 +682,7 @@ empty.
 | Phase | Do | Check before the next | Back out |
 |---|---|---|---|
 | 1. Ship, flags off | Deploy. `INVOICE_LEDGER_WRITE` and `INVOICE_LEDGER_READ` are unset or `off`. | Release checks in section 4. Behaviour is unchanged | Roll back the code (section 5) |
-| 2. Dual write, then backfill | Backup first. **Run the `invoice-ledger-indexes` migration** (`commitInvoice` refuses to write without its unique index). Set `INVOICE_LEDGER_WRITE=on` **first**, outside a scheduled slot (changing a property restarts the environment's processes). Then the backfill script's dry run, `--apply` with each category acknowledged, and a second run *(to be written)*. Write comes first so nothing issued during the backfill is missed | The audit invariants hold for every workspace; counts match the dry run; the second run creates nothing | Set `INVOICE_LEDGER_WRITE=off`; run the script with `--undo`, which removes only backfilled invoices |
+| 2. Dual write, then backfill | Backup first. **Run the `invoice-ledger-indexes` migration** (`commitInvoice` refuses to write without its unique index). Set `INVOICE_LEDGER_WRITE=on` **first**, outside a scheduled slot (changing a property restarts the environment's processes). Then the backfill script's dry run, `--apply` with each category acknowledged, and a second run (it must create nothing), as in "Running the invoice backfill". Write comes first so nothing issued during the backfill is missed | The audit invariants hold for every workspace; counts match the dry run; the second run creates nothing | Set `INVOICE_LEDGER_WRITE=off`; run the script with `--undo`, which removes only backfilled invoices |
 | 3. Shadow read | Set `INVOICE_LEDGER_READ=shadow`. The old answer is served; each difference is logged with a class | The agreed soak (a full week and a full statement cycle) with every difference in a known class, class counts matching the audit, and none unclassified | Set `INVOICE_LEDGER_READ=off` |
 | 4. Switch | Set `INVOICE_LEDGER_READ=on`. **Statements change here**, as accepted. Watch the first scheduled run and the first statement after it | Statements and generator lists for workspaces whose numbers are known; the expected changes and nothing else | Set it back to `shadow` or `off`. The old stores are still complete because dual write continues |
 | 5. Contract | A later release: stop writing the old log, remove the old read paths | Phase 4 stable for a full cycle | Redeploy the previous release. The old log is stale from here on, so this is the point of no easy return |

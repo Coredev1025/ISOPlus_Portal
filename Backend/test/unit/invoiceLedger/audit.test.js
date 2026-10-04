@@ -120,6 +120,29 @@ describe('2: the active pointer agrees with the marker', () => {
     expect(names((await auditInvoices(WS)).violations.activePointerMismatch)).toEqual(['a']);
   });
 
+  // The marker backfill is a later step: until it has run, an item the invoice backfill
+  // pointed has no marker to agree with. That is expected and reported, not a violation.
+  it('reports, not fails, a pointer on an item that has no marker yet', async () => {
+    const inv = await invoice('INV-1', ['a']);
+    await item('a', { activeInvoiceId: inv._id });
+
+    const report = await auditInvoices(WS);
+    expect(report.violations.activePointerMismatch).toEqual([]);
+    expect(names(report.reported.pointerWithoutMarker)).toEqual(['a']);
+  });
+
+  it('still flags a pointer to an invoice that does not list a marker-less item', async () => {
+    const inv = await invoice('INV-1', ['other']);
+    await item('a', { activeInvoiceId: inv._id });
+    expect(names((await auditInvoices(WS)).violations.activePointerMismatch)).toEqual(['a']);
+  });
+
+  it('does not report a pointer that agrees with its marker', async () => {
+    const inv = await invoice('INV-1', ['a']);
+    await item('a', { invoicedBy: 'INV-1', activeInvoiceId: inv._id });
+    expect((await auditInvoices(WS)).reported.pointerWithoutMarker).toEqual([]);
+  });
+
   it('reports, but does not fail, an item that is on two issued invoices (double billed)', async () => {
     const first = await invoice('INV-1', ['a']);
     await invoice('INV-2', ['a']);

@@ -52,7 +52,8 @@ const consoleFormat = printf(({ level, message, timestamp, source, ip, email, ..
 });
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/business-dashboard';
-const shouldUseMongoTransport = process.env.NODE_ENV !== 'test' && Boolean(process.env.MONGODB_URI);
+// LOGGER_MONGO=off keeps a one-off script from writing log entries into the database it is working on.
+const shouldUseMongoTransport = process.env.NODE_ENV !== 'test' && Boolean(process.env.MONGODB_URI) && process.env.LOGGER_MONGO !== 'off';
 
 // Cache to store recent log entries to prevent duplicates
 const logCache = new Map();

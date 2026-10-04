@@ -213,10 +213,25 @@ export async function fetchParticipantProfileItemForMasterPlan(workspaceId, boar
   }).lean();
 }
 
+/** Invoicing needs approved timesheets; the backfill, pricing invoices raised long ago, skips the check. */
+function assertTimesheetsApproved(masterItems, skip) {
+  if (skip) return;
+  const notApproved = masterItems.filter((item) => {
+    const approval = formatLabelValue(item?.data?.[NDIS_MASTERPLAN_ATTR.TIMESHEET_APPROVAL]).trim().toLowerCase();
+    return approval !== 'approved';
+  });
+  if (notApproved.length > 0) {
+    throw new Error(`Some items are not Timesheet Approved and cannot be invoiced (${notApproved.length}).`);
+  }
+}
+
 export async function getNdisInvoiceGeneratorContextFromMasterItems({
   workspaceId,
   boardId,
   masterItemIds,
+  // The backfill (KAN-311) prices invoices raised long ago; an item whose timesheet is no
+  // longer approved was still billed. Default false: invoicing is unchanged.
+  skipApprovalCheck = false,
 }) {
   const ids = [...new Set((masterItemIds || []).filter((id) => Boolean(id)).map((id) => String(id)))];
   if (ids.length === 0) {
@@ -235,13 +250,7 @@ export async function getNdisInvoiceGeneratorContextFromMasterItems({
     throw new Error(`Some items were not found: ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '...' : ''}`);
   }
 
-  const notApproved = masterItems.filter((item) => {
-    const approval = formatLabelValue(item?.data?.[NDIS_MASTERPLAN_ATTR.TIMESHEET_APPROVAL]).trim().toLowerCase();
-    return approval !== 'approved';
-  });
-  if (notApproved.length > 0) {
-    throw new Error(`Some items are not Timesheet Approved and cannot be invoiced (${notApproved.length}).`);
-  }
+  assertTimesheetsApproved(masterItems, skipApprovalCheck);
 
   const {
     servicePlanIds,
