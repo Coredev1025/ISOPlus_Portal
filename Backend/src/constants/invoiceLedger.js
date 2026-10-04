@@ -125,3 +125,17 @@ export const UNEXPECTED_SHADOW_CLASSES = [
   SHADOW_CLASS.PAYMENT_NO_LONGER_APPLIED,
   SHADOW_CLASS.CLOSING_DIFFERS,
 ];
+
+/**
+ * Why the backfill created an invoice (stored on `invoice.backfill.reason`), and the
+ * ledger row types it reads. Touchpoints: utils/invoiceLedger/backfill/*.js.
+ */
+export const BACKFILL_REASON = {
+  LEDGER: 'ledger',
+  MARKER_ONLY: 'marker-only',
+  LOG_ONLY: 'log-only',
+  XERO_ONLY: 'xero-only',
+};
+
+/** The `pdflinks.type` values that are invoices: scheduled NDIS and Age Care, and the older `Invoice`. */
+export const LEDGER_INVOICE_TYPES = ['NDIS Invoice', 'Participant Tax Invoice', 'Invoice'];

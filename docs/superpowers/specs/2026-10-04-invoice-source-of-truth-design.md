@@ -582,3 +582,36 @@ Where the implementation departed from this document, and why.
   `duplicate_number` and `due_date_differs` (known) and `closing_differs` (unexpected: the
   closing balance differs with nothing to explain it). Known classes log at info with a
   per-participant summary; unexpected ones warn.
+* **The backfill is built as a pure planner first (KAN-310).** `planBackfill` takes the old
+  stores as plain data and returns the invoices, the item pointers, the ledger-row stamps, the
+  Xero numbers to attach to invoices that already exist, and the report, so a dry run is exactly
+  the plan and the real run applies it. Every source (ledger rows, markers, the log, Xero rows)
+  adds its items to one registry of drafts keyed by board, source, number and normalised
+  participant, so an item joins the invoice another source already described. Departures from
+  section 6.2 worth knowing:
+  * An invoice with no date (no `invoicedAt` and no log row to take one from) is reported
+    `date-unknown`, never dated today; one dated from a log row that was overwritten later is
+    marked `issued-at-approximate` and counted.
+  * A ledger row with no board takes its item's, because the old routes never stored one. A
+    row with no number is placed by the document link, then by the item **only when the item's
+    log row does not name a different document**: the log keeps the latest number per item, so
+    an older document must not inherit it (rule 2 says "then by itemId"; this narrows it).
+  * Log rows and markers **extend** a ledger invoice of the same number, board and participant
+    instead of becoming a second invoice (the printed total covers the whole invoice). Two
+    participants sharing a number stay two invoices; the earliest owns `duplicateOrdinal` 0.
+  * A log row for an item whose **marker** names a different number is `stale-legacy`. An item
+    with no marker that another invoice already lists keeps its logged invoice too and is
+    reported `double-billed`, because the log holds the item's latest number.
+  * A printed total stands when nothing can be derived (the items may be gone): the invoice is
+    created with no line amounts and reported `amounts-unknown`. A regenerated document takes
+    the latest document's total and reports when totals differ.
+  * A document whose ledger rows are all deleted is reported `deleted-document` and suppresses
+    that number **on that board**, so the old log cannot bring it back (the statement leaves it
+    out too); a marker caught by it is listed as `suppressedMarkers`.
+  * An invoice that already exists gets its ledger rows stamped, a Xero number attached
+    (`xeroAttachments`) and, when the plan has items it lacks, an `existingMissingItems` report,
+    never a second invoice. Pointers also cover the items of recorded invoices, so a resumed run
+    completes.
+  * A Xero number over several portal invoices is attached to each and reported
+    (`xeroSpansInvoices`); a second, different Xero number on one invoice keeps the earliest and
+    is reported (`xeroConflicts`). The live recorder attaches a spanning number to none.
