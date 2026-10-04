@@ -15,14 +15,7 @@ import { cn } from "@/lib/utils";
 import { UNIT_OPTIONS } from "@/constants/automation";
 import { DEFAULT_BUSINESS_TIMEZONE } from "@/constants/timezone";
 import { formatNextRun, toDateInputValue } from "@/lib/automation-helpers";
-import {
-  HOUR_OPTIONS,
-  MERIDIEM_OPTIONS,
-  MINUTE_OPTIONS,
-  parseRunAt,
-  toRunAt,
-  type RunAtParts,
-} from "@/lib/run-at-time";
+import { RunAtSpinner } from "@/lib/run-at-spinner";
 import {
   defaultRunOnForUnit,
   runOnOptionsForUnit,
@@ -175,62 +168,6 @@ type AutomationScheduleBlockProps = Readonly<{
   onChange: (next: AutomationBlock) => void;
 }>;
 
-/**
- * Run At, as hour / minute / AM-PM.
- *
- * Each select writes the whole value back through `toRunAt`, so the parent
- * never holds the three parts — there is one source of truth for the time and
- * it is the same `HH:mm` string the API takes.
- *
- * The three triggers carry their own aria-labels because the field's visible
- * label names the row, not the control: a screen reader on the middle select
- * would otherwise hear "Run At" and have no idea it was choosing minutes.
- */
-function RunAtPicker({
-  idPrefix,
-  value,
-  onChange,
-}: Readonly<{
-  idPrefix: string;
-  value: string;
-  onChange: (next: string) => void;
-}>) {
-  const parts = parseRunAt(value);
-  const setPart = (patch: Partial<RunAtParts>) => onChange(toRunAt({ ...parts, ...patch }));
-
-  return (
-    <div className="flex items-center gap-2">
-      <OptionSelect
-        id={`${idPrefix}-run-at-hour`}
-        ariaLabel="Run At hour"
-        className="flex-1"
-        value={parts.hour}
-        options={HOUR_OPTIONS}
-        onValueChange={(hour) => setPart({ hour })}
-      />
-      <span aria-hidden="true" className="text-muted-foreground">
-        :
-      </span>
-      <OptionSelect
-        id={`${idPrefix}-run-at-minute`}
-        ariaLabel="Run At minute"
-        className="flex-1"
-        value={parts.minute}
-        options={MINUTE_OPTIONS}
-        onValueChange={(minute) => setPart({ minute })}
-      />
-      <OptionSelect
-        id={`${idPrefix}-run-at-meridiem`}
-        ariaLabel="Run At AM or PM"
-        className="flex-1"
-        value={parts.meridiem}
-        options={MERIDIEM_OPTIONS}
-        onValueChange={(meridiem) => setPart({ meridiem: meridiem as RunAtParts["meridiem"] })}
-      />
-    </div>
-  );
-}
-
 export function AutomationScheduleBlock({
   idPrefix,
   label,
@@ -300,16 +237,13 @@ export function AutomationScheduleBlock({
           onChange={(runOn) => set({ runOn })}
         />
 
-        {/* KAN-263 replaced `<input type="time">` here. The native control
-            renders a different widget in every browser — the rolling spinner
-            the client called old-school — and whether it shows AM/PM at all
-            depends on the reader's locale, so the same schedule read
-            differently to different people. Three selects are the same
-            controls as Frequency and Run On beside them, and say AM/PM
-            outright. The stored value is unchanged: HH:mm, 24-hour. */}
-        <AutomationField id={`${idPrefix}-run-at-hour`} label="Run At" labelFor={false}>
-          <RunAtPicker
-            idPrefix={idPrefix}
+        {/* KAN-263. The native `<input type="time">` rendered a different
+            widget per browser and showed AM/PM only in some locales; the
+            client asked for the ISO+ "Scheduled Shift Start" spinner instead,
+            with AM/PM added. The stored value is unchanged: HH:mm, 24-hour. */}
+        <AutomationField id={`${idPrefix}-run-at`} label="Run At">
+          <RunAtSpinner
+            id={`${idPrefix}-run-at`}
             value={value.runAt}
             onChange={(runAt) => set({ runAt })}
           />

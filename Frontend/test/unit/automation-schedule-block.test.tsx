@@ -61,3 +61,20 @@ describe("AutomationScheduleBlock — the Next Run caption", () => {
     expect(screen.queryByText(/read-only/i)).not.toBeInTheDocument();
   });
 });
+
+/**
+ * KAN-263. Run At is the ISO+-style spinner field, not three dropdowns: the
+ * client pointed at the "Scheduled Shift Start Date & Time" picker as the look
+ * to copy. The block reads the stored HH:mm straight into it.
+ */
+describe("AutomationScheduleBlock — Run At", () => {
+  it("is the spinner field, showing the stored time on a 12-hour clock", () => {
+    renderBlock(block({ runAt: "17:30" }));
+    expect(screen.getByRole("button", { name: /run at/i })).toHaveTextContent("5:30 PM");
+  });
+
+  it("no longer offers the hour / minute / AM-PM dropdowns", () => {
+    renderBlock(block({ runAt: "17:30" }));
+    expect(screen.queryByRole("combobox", { name: /run at hour/i })).not.toBeInTheDocument();
+  });
+});

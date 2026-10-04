@@ -1,16 +1,14 @@
-import type { AutomationSelectOption } from "@/lib/automation-schedule-block";
-
 /**
  * The Run At field on a 12-hour clock (KAN-263).
  *
- * The picker shows hour / minute / AM-PM, but the value stored and sent is
+ * The spinner shows hour / minute / AM-PM, but the value stored and sent is
  * unchanged: `HH:mm` on a 24-hour clock, which is what the backend's
  * RUN_AT_PATTERN validates and what the scheduler computes slots from. These
  * two functions are the entire conversion, kept pure and apart from the
  * component so the midnight and noon corners can be tested without a DOM.
  */
 export type RunAtParts = {
-  /** "1".."12", unpadded — the value of the hour select. */
+  /** "1".."12", unpadded — what the hour column shows. */
   hour: string;
   /** "00".."59", padded. */
   minute: string;
@@ -23,10 +21,10 @@ const FALLBACK: RunAtParts = { hour: "9", minute: "00", meridiem: "AM" };
 const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 /**
- * `HH:mm` split into what the three selects show.
+ * `HH:mm` split into what the three spinner columns show.
  *
  * An unreadable value falls back rather than throwing or blanking the field:
- * a blank select would post an empty runAt on the next save and silently
+ * a blank field would post an empty runAt on the next save and silently
  * retime the client's automation. 0 is 12 AM and 12 is 12 PM — the two corners
  * a naive `hour % 12` gets wrong in opposite directions.
  */
@@ -41,7 +39,7 @@ export function parseRunAt(value: string): RunAtParts {
 }
 
 /**
- * The three selects back into `HH:mm`.
+ * The three spinner columns back into `HH:mm`.
  *
  * Padded on the way out because the backend pattern requires two digits in
  * both halves — "9:5" is not a time the scheduler will accept.
@@ -52,29 +50,26 @@ export function toRunAt({ hour, minute, meridiem }: RunAtParts): string {
   return `${String(hour24).padStart(2, "0")}:${String(Number(minute)).padStart(2, "0")}`;
 }
 
-/** 12 first, the way a clock face reads. */
-export const HOUR_OPTIONS: readonly AutomationSelectOption[] = Object.freeze(
-  [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((hour) => ({
-    value: String(hour),
-    label: String(hour),
-  })),
-);
+/** One column of the spinner. */
+export type RunAtField = keyof RunAtParts;
+
+const wrap = (value: number, size: number) => ((value % size) + size) % size;
 
 /**
- * Every minute, not five-minute steps.
+ * One click of a spinner arrow: the given column moves by `direction`, and
+ * wraps rather than stopping at an end.
  *
- * The native `<input type="time">` this replaces accepted any minute, so a
- * workspace already scheduled on 09:07 would find its own value missing from
- * the list — and be moved off it by the next save.
+ * Each column spins on its own — 59 → 00 leaves the hour alone — which is how
+ * the ISO+ "Scheduled Shift Start" picker this copies behaves, and it means a
+ * minute arrow can never move the time by an hour as a side effect.
  */
-export const MINUTE_OPTIONS: readonly AutomationSelectOption[] = Object.freeze(
-  Array.from({ length: 60 }, (_, minute) => {
-    const padded = String(minute).padStart(2, "0");
-    return { value: padded, label: padded };
-  }),
-);
-
-export const MERIDIEM_OPTIONS: readonly AutomationSelectOption[] = Object.freeze([
-  { value: "AM", label: "AM" },
-  { value: "PM", label: "PM" },
-]);
+export function stepRunAt(parts: RunAtParts, field: RunAtField, direction: 1 | -1): RunAtParts {
+  if (field === "meridiem") {
+    return { ...parts, meridiem: parts.meridiem === "AM" ? "PM" : "AM" };
+  }
+  if (field === "minute") {
+    return { ...parts, minute: String(wrap(Number(parts.minute) + direction, 60)).padStart(2, "0") };
+  }
+  // 1..12 on the face, so step in 0..11 and add the 1 back.
+  return { ...parts, hour: String(wrap(Number(parts.hour) - 1 + direction, 12) + 1) };
+}
