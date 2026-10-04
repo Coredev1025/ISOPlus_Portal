@@ -90,11 +90,12 @@ export function resetAutomationRun({
   workspaceId,
   fixture = "test/fixtures/care-management-automation.json",
 }: ResetOptions): void {
-  // Run artifacts only. The fixture seeds no invoiceNumbers of its own, so
+  // Run artifacts only. The fixture seeds no invoiceNumbers or ledger invoices of its own, so
   // everything here was written by a previous tick.
   mongoEval(
     `db.invoicenumbers.deleteMany({workspaceId:${JSON.stringify(workspaceId)}});` +
       `db.pdflinks.deleteMany({workspaceId:${JSON.stringify(workspaceId)}});` +
+      `db.invoices.deleteMany({workspaceId:${JSON.stringify(workspaceId)}});` +
       `db.emailsends.deleteMany({workspaceId:${JSON.stringify(workspaceId)}});`,
   );
 

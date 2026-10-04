@@ -151,6 +151,67 @@ describe('normalizeFixture', () => {
     });
   });
 
+  describe('invoices (ledger)', () => {
+    const entry = (over = {}) => ({
+      boardId: 'board-a',
+      number: 'INV-0001',
+      lines: [{ itemId: 'i-1', amount: 100 }],
+      total: 100,
+      ...over,
+    });
+
+    it('defaults the ledger fields and pins the workspace to the fixture', () => {
+      const [inv] = normalizeFixture({
+        ...twoBoards(),
+        invoices: [entry({ workspaceId: 'ws-somewhere-else' })],
+      }).invoices;
+      expect(inv).toMatchObject({
+        workspaceId: 'ws-1',
+        boardId: 'board-a',
+        number: 'INV-0001',
+        source: 'portal',
+        kind: 'ndis',
+        status: 'issued',
+        origin: 'live',
+        duplicateOrdinal: 0,
+        legacyNumbers: [],
+      });
+    });
+
+    it('keeps declared values', () => {
+      const [inv] = normalizeFixture({
+        ...twoBoards(),
+        invoices: [entry({ kind: 'age_care', source: 'xero', legacyNumbers: ['INV-0001 (Xero)'] })],
+      }).invoices;
+      expect(inv).toMatchObject({ kind: 'age_care', source: 'xero', legacyNumbers: ['INV-0001 (Xero)'] });
+    });
+
+    it('is empty when the fixture declares none', () => {
+      expect(normalizeFixture(twoBoards()).invoices).toEqual([]);
+    });
+
+    it('rejects an entry missing boardId, number or lines', () => {
+      expect(() => normalizeFixture({
+        ...twoBoards(),
+        invoices: [{ boardId: 'board-a', number: 'INV-1' }],
+      })).toThrow(/invoices.*boardId.*number.*lines/);
+    });
+
+    it('rejects a line without an itemId', () => {
+      expect(() => normalizeFixture({
+        ...twoBoards(),
+        invoices: [entry({ lines: [{ amount: 5 }] })],
+      })).toThrow(/itemId/);
+    });
+
+    it('rejects a boardId that is not one of the fixture boards', () => {
+      expect(() => normalizeFixture({
+        ...twoBoards(),
+        invoices: [entry({ boardId: 'nope' })],
+      })).toThrow(/board-a|boards/);
+    });
+  });
+
   describe('invoiceNumbers', () => {
     it('defaults workspaceId to the fixture workspaceId and type to PDF', () => {
       const shape = normalizeFixture({

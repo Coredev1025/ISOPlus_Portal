@@ -92,6 +92,18 @@ Related docs-only PR: **961** (design, runbook, rehearsal notes, this handover).
 * The client was told the release is held until statements are fixed properly. Message drafts are in the conversation, not in the repo.
 * KAN-296 and KAN-297 close when reads are switched on after the comparison period.
 
+## Real-app check on the production copy (2026-10-05)
+
+Backend run offline against a scrubbed copy with both backfills applied, once with `INVOICE_LEDGER_READ` unset and once with `on`, signed in through the one-time ticket. Across the 12 boards that have ledger invoices:
+
+- NDIS invoice export (`invoice-csv-ndis`): identical, ignoring the `exportDurationMs` timing field.
+- pdf-link for all 49 ledger invoices: same status either way (34 found, 15 not found).
+- Age Care export (`invoice-csv`): 8 of 12 boards differ, 200 cells in total, every one `INV-N (Xero)` becoming `INV-N (ISO+™)`. These are the items that have both a PDF and a Xero row (decision D8): the portal number is shown and the Xero number is kept on the invoice. This is a customer-visible change to announce with D3 and the due-date/ageing change.
+
+Step 6, part 1 (KAN-314): the dev fixture loader takes an `invoices` section (ledger rows, `--list`/`--remove` aware), `care-management-55390-full.json` carries the ledger rows for INV-1002/1003, and the e2e reset clears `invoices`. Still to do: Playwright tests per producer with the row highlight and Invoiced badge.
+
+Deferred: 4c (dropping the old-log filter from scheduled selection). It stays as a second guard until the contract phase; with reads on the log is still consulted as a fallback guard.
+
 ## Practical notes from the build
 
 * **Tickets:** KAN-302 (the epic, keep updated), KAN-303 characterization, KAN-304 model and writer, KAN-305 scheduled runs, KAN-306 manual NDIS and webhooks. 3c and later get their own. Jira transitions in project KAN: 11 To Do, 21 In Progress, 31 In Review, 41 Done, 42 Test failed.

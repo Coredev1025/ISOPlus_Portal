@@ -2626,5 +2626,53 @@
         "Timesheet Approval": "Approved"
       }
     }
+  ],
+  "invoices": [
+    {
+      "boardId": "jpjztrn14pJ",
+      "number": "INV-1002",
+      "kind": "age_care",
+      "legacyNumbers": [
+        "INV-1002 (ISO+™)"
+      ],
+      "lines": [
+        {
+          "itemId": "d39ba1c1-95e0-41f0-8d3b-ad3d50253f28",
+          "amount": 0
+        },
+        {
+          "itemId": "8ddc3c43-2a97-470e-a959-d2817fc532cb",
+          "amount": 0
+        },
+        {
+          "itemId": "316e1440-d7c6-44ae-b765-1b73b179ad70",
+          "amount": 0
+        },
+        {
+          "itemId": "75a48aa4-737e-405a-83b5-881f0e7665db",
+          "amount": 0
+        }
+      ],
+      "pdf": {
+        "pdfLink": "https://isoplus-portal-dev-public.s3.ap-southeast-2.amazonaws.com/output/55390/jpjztrn14pJ/Participant-invoices/INV-1002-ISO%2B™-Jane-Smith.pdf"
+      }
+    },
+    {
+      "boardId": "o24sGM1FoST",
+      "number": "INV-1003",
+      "kind": "ndis",
+      "legacyNumbers": [
+        "INV-1003 (ISO+™)"
+      ],
+      "lines": [
+        {
+          "itemId": "41fdecfd-7949-48bd-b1b1-2b37102a3913",
+          "amount": 0
+        }
+      ],
+      "pdf": {
+        "pdfLink": "https://isoplus-portal-dev-public.s3.ap-southeast-2.amazonaws.com/output/55390/o24sGM1FoST/NDIS-invoices/INV-1003-ISO%2B™-David_Smith.pdf"
+      }
+    }
   ]
 }

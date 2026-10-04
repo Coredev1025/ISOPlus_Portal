@@ -111,6 +111,31 @@ function normalizeInvoiceNumber(entry, boardIds, workspaceId) {
   return { type: 'PDF', ...entry, workspaceId };
 }
 
+// Ledger invoices (Invoice model, KAN-302), so a fixture board still reads as
+// invoiced when INVOICE_LEDGER_READ is on. workspaceId is pinned to the
+// fixture's for the same reason as invoiceNumbers. Defaults mirror the model's.
+function normalizeInvoice(entry, boardIds, workspaceId) {
+  if (!entry.boardId || !entry.number || !Array.isArray(entry.lines)) {
+    fail('every invoices entry needs boardId, number and lines');
+  }
+  if (!boardIds.has(entry.boardId)) {
+    fail(`invoices entry "${entry.number}" names boardId "${entry.boardId}", which is not one of the fixture's boards`);
+  }
+  if (entry.lines.some((line) => !line?.itemId)) {
+    fail(`invoices entry "${entry.number}" has a line without an itemId`);
+  }
+  return {
+    source: 'portal',
+    kind: 'ndis',
+    status: 'issued',
+    origin: 'live',
+    duplicateOrdinal: 0,
+    legacyNumbers: [],
+    ...entry,
+    workspaceId,
+  };
+}
+
 // --- the local-only guard ----------------------------------------------------
 
 // 'mongo' is the compose service name — inside the dev network that is the
@@ -177,6 +202,8 @@ export function normalizeFixture(fixture) {
     scheduledJobs: (fixture.scheduledJobs ?? []).map(normalizeScheduledJob),
     invoiceNumbers: (fixture.invoiceNumbers ?? [])
       .map((entry) => normalizeInvoiceNumber(entry, boardIds, workspaceId)),
+    invoices: (fixture.invoices ?? [])
+      .map((entry) => normalizeInvoice(entry, boardIds, workspaceId)),
     // Files the offline store must hold for the fixture to render as it does
     // in production — the business logo, chiefly. Keyed exactly as the
     // application asks for them, so `business.defaultLogo` and this key are

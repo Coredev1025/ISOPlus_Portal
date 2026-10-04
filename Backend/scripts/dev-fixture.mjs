@@ -33,6 +33,8 @@
 // array; with multiple boards every item must name its `boardId`. Optional
 // `automationSettings` (one doc per workspace) and `scheduledJobs` (keyed on
 // {kind, targetId}) sections seed the KAN-10 automation rows; an optional
+// `invoices` section (ledger rows, keyed on {workspaceId, source, number,
+// duplicateOrdinal}) seeds ledger invoices for INVOICE_LEDGER_READ; an optional
 // `invoiceNumbers` section (keyed on {itemId, workspaceId, boardId, type})
 // seeds already-invoiced rows. Shape rules are pure and unit-tested in
 // devFixtureShape.mjs.
@@ -123,7 +125,7 @@ try {
 }
 const {
   workspaceId, business, boards, items, automationSettings, scheduledJobs, invoiceNumbers,
-  localFiles,
+  invoices, localFiles,
 } = shape
 
 // --- replay ------------------------------------------------------------------
@@ -235,6 +237,7 @@ const Item = await model('Item')
 const AutomationSettings = await model('AutomationSettings')
 const ScheduledJob = await model('ScheduledJob')
 const InvoiceNumber = await model('InvoiceNumber')
+const Invoice = await model('Invoice')
 const PDFLink = await model('PDFLink')
 
 const done = async (code) => {
@@ -256,6 +259,17 @@ const invoiceKeys = invoiceNumbers.map((n) => ({
   itemId: n.itemId,
   boardId: n.boardId,
   type: n.type,
+}))
+// The upsert is only idempotent once migration invoice-ledger-indexes has built
+// the unique index. Fixture rows seed the "invoiced" state only (line amounts 0,
+// no total), so do not assert amounts against them. A real invoice with the same
+// workspace, source and number is overwritten on load and deleted on --remove.
+// Ledger invoices are keyed the way their unique index is: workspace, source,
+// number, duplicateOrdinal. normalizeInvoice pins workspaceId to the fixture's.
+const ledgerKeys = invoices.map((inv) => ({
+  source: inv.source,
+  number: inv.number,
+  duplicateOrdinal: inv.duplicateOrdinal,
 }))
 const dbName = mongoose.connection.db.databaseName
 
@@ -305,6 +319,17 @@ const listInvoiceNumbers = async () => {
   }
 }
 
+const listLedgerInvoices = async () => {
+  if (ledgerKeys.length === 0) return
+  const found = await Invoice.find({ workspaceId, $or: ledgerKeys }, 'source number duplicateOrdinal').lean()
+  console.log(`  invoices (ledger)        ${found.length}/${ledgerKeys.length} present`)
+  for (const inv of invoices) {
+    const hit = found.some((f) => f.source === inv.source && f.number === inv.number
+      && f.duplicateOrdinal === inv.duplicateOrdinal)
+    console.log(`    ${hit ? '✓' : '✗'} ${inv.number} [${inv.source}]`)
+  }
+}
+
 if (flags['--list']) {
   const [biz, foundBoards, found] = await Promise.all([
     Business.findOne({ workspaceId }).lean(),
@@ -324,6 +349,7 @@ if (flags['--list']) {
   }
   await listAutomationSections()
   await listInvoiceNumbers()
+  await listLedgerInvoices()
   console.log('')
   await done(0)
 }
@@ -367,6 +393,10 @@ if (flags['--remove']) {
   if (invoiceKeys.length > 0) {
     const removed = await InvoiceNumber.deleteMany({ workspaceId, $or: invoiceKeys })
     console.log(`  invoiceNumbers      ${removed.deletedCount}  (matched on the fixture's itemId/type pairs only)`)
+  }
+  if (ledgerKeys.length > 0) {
+    const removed = await Invoice.deleteMany({ workspaceId, $or: ledgerKeys })
+    console.log(`  invoices (ledger)   ${removed.deletedCount}  (matched on the fixture's source/number pairs only)`)
   }
   console.log('')
   await done(0)
@@ -485,6 +515,15 @@ if (itemIds.length > 0) {
   if (cleared.deletedCount > 0) {
     console.log(`  cleared   ${cleared.deletedCount} scheduled-run pdfLink row(s)`)
   }
+}
+
+for (const inv of invoices) {
+  await Invoice.findOneAndUpdate(
+    { workspaceId, source: inv.source, number: inv.number, duplicateOrdinal: inv.duplicateOrdinal },
+    { $set: stripDollarKeys(inv) },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  )
+  console.log(`  invoice (ledger)    ${inv.number} [${inv.source}] ${inv.lines.length} line(s)`)
 }
 
 console.log(`\n  ${items.length} item(s) loaded. Inspect with: npm run dev:fixture -- --list`)

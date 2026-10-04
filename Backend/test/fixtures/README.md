@@ -184,7 +184,9 @@ items through the real invoice row builders):
 of the three Care Management boards as portal-dev served them on 2026-08-17
 (65 SaH + 43 NDIS + 3 NEW rows, verbatim ids, dates, statuses, service codes),
 plus the `invoiceNumbers` entries that mark dev's already-issued INV-1002 and
-INV-1003. Person, bank and billing-contact values are invented; the SaH money
+INV-1003, and the matching `invoices` (ledger) entries so those items still read
+as invoiced when `INVOICE_LEDGER_READ` is on (line amounts are 0: the fixture
+does not pin what each item billed). Person, bank and billing-contact values are invented; the SaH money
 columns reproduce dev's computed totals **to the cent**
 (24587.50 / 22319.70 / 1216.50), and Jane Smith's January 2025 monthly
 statement summary matches dev's exactly (47 services, 286.25 h).
