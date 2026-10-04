@@ -66,7 +66,7 @@ Related docs-only PR: **961** (design, runbook, rehearsal notes, this handover).
 * Test first; characterize before you move (the repo rule, [`docs/full-stack-engineering.md`](../full-stack-engineering.md)). Run the **whole** Backend suite before every push (`cd Backend && npx vitest run`).
 * Cognitive complexity < 15 per function (CLAUDE.md). No unrequested refactors. No AI attribution anywhere, no em dashes, human commit messages.
 * Never push to `develop` or `main`; branch `<type>/<TICKET>_<snake_case>`; PRs target `develop`.
-* Jira: one ticket per PR; log time as a comment (rounded up to 15 minutes, with a warranty note); keep KAN-302 updated.
+* Jira: one ticket per PR; log time as a comment (with a warranty note); keep KAN-302 updated.
 * Local Mongo has no transactions: the design relies on a claim, an explicit commit point and invariants, not on a database transaction.
 
 ## Local state on Masoud's machine (not in the repo)
