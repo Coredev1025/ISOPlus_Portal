@@ -23,11 +23,13 @@ Requires **Docker** (with Compose v2) and **Node 20+** on the host. Nothing else
 npm run doctor     # check prerequisites
 npm run dev:up     # build + start the whole stack, health-gated
 npm run seed       # restore the sample database
-npm run dev:user   # set a local password on the seeded admin account
+npm run dev:login  # print a one-time sign-in URL
 ```
 
-Then open **http://localhost:3100**, click **administrator credentials** at the
-bottom of the login screen, and sign in with the account `dev:user` prints.
+Then open the URL `dev:login` prints — it signs you in once as a local support
+admin. Password login no longer exists; see
+[docs/local-development.md](docs/local-development.md#logging-in-locally) for the
+two `Backend/.env` settings that make the session last.
 The API is on **4001** — `curl localhost:4001/api/healthcheck` returns
 `{"status":"OK"}`, and Bull Board is at `/api/queues`.
 
@@ -52,7 +54,7 @@ All run from the repo root.
 | `npm run dev:status` | Show container status for both stacks                        |
 | `npm run dev:logs`   | Tail all logs                                                |
 | `npm run seed`       | Restore the Mongo dump from `seed/`                          |
-| `npm run dev:user`   | Set a known password on the seeded `support_admin`           |
+| `npm run dev:login`  | Print a one-time URL that signs you in as a local admin      |
 | `npm run schema`     | Report live collection shapes and model drift                |
 | `npm run migrate`    | Create and run database migrations                           |
 | `npm run worktree`   | Create a git worktree with its own ports and env             |

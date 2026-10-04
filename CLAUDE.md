@@ -240,11 +240,12 @@ Five rules make that file worth having rather than just another hop:
 
 ## Logging in locally
 
-The login screen's primary **Sign in with ISO+™** button starts an OAuth flow against the live `app.isoplus.online`, which cannot complete locally — the ISO+ credentials are blank in a local `Backend/.env`. Do not try to make that path work offline; use the credentials path the app already ships:
+Password login was removed in KAN-27. The login screen's primary **Sign in with ISO+™** button starts an OAuth flow against the live `app.isoplus.online`, which cannot complete locally unless you hold real ISO+ app credentials. Do not try to make that path work offline; use the path the app already ships:
 
-- `npm run dev:user` sets a known password (`local-dev-only`) on the seeded `support_admin` account and prints it. Then click **administrator credentials** at the bottom of the login screen and sign in.
-- `npm run seed` replaces the `users` collection and clears that password. Re-run `dev:user` afterwards; `seed` prints a reminder.
-- The script writes one row in a local database using an already-shipping route. It adds **no** auth code to the application, and refuses any non-local `MONGODB_URI` with no override flag. Do not add a dev-login endpoint or a `NODE_ENV` branch to the auth routes — that would put a real auth bypass in a repo that auto-deploys.
+- `npm run dev:login` prints a one-time URL (`http://localhost:3100/?ticket=…`) that signs you in as a local `support_admin`. It inserts a one-time OAuth ticket in this worktree's database and the app's own `oauth-exchange` route redeems it.
+- It needs two `Backend/.env` settings or the session is refused: a non-empty `PERSONAL_ACCESS_TOKEN` (e.g. `local-offline-placeholder`) with `ISOPLUS_OFFLINE=1`, and a **blank** `GOOGLE_TARGET_GROUP`. The command warns when either is wrong. Details in [`docs/local-development.md`](docs/local-development.md#logging-in-locally).
+- It adds **no** auth code to the application and refuses any non-local `MONGODB_URI`. Do not add a dev-login endpoint or a `NODE_ENV` branch to the auth routes — that would put a real auth bypass in a repo that auto-deploys.
+- `npm run seed` replaces the `users` collection; run `dev:login` again afterwards.
 
 **Being logged in is not the same as having data.** Several endpoints proxy to the live ISO+ API rather than reading Mongo — `GET /api/workspaces` is one — and return `401` with `{"error_type":"oauth"}` without a real `PERSONAL_ACCESS_TOKEN`. That is also why the seeded `workspaces` collection is empty while `boards` is not. Anything backed by seeded Mongo data works locally; anything needing live ISO+ data does not. When a local 401 appears, check the response body before assuming the session broke: `{"message":"Authentication required"}` is the auth middleware, `{"error_type":"oauth"}` is the upstream ISO+ call.
 

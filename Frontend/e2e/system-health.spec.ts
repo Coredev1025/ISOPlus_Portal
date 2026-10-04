@@ -19,36 +19,10 @@ import { execFileSync } from "node:child_process";
  * it would be a change to an Epic 5 file this task has no reason to touch.
  */
 
-const USER_EMAIL = process.env.E2E_USER_EMAIL;
-const USER_PASSWORD = process.env.E2E_USER_PASSWORD;
-
 const WORKSPACE = process.env.E2E_SYSTEM_HEALTH_WORKSPACE_ID ?? "55369";
 
 async function signIn(page: Page) {
   await signInSupportAdmin(page);
-}
-
-/**
- * Non-admin e2e still depends on a password-capable login path for isoplus_user
- * fixtures. Support-admin sign-in no longer uses email/password — skip when
- * those credentials are not configured.
- */
-async function signInAsNonAdmin(page: Page) {
-  test.skip(
-    !USER_EMAIL || !USER_PASSWORD,
-    "set E2E_USER_EMAIL and E2E_USER_PASSWORD to a real isoplus_user account",
-  );
-  const response = await page.request.post(`${BACKEND}/api/auth/login`, {
-    data: { email: USER_EMAIL, password: USER_PASSWORD },
-  });
-  expect(response.ok(), `login failed: ${response.status()}`).toBe(true);
-  const verify = await page.request.get(`${BACKEND}/api/auth/verify`);
-  expect(verify.ok(), `verify failed: ${verify.status()}`).toBe(true);
-  const body = await verify.json();
-  expect(
-    body?.user?.role,
-    `expected an isoplus_user account, got role "${body?.user?.role}" — check E2E_USER_EMAIL`,
-  ).toBe("isoplus_user");
 }
 
 test.describe("System Health", () => {
@@ -162,15 +136,11 @@ test.describe("System Health", () => {
     }
   });
 
-  test("a non-admin never sees the tab", async ({ page }) => {
-    test.skip(!USER_EMAIL || !USER_PASSWORD, "set E2E_USER_EMAIL and E2E_USER_PASSWORD to a real isoplus_user account");
-
-    await signInAsNonAdmin(page);
-    await page.goto("/dashboard");
-
-    await expect(page.getByRole("tab", { name: /workspaces/i })).toBeVisible();
-    await expect(page.getByRole("tab", { name: /system health/i })).toHaveCount(0);
-  });
+  // There is no e2e test that a non-admin never sees the tab. An isoplus_user
+  // session can only be created through the live ISO+ OAuth exchange (password
+  // login was removed in KAN-27), which cannot run offline. The gate is covered
+  // below that layer instead: isOwnerOrSupport in Frontend/test/unit/access.test.ts
+  // and the 403s in Backend/test/integration/systemHealth.route.test.js.
 });
 
 /** These rows belong to this file; see e2e/support/delivery-failures.ts. */

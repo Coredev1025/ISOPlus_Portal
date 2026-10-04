@@ -8,7 +8,7 @@
 //   node scripts/dev.mjs seed          restore seed/*.gz into Mongo
 //   node scripts/dev.mjs schema        declared vs actual schema, and the drift
 //   node scripts/dev.mjs migrate ...   run database migrations
-//   node scripts/dev.mjs user          local login account with a known password
+//   node scripts/dev.mjs login         print a one-time URL that signs you in locally
 //   node scripts/dev.mjs agents        unify AGENTS.md + skills across assistants
 //   node scripts/dev.mjs worktree ...  create / list / remove worktrees
 //   node scripts/dev.mjs doctor        check prerequisites
@@ -32,6 +32,7 @@ import {
 } from './lib/env.mjs'
 import { ask, choose, isInteractive } from './lib/prompt.mjs'
 import * as agentsync from './lib/agentsync.mjs'
+import { loginUrl, loginHints, cleanTicket, readBackendEnv } from './lib/login.mjs'
 import { findFreePortSet, isPortFree } from './lib/ports.mjs'
 import { cyan, green, note, red, table, yellow, fail } from './lib/log.mjs'
 
@@ -248,7 +249,6 @@ async function runSeed(args) {
   const { stdout } = await infraStack.exec(seed.countArgs(targetDb), { capture: true })
   const collections = stdout.trim().split(/\r?\n/).pop()
   green(`restore complete — "${targetDb}" now has ${collections} collections`)
-  seed.remindAboutLocalUser()
 }
 
 // --- migrate ----------------------------------------------------------------
@@ -275,23 +275,31 @@ async function schema(args) {
 }
 
 /**
- * Ensure a local support-admin account with a known password.
- *
- * Runs in the backend container so it uses that worktree's MONGODB_URI and the
- * app's own User model — the password must be hashed by the model's pre('save')
- * hook or POST /api/auth/login will never match it.
+ * Sign in to the local stack. Runs Backend/scripts/e2e-support-ticket.mjs in
+ * the backend container, so the ticket lands in this worktree's own database,
+ * and prints the URL that redeems it. Password login no longer exists (KAN-27).
  */
-async function user(args) {
+async function login() {
   docker.assertDockerAvailable()
   if (!(await docker.containerIds(appStack)).length) {
     red('the backend container is not running')
     note('start it first: npm run dev:up')
     process.exit(1)
   }
-  const { code } = await appStack.exec([
-    'exec', '-T', 'backend', 'node', 'scripts/dev-user.mjs', ...args,
-  ])
-  if (code !== 0) process.exit(code)
+  const { stdout, stderr, code } = await appStack.exec(
+    ['exec', '-T', 'backend', 'node', 'scripts/e2e-support-ticket.mjs'],
+    { capture: true },
+  )
+  const ticket = cleanTicket(stdout)
+  if (code !== 0 || !ticket) {
+    red('could not create a sign-in ticket')
+    if (stderr?.trim()) note(stderr.trim())
+    process.exit(code || 1)
+  }
+  const env = readEnv(root)
+  for (const hint of loginHints(readBackendEnv(root))) cyan(hint)
+  cyan('open this within 5 minutes; it works once:')
+  console.log(`\n  ${loginUrl(env.FRONTEND_PORT, ticket)}\n`)
 }
 
 /**
@@ -813,7 +821,7 @@ async function doctor() {
 
 // --- dispatch ---------------------------------------------------------------
 
-const COMMANDS = { up, down, status, seed: runSeed, fixture, migrate, schema, user, agents, tick, worktree, doctor }
+const COMMANDS = { up, down, status, seed: runSeed, fixture, migrate, schema, login, agents, tick, worktree, doctor }
 
 const [command, ...rest] = process.argv.slice(2)
 const handler = COMMANDS[command]
@@ -829,7 +837,7 @@ if (!handler) {
   fixture --replay <name> [--dry-run]   POST a recorded ISO+ webhook body
   migrate <list|create|up|down>  run a migration in the backend container
   schema [collection] [--json]  declared vs actual schema, and the drift
-  user [--list] [--create]     local support-admin login with a known password
+  login                        print a one-time URL that signs you in locally
   agents [--check]             unify AGENTS.md + skills across all assistants
   tick [--once] [--every 60]                          drive the scheduler locally
   doctor                       check prerequisites

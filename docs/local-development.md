@@ -44,7 +44,7 @@ are Node, not shell, precisely so there is no Git Bash requirement on Windows.
 | `npm run dev:status` | What is running, on which ports, against which database. |
 | `npm run dev:logs` | Tail everything. `npm run dev:logs -- backend` for one service. |
 | `npm run seed` | Restore a dump into Mongo. See [seed/README.md](../seed/README.md). |
-| `npm run dev:user` | Set a known password on the local support-admin account so you can sign in. See below. |
+| `npm run dev:login` | Print a one-time URL that signs you in as a local support admin. See below. |
 | `npm run schema` | Declared vs actual database schema, and the drift between them. See [migrations.md](./migrations.md). |
 | `npm run migrate` | Create and run database migrations. See [migrations.md](./migrations.md). |
 | `npm run worktree` | Manage worktrees. See [worktrees.md](./worktrees.md). |
@@ -56,47 +56,46 @@ CLI directly avoids that: `node scripts/dev.mjs down --all`.
 
 ## Logging in locally
 
-The login screen's primary button, **Sign in with ISO+™**, starts an OAuth flow
-against `https://app.isoplus.online`. That cannot complete locally: `CLIENT_ID`,
-`CLIENT_SECRET` and `PERSONAL_ACCESS_TOKEN` are blank in a local `Backend/.env`,
-and real ones come from the ISO+ team. Clicking it sends you to a live system
-that will refuse you.
+Password login (`POST /api/auth/login`, the "administrator credentials" link)
+was removed in KAN-27. There are two ways in now.
 
-Use the **second** login path instead, which the application already ships and
-which works entirely offline:
+**1. The one-time sign-in URL (no external credentials).**
 
 ```bash
-npm run dev:user
+npm run dev:login
 ```
 
-That sets a known password on the seeded `support_admin` account and prints it:
+It prints a URL such as `http://localhost:3100/?ticket=…`. Open it within five
+minutes; it works once. Under the hood it inserts a one-time OAuth ticket in
+*this worktree's* database (`Backend/scripts/e2e-support-ticket.mjs`, the same
+helper the Playwright suite uses) and the application's own `oauth-exchange`
+route turns it into a `support_admin` session. Nothing is added to the
+application, and the script refuses any `MONGODB_URI` that is not local.
 
-```
-  database  business-dashboard
-  email     arnold@hillsgrade.com.au
-  password  local-dev-only
-```
+Two settings in `Backend/.env` decide whether that session survives. `npm run
+dev:login` warns when either is wrong:
 
-Then at `http://localhost:3100`, click **administrator credentials** at the
-bottom of the login screen — this swaps the ISO+ button for an email/password
-form — and sign in with those.
+| Setting | Needed value | Why |
+|---|---|---|
+| `PERSONAL_ACCESS_TOKEN` | any non-empty value, e.g. `local-offline-placeholder`, with `ISOPLUS_OFFLINE=1` | While it is blank the exchange answers **503**. `GET /api/auth/verify` still answering 200 makes the session look real. The placeholder is never sent to ISO+ because offline mode is pinned on. |
+| `GOOGLE_TARGET_GROUP` | **blank** | The ticket is a Google support-admin session, and `/api/auth/verify` re-checks its email against this Workspace group. With the Directory fully configured (`GOOGLE_ADMIN_EMAIL` and the service account as well) the generated address is in no real group, so you get **403 `group_denied`** and the session is revoked. Blank, the check reports `verify_error` and the session is kept (not refreshed; it lapses at its normal expiry). |
 
-| Flag | Effect |
-|---|---|
-| `--list` | Show local users, roles and disabled state; change nothing |
-| `--email <address>` | Target a specific user |
-| `--password <value>` | Use a password other than the default |
-| `--create` | Create the user when none exists |
+After changing either, recreate the backend: `docker compose up -d
+--force-recreate --no-deps backend` (`restart` does not re-read env files).
+The generated address is `e2e-support-<time>@isoconsultingservices.com.au`. A real address that is not in the group (set through the helper's
+`E2E_SUPPORT_EMAIL`) is refused the same way, so blanking the variable is the
+route.
 
-**Re-seeding clears it.** `npm run seed` restores with `--drop`, replacing the
-`users` collection, so the password stops working. `seed` prints a reminder;
-just run `npm run dev:user` again.
+**2. Sign in with ISO+™ (needs ISO+ app credentials).** The primary button on
+the login screen starts an OAuth flow against `https://app.isoplus.online`. It
+only works if `CLIENT_ID`, `CLIENT_SECRET` and `PERSONAL_ACCESS_TOKEN` in
+`Backend/.env` are real, and the callback URL registered with ISO+ matches
+`CALLBACK_URL` (locally `http://localhost:3100/api/auth/isoplus/callback`). Those
+come from the ISO+ team. Without them the button sends you to a live system
+that will refuse you.
 
-**This adds no authentication code to the application.** It writes one row in
-your local database, using a login route that already ships to production. The
-script refuses to run against any non-local `MONGODB_URI` and has **no override
-flag**, because setting a known password on a real database would be an
-immediate account compromise.
+Re-seeding (`npm run seed`) replaces the `users` collection; run `npm run
+dev:login` again afterwards.
 
 ## Tests
 
@@ -195,16 +194,17 @@ credentials and no network:
 
 ```bash
 npm run dev:up
-npm run dev:user -- --create   # local login; sign in via "administrator credentials"
+npm run dev:login               # prints the sign-in URL
 npm run seed                   # or: npm run dev:fixture
 ```
 
-Verify it without a browser:
+Verify it without a browser. Open the URL `npm run dev:login` prints once in
+any browser, or exchange the ticket yourself and keep the cookie:
 
 ```bash
-curl -s -c /tmp/jar -X POST localhost:4001/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"you@example.com","password":"local-dev-only"}'
+T=$(docker compose exec -T backend node scripts/e2e-support-ticket.mjs | tail -1)
+curl -s -c /tmp/jar -X POST localhost:4001/api/auth/oauth-exchange \
+  -H 'Content-Type: application/json' -d "{\"ticket\":\"$T\"}"
 curl -s -b /tmp/jar localhost:4001/api/workspaces
 # {"workspace":[{"id":"55369","name":"Test","user_role":"admin"}],...}
 ```
@@ -228,7 +228,7 @@ it does not make the app fully offline:
 
 - The ISO+ button on the login screen still needs `CLIENT_ID`/`CLIENT_SECRET`.
   Without them the authorize URL carries an empty `client_id` and ISO+ answers
-  `unsupported_grant_type`. Use the **administrator credentials** link instead.
+  `unsupported_grant_type`. Use `npm run dev:login` instead.
 - **Board attributes** are served from
   [the committed fixture](../Backend/test/fixtures/ndis-quote-board.json), which
   holds 13 of the board's 511. Enough for Board Configuration, whose dropdowns

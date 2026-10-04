@@ -7,6 +7,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "dev:login": "node scripts/dev.mjs login",
     "dev:up": "node scripts/dev.mjs up",
     "dev:build": "node scripts/dev.mjs up --build",
     "dev:down": "node scripts/dev.mjs down",
@@ -18,7 +19,6 @@
     "doctor": "node scripts/dev.mjs doctor",
     "migrate": "node scripts/dev.mjs migrate",
     "schema": "node scripts/dev.mjs schema",
-    "dev:user": "node scripts/dev.mjs user",
     "agents": "node scripts/dev.mjs agents",
     "tick": "node scripts/dev.mjs tick",
     "test:scripts": "node --test \"scripts/test/**/*.test.mjs\""

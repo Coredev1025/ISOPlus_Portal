@@ -151,8 +151,10 @@ happened and why, not the bare word "failed".
 ## 4. Admin gating
 
 A non-admin must never see the System Health tab, and `/api/system-health/*`
-must answer **403** for them. Sign in via SSO as a non-admin account to check
-it.
+must answer **403** for them. Automated below the browser: the 403s in
+`Backend/test/integration/systemHealth.route.test.js` and `isOwnerOrSupport` in
+`Frontend/test/unit/access.test.ts`. To see it by hand, sign in to portal-dev
+through ISO+ as a non-admin account.
 
 ## The Playwright spec
 
@@ -166,8 +168,9 @@ cd Frontend && npx playwright test e2e/system-health.spec.ts
 The spec signs itself in as support admin. Point it at the right stack and
 data with `E2E_BACKEND_URL`, `E2E_FRONTEND_URL` (or `PLAYWRIGHT_BASE_URL`),
 `E2E_MONGO_DB` and `E2E_SYSTEM_HEALTH_WORKSPACE_ID` — from a worktree, use that
-worktree's ports and database. The non-admin test skips unless
-`E2E_USER_EMAIL` / `E2E_USER_PASSWORD` are set.
+worktree's ports and database. There is no e2e test for the non-admin case:
+an `isoplus_user` session needs the live ISO+ OAuth exchange, which cannot run
+offline. See *Admin gating*.
 
 ## Known ceilings and quirks
 

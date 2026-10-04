@@ -205,7 +205,7 @@ if (!uri) {
 }
 
 // Local only, and deliberately with no override flag, for the same reason
-// dev-user.mjs has none: this writes invented business and participant records.
+// e2e-support-ticket.mjs has none: this writes invented business and participant records.
 // Landing those in a real database would be a data-integrity incident, not a
 // risky-but-sometimes-justified change.
 //

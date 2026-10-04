@@ -83,7 +83,7 @@ docker info >/dev/null 2>&1 || open -a "Docker Desktop"     # then wait for the 
 npm run dev:up                                              # health-gated
 curl -sS localhost:4001/api/healthcheck                     # {"status":"OK"}
 grep -q '^SCHEDULER_API_KEY=.\+' Backend/.env && echo "tick key set"
-npm run dev:user -- --create --email dev@local.test         # NOT the bare form — see below
+npm run dev:login                                           # prints the sign-in URL — see below
 ```
 
 - **Expect the backend to crash-loop on the first `dev:up` of this branch.** The
@@ -99,38 +99,19 @@ npm run dev:user -- --create --email dev@local.test         # NOT the bare form 
   Any non-empty string works locally. After adding it:
   `docker compose up -d --force-recreate --no-deps backend`. Sanity check —
   a tick with nothing due prints `claimed=0 dispatched=0 failed=0`, *not* an error.
-- **`npm run dev:user` bare does not work here, twice over.** It refuses when more
-  than one `support_admin` exists (`--email` required), and its default account
-  `dev@local` **cannot log in at all**: `routes/auth.js` validates
-  `body('email').isEmail()`, which requires a TLD, so `dev@local` is rejected 400
-  before any password check. Use a TLD-bearing address —
-  `npm run dev:user -- --create --email dev@local.test`. Creating a new account
-  avoids resetting a real teammate's password on a seeded database.
 - **Mongo and Redis are in the *infra* Compose project, not this one.**
   `docker compose exec mongo …` fails with *"service mongo is not running"*. Use
   `docker exec -i isoplus-mongo mongosh business-dashboard --quiet --eval '…'` and
   `docker exec -i isoplus-redis redis-cli …`.
 
 - **Password login no longer exists.** KAN-27 replaced it: `POST /api/auth/login`
-  now answers **404** with *"Support admin password login is no longer
-  available. Use Google sign-in."* `npm run dev:user` still writes the row and
-  still prints `local-dev-only`, but nothing will accept that password. The
-  local way in is the one-time OAuth ticket the e2e helper uses —
-  `node Backend/scripts/e2e-support-ticket.mjs`, then load
-  `http://localhost:3100/?ticket=<ticket>`. **The exchange answers 503 while
-  `PERSONAL_ACCESS_TOKEN` is blank** — `applyPrivilegedSessionAuth` refuses to
-  issue a support_admin session without one, and `GET /api/auth/verify` still
-  answering 200 is what makes it look like the session exists. The local fix
-  is a placeholder token with offline mode pinned on, so nothing tries to use
-  it against ISO+:
-
-  ```
-  PERSONAL_ACCESS_TOKEN=local-offline-placeholder
-  ISOPLUS_OFFLINE=1
-  ```
-
-  then `docker compose up -d --force-recreate --no-deps backend`. With that the
-  exchange answers 200 and the e2e helper signs in.
+  answers **404**. The local way in is `npm run dev:login`, which prints a
+  one-time `http://localhost:3100/?ticket=…` URL. It needs a non-empty
+  `PERSONAL_ACCESS_TOKEN` with `ISOPLUS_OFFLINE=1`, and a blank
+  `GOOGLE_TARGET_GROUP`, in `Backend/.env`; the command warns when either is
+  wrong. The reasons and the 503 / 403 `group_denied` failures they prevent are
+  in [`local-development.md`](local-development.md#logging-in-locally). After
+  changing them: `docker compose up -d --force-recreate --no-deps backend`.
 - **Offline mode is expected.** With `PERSONAL_ACCESS_TOKEN` blank the backend is
   in offline mode. Track A is unaffected — the handler reads boards from Mongo,
   not from ISO+. `board_sync` schedules deliberately skip; that is a success, not
@@ -219,7 +200,8 @@ npx playwright test
 ```
 
 2026-09-08, main clone, Node 22: **39 passed, 3 skipped, 2 failed**. The three
-skips want `E2E_USER_*` (the non-admin role gate) and `E2E_WORKSPACE_ID_NO_FLAG`.
+skips want `E2E_USER_*` (the non-admin role gate, since removed in KAN-300) and
+`E2E_WORKSPACE_ID_NO_FLAG`.
 
 **The two failures are one pre-existing defect, and it is not a flake.**
 `auth-boundary.spec.ts:43` pins "a signed-out visitor stays on /dashboard" and
