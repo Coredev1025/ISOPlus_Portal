@@ -172,6 +172,9 @@ items through the real invoice row builders):
   (ampersand). Both spellings are real.
 - The legacy board carries one unapproved decoy master item that must never
   bill (`Timesheet Approval: "Pending"`).
+- Every SaH service row, the two zero-value decoys included, carries
+  `Timesheet Approval: "Approved"`. The SaH list drops unapproved rows before
+  any other guard (KAN-271), so without it nothing on the Age Care board bills.
 - Mike Bird's captured rows were dated 2026-06-29 on dev; they are re-dated
   into January 2025 here so one slot bills all three boards.
 

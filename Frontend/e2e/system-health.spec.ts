@@ -3,6 +3,7 @@ import {
   clearDeliveryFailures,
   messageId,
   runMarker,
+  seededPeriodKey,
   seedDeliveryFailures,
 } from "./support/delivery-failures";
 import { signInSupportAdmin, BACKEND } from "./helpers/support-auth";
@@ -199,13 +200,18 @@ test.describe("delivery failures are reported", () => {
     await page.goto(`/workspace/${WORKSPACE}/system-health`);
 
     // Expand the seeded run. The listing is fetched on demand, so nothing
-    // about it is on screen until this is clicked.
-    await page.getByRole("button", { name: /show emails/i }).first().click();
+    // about it is on screen until this is clicked. Picked by its period, not
+    // by position: a database that has also had real runs puts those first,
+    // and the same participants appear on them.
+    const seededRun = page.getByRole("listitem").filter({ hasText: seededPeriodKey(SUITE) });
+    await seededRun.getByRole("button", { name: /show emails/i }).click();
 
-    await expect(page.getByText("Jane Smith")).toBeVisible();
-    await expect(page.getByText(/doesn't exist/i)).toBeVisible();
+    // Asserted inside that run only, and exact: every other run row names its
+    // recipients too, so a page-wide match finds the same people again.
+    await expect(seededRun.getByText("Jane Smith", { exact: true })).toBeVisible();
+    await expect(seededRun.getByText(/doesn't exist/i)).toBeVisible();
     // The delivered one must not be dressed up as a failure.
-    await expect(page.getByText("Mike Bird")).toBeVisible();
+    await expect(seededRun.getByText("Mike Bird", { exact: true })).toBeVisible();
   });
 
   test("a rendering failure is a failure, not a silent success", async ({ page }) => {

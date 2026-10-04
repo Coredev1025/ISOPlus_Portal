@@ -244,6 +244,14 @@ describe('care-management-automation fixture: SaH board (Age Care branch)', () =
     expect(billable.length).toBeGreaterThan(1);
   });
 
+  it('marks every SaH service row Timesheet Approval Approved, decoys included', () => {
+    // The SaH list drops unapproved rows (KAN-271) before any other guard runs,
+    // so an unapproved row never reaches the value and no-participant checks the
+    // decoys exist to exercise, and nothing bills at all.
+    const unapproved = withStatus.filter((item) => !isApproved(item)).map((i) => i.itemId);
+    expect(unapproved).toEqual([]);
+  });
+
   it('carries both zero-value decoys so the value guards are exercised', () => {
     const present = withStatus.filter((item) => item.itemId in EDGE_CASE_ITEMS).map((i) => i.itemId);
     expect(present.sort()).toEqual(Object.keys(EDGE_CASE_ITEMS).sort());

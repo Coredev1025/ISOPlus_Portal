@@ -32,7 +32,12 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      // E2E_BROWSER_CHANNEL=chrome (or msedge) runs against the browser already
+      // installed on the machine instead of a downloaded Chromium.
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: process.env.E2E_BROWSER_CHANNEL || undefined,
+      },
     },
   ],
 });

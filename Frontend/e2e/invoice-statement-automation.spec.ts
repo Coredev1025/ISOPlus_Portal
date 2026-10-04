@@ -137,12 +137,15 @@ function seedFailedDocument(): void {
   // `createdAt` is appended as a real `new Date(...)` rather than folded into
   // the JSON: mongosh does not convert Extended JSON's `{$date}` on insert, and
   // a plain object there reaches the panel as an unparseable timestamp.
+  // It is now, not a fixed past date: the recent-documents list shows the
+  // newest five, so an old date drops this row off the page whenever the
+  // workspace already holds other documents (a run in the same database does).
   execFileSync(
     "docker",
     ["exec", "-i", "isoplus-mongo", "mongosh", MONGO_DB, "--quiet", "--eval",
       `db.pdflinks.deleteMany({itemId:"e2e-delivery-report"}); `
       + `db.pdflinks.insertOne(Object.assign(${JSON.stringify(doc)}, `
-      + `{createdAt: new Date("2026-04-01T09:00:00Z")}));`],
+      + `{createdAt: new Date()}));`],
     { stdio: "pipe" },
   );
 }
@@ -318,17 +321,19 @@ test.describe("Invoice & Statement Automation", () => {
     await expect(invoiceBlock(page).getByLabel(/reply-to email/i)).toHaveCount(0);
   });
 
-  test("Recipient and Send Method survive a save and reload", async ({ page }) => {
+  test("Send Method survives a save and reload, and there is no Recipient control", async ({ page }) => {
     // Send Method is not cosmetic: 'accounting' routes the run's invoices to
     // Xero as DRAFTs instead of emailing them, so a value that fails to persist
     // silently changes where a client's invoices go.
+    //
+    // There is no Recipient control: KAN-272 removed it, and the recipient is
+    // now resolved from the participant's profile on every run.
     await page.goto(AUTOMATION_URL);
 
     const invoice = invoiceBlock(page);
     await invoice.getByRole("switch").click();
+    await expect(invoice.getByLabel("Recipient", { exact: true })).toHaveCount(0);
 
-    await invoice.getByLabel("Recipient").click();
-    await page.getByRole("option", { name: /participant/i }).click();
     await invoice.getByLabel("Send Method").click();
     await page.getByRole("option", { name: /accounting|xero/i }).click();
 
@@ -338,7 +343,6 @@ test.describe("Invoice & Statement Automation", () => {
     await page.reload();
 
     const reloaded = invoiceBlock(page);
-    await expect(reloaded.getByLabel("Recipient")).toContainText(/participant/i);
     await expect(reloaded.getByLabel("Send Method")).toContainText(/accounting|xero/i);
   });
 

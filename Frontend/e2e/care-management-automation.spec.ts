@@ -55,12 +55,16 @@ const BOARD_PARTICIPANTS: Record<string, readonly string[]> = {
  * `outboxKeyFor` / `recipientSlug` in Backend/src/services/email/backends.js:
  * anything not a letter or digit becomes a dash, trimmed at both ends.
  */
-function outboxUrl(kind: string, boardId: string, participant: string) {
-  const slug = participant
+function participantSlug(participant: string) {
+  return participant
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
+}
+
+function outboxUrl(kind: string, boardId: string, participant: string) {
+  const slug = participantSlug(participant);
   return `${BACKEND}/api/local-files/outbox/${WORKSPACE}/${kind}-${boardId}-${PERIOD_KEY}-${slug}.json`;
 }
 
@@ -185,7 +189,27 @@ test.describe("Care Management automation (KAN-10 fixture)", () => {
       // One participant's documents, not the whole board's. The message that
       // carried every participant's statements to one address is the shape this
       // per-participant grouping replaced.
-      expect(outbox.attachments, `attachments in ${url}`).toHaveLength(1);
+      //
+      // At most one monthly statement and at most one statement of account
+      // (the latter only when the participant has account activity, 2d775cd5),
+      // and nothing else. A duplicate or a replay would show as a second of
+      // either, which a bare "one or two" would let through.
+      const attachments: string[] = outbox.attachments;
+      const monthly = attachments.filter((a) => a.includes("/monthly-statements/"));
+      const accountStatements = attachments.filter((a) => a.includes("/statements-of-account/"));
+      expect(monthly, `monthly statements in ${url}`).toHaveLength(1);
+      expect(accountStatements.length, `statements of account in ${url}`).toBeLessThanOrEqual(1);
+      expect(
+        attachments.length,
+        `attachments other than those two kinds in ${url}`,
+      ).toBe(monthly.length + accountStatements.length);
+      const slug = participantSlug(participant);
+      for (const attachment of attachments) {
+        expect(
+          attachment.toLowerCase(),
+          `attachment belongs to ${participant} in ${url}`,
+        ).toContain(slug);
+      }
     }
 
     const invoiceUrls = participants.map((participant) =>

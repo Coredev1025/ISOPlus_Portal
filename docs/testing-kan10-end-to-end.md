@@ -199,6 +199,79 @@ E2E_SCHEDULER_API_KEY=$(grep '^SCHEDULER_API_KEY=' ../Backend/.env | cut -d= -f2
 npx playwright test
 ```
 
+### Running the KAN-10 and KAN-11 suites locally (verified 2026-10-04)
+
+**44 tests pass, none skipped**: `board-sync-schedule`, `care-management-automation`,
+`invoice-statement-automation` and `system-health`, run in one invocation, Node 26,
+the installed Google Chrome. These steps are the whole recipe; each one is there
+because leaving it out failed a run.
+
+1. **Use a separate database**, not the one you develop in. The Care Management
+   fixture refuses workspace 55390 when the database already holds a different
+   business there (a seeded dump does), and the suite writes documents and
+   schedules as it runs. Put a second database in the same Mongo container and
+   point the backend at it with a Compose override kept outside the repo:
+
+   ```yaml
+   # e2e-override.yml
+   services:
+     backend:
+       environment:
+         MONGODB_URI: "mongodb://mongo:27017/isoplus-e2e"
+         ISOPLUS_OFFLINE: "1"            # no live ISO+ calls, no S3 writes
+         GOOGLE_TARGET_GROUP: ""         # or the ticket session is revoked, see local-development.md
+         SCHEDULER_API_KEY: "local-e2e-scheduler-key"
+   ```
+
+   ```bash
+   docker compose -f docker-compose.yml -f /path/to/e2e-override.yml \
+     up -d --force-recreate --no-deps backend
+   ```
+
+   **`ISOPLUS_OFFLINE=1` matters even if your `Backend/.env` has a real token.**
+   Without it the worker calls live ISO+ and S3, and every automation run fails
+   with *"The specified key does not exist"*. When you are done, recreate the
+   backend without the override: `docker compose up -d --force-recreate --no-deps backend`.
+
+2. **Load both fixtures into that database** (a fresh database has nothing):
+
+   ```bash
+   npm run dev:fixture                                              # workspace 55369
+   npm run dev:fixture -- --file test/fixtures/care-management-automation.json   # 55390
+   ```
+
+   55390 is the workspace with the feature flag on; 55369 has no flag and is the
+   "flag off" workspace.
+
+3. **The browser.** Playwright's own Chromium is a separate download. To use the
+   Chrome already on the machine, set `E2E_BROWSER_CHANNEL=chrome` (or `msedge`).
+   `invoice-statement-automation.spec.ts` records video, which needs Playwright's
+   ffmpeg: `npx playwright install ffmpeg` (about 1 MB).
+
+4. **Run it.** `MONGODB_URI` here is for the host-side ticket helper, which
+   refuses anything that is not local; `Backend/.env` often points at Atlas.
+
+   ```bash
+   cd Frontend
+   MONGODB_URI=mongodb://localhost:27017/isoplus-e2e \
+   E2E_BROWSER_CHANNEL=chrome \
+   E2E_BACKEND_URL=http://localhost:4001 PLAYWRIGHT_BASE_URL=http://localhost:3100 \
+   E2E_MONGO_DB=isoplus-e2e E2E_LOAD_FIXTURES=1 \
+   E2E_WORKSPACE_ID=55390 E2E_WORKSPACE_ID_NO_FLAG=55369 \
+   E2E_BOARD_ID=jpjztrn14pJ E2E_SYSTEM_HEALTH_WORKSPACE_ID=55390 \
+   E2E_SCHEDULER_API_KEY=local-e2e-scheduler-key \
+   npx playwright test --workers=1 e2e/board-sync-schedule.spec.ts \
+     e2e/care-management-automation.spec.ts e2e/invoice-statement-automation.spec.ts \
+     e2e/system-health.spec.ts
+   ```
+
+   `--workers=1` because the specs share one workspace's settings and documents.
+   The tests that reset state do so themselves; if you rerun after an aborted
+   run and see odd results, drop the database (`docker exec -i isoplus-mongo mongosh isoplus-e2e --quiet --eval 'db.dropDatabase()'`) and redo step 2.
+
+The earlier 2026-09-08 figures below were taken on a different database and are
+kept as the record of that run.
+
 2026-09-08, main clone, Node 22: **39 passed, 3 skipped, 2 failed**. The three
 skips want `E2E_USER_*` (the non-admin role gate, since removed in KAN-300) and
 `E2E_WORKSPACE_ID_NO_FLAG`.

@@ -52,6 +52,16 @@ const DB = process.env.E2E_MONGO_DB ?? "business-dashboard";
  */
 export type Suite = "system-health" | "client-panel";
 
+/**
+ * The period a suite's seeded run carries. Distinct per suite, and in a year no
+ * real schedule reaches, so it picks the seeded row out of a history that real
+ * runs and the other suite's seed share. Two files seeding one period would
+ * match each other's row, and Playwright's strict mode then refuses the click.
+ */
+export function seededPeriodKey(suite: Suite): string {
+  return suite === "system-health" ? "20990101-0900" : "20990102-0900";
+}
+
 /** The `jobId` of the run this suite's rows belong to. */
 export function runMarker(suite: Suite): string {
   return `e2e-delivery-failure-${suite}`;
@@ -91,7 +101,7 @@ export function seedDeliveryFailures({
   suite,
   workspaceId,
   boardId = "b1",
-  periodKey = "20260401-0900",
+  periodKey = seededPeriodKey(suite),
 }: SeedOptions): void {
   const msg = (name: string) => JSON.stringify(messageId(suite, name));
   const inv = (name: string) => JSON.stringify(invoiceNumber(suite, name));
