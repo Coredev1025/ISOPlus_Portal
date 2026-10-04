@@ -15,6 +15,7 @@
     "schema": "node scripts/schema.mjs",
     "invoice-backfill": "node scripts/invoice-backfill.mjs",
     "invoice-audit": "node scripts/invoice-audit.mjs",
+    "invoice-marker-backfill": "node scripts/invoice-marker-backfill.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

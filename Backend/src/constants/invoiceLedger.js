@@ -139,3 +139,12 @@ export const BACKFILL_REASON = {
 
 /** The `pdflinks.type` values that are invoices: scheduled NDIS and Age Care, and the older `Invoice`. */
 export const LEDGER_INVOICE_TYPES = ['NDIS Invoice', 'Participant Tax Invoice', 'Invoice'];
+
+/**
+ * Written to `Item.invoicedPeriodKey` by the marker backfill (KAN-312) so `--undo` can find
+ * exactly the markers it set. Nothing reads that field except support reporting; a live claim
+ * overwrites it, and `repairInvoice` clears it on a marker it re-confirms, which is how undo
+ * knows to leave such an item alone.
+ * Touchpoints: utils/invoiceLedger/markers/*.js, utils/invoiceLedger/issue.js (repairInvoice).
+ */
+export const MARKER_BACKFILL_SENTINEL = 'backfill-from-log';

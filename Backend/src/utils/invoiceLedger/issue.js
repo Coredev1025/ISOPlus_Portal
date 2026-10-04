@@ -2,7 +2,7 @@ import Invoice from '../../models/Invoice.js';
 import Item from '../../models/Item.js';
 import PDFLink from '../../models/PDFLink.js';
 import {
-  INVOICE_KIND, INVOICE_ORIGIN, INVOICE_SOURCE, LEGACY_SUFFIX,
+  INVOICE_KIND, INVOICE_ORIGIN, INVOICE_SOURCE, LEGACY_SUFFIX, MARKER_BACKFILL_SENTINEL,
 } from '../../constants/invoiceLedger.js';
 import { generateUnderClaim, provisionalClaimToken } from '../automationInvoiceClaim.js';
 import { warn } from '../logger.js';
@@ -278,8 +278,11 @@ export async function repairInvoice(invoiceId) {
       { ...filter, invoicedBy: { $in: accepted } },
       { $set: { invoicedBy: markerForm, activeInvoiceId: invoice._id, invoicedAt: invoice.issuedAt ?? new Date() } },
     );
-    if (matchedCount > 0) outcome.repaired.push(itemId);
-    else if (await Item.exists(filter)) outcome.skipped.push(itemId);
+    if (matchedCount > 0) {
+      // A marker the marker backfill set is confirmed by this repair: it is no longer the backfill's to undo.
+      await Item.updateOne({ ...filter, invoicedPeriodKey: MARKER_BACKFILL_SENTINEL }, { $set: { invoicedPeriodKey: null } });
+      outcome.repaired.push(itemId);
+    } else if (await Item.exists(filter)) outcome.skipped.push(itemId);
     else outcome.missing.push(itemId);
   }
   return outcome;

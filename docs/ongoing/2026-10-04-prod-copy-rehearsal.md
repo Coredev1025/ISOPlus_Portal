@@ -110,3 +110,33 @@ production"); the design is
    old versus new for the production workspaces.
 4. Take the Atlas snapshot or point-in-time restore for the real release backup; this copy is
    not it.
+
+## Second pass (2026-10-05): the whole invoice-ledger chain on fresh restores
+
+No personal data here, only counts. Fresh scrubbed restores of the pre-migration archive into new
+databases inside `prod-copy-db` (`isoplus-rehearsal`, `isoplus-reh-off`, `isoplus-reh-on`); scrub
+re-verified by count queries before anything connected; every run offline with only the variables
+passed on the command line (the backend image holds no credentials).
+
+* **Migrations:** the eight pending migrations ran in order, including `invoice-ledger-indexes`.
+* **Invoice backfill** (`npm run invoice-backfill`): dry run plans **49 invoices** (34 log-only,
+  15 Xero-only) over 302 items in four workspaces; 8 more candidate invoices are `unplaceable`
+  with a reason (4 with a deleted item or no participant name, 3 NDIS invoices an item of which has
+  no participant profile reference or builds no rows); 19 ledger rows with no number cannot be placed
+  (the old routes stored no number or board); 27 log rows belong to deleted items; 7 numbers are
+  shared by several participants; 4 Xero numbers span invoices and 5 invoices carry two Xero
+  numbers. Applied: exactly the planned records; audit: **no violations**; a second run created
+  nothing; `--undo` returned every old collection to a `dbHash` identical to before.
+* **Marker backfill** (`npm run invoice-marker-backfill`): 368 items marked (352 from PDF rows, 16
+  from Xero rows); query 6 returns 0 afterwards; a second run marks nothing; undo restores the items
+  collection exactly. The audit then lists 66 items under `markerWithoutInvoice`: the items of the 8
+  `unplaceable` invoices.
+* **Statements** (offline, every participant that has a backfilled invoice, 37):
+  `INVOICE_LEDGER_READ=off` gives no account activity for any of them (the old ledger holds no
+  numbers or totals); `shadow` served that and logged **49 differences, all `ledger_only_invoice`
+  (expected), 0 unexpected**; `on` generated **37 statements with no errors, 31 showing a balance,
+  none negative, totalling exactly the figure shadow predicted**. These are statements for old
+  invoices that appear for the first time at the switch (design 6.6, decision D3).
+* **Still not done:** the application has not been started against a copy and exercised through
+  its screens; a real Xero tenant and ISO+ were never involved; the 8 unplaceable invoices and the
+  66 items under them need a person; the end-to-end tests do not exist yet.

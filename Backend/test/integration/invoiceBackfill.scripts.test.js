@@ -113,3 +113,32 @@ describe('invoice-audit.mjs', () => {
     expect(result.stdout).toMatch(/markerWithoutInvoice 1/);
   });
 });
+
+describe('invoice-marker-backfill.mjs', () => {
+  it('refuses to run without naming workspaces, and refuses a remote database', async () => {
+    expect((await script('invoice-marker-backfill.mjs', [])).code).toBe(2);
+    const remote = await script('invoice-marker-backfill.mjs', ['--all'], { MONGODB_URI: 'mongodb://user:secret@prod.example.com:27017/db' });
+    expect(remote.code).toBe(1);
+    expect(remote.stderr).not.toMatch(/secret/);
+  });
+
+  it('is a dry run by default, prints the plan hash, and applies only with it', async () => {
+    const dry = await script('invoice-marker-backfill.mjs', ['--workspace', WS]);
+    expect(dry.code).toBe(0);
+    expect(dry.stdout).toMatch(/DRY RUN: nothing was written/);
+    expect(dry.stdout).toMatch(/items to mark\s+2/);
+    expect((await Item.findOne({ itemId: 'a' }).lean()).invoicedBy ?? null).toBeNull();
+
+    expect((await script('invoice-marker-backfill.mjs', ['--workspace', WS, '--apply'])).code).toBe(3);
+    const hash = /Plan hash: ([0-9a-f]{12})/.exec(dry.stdout)[1];
+    const applied = await script('invoice-marker-backfill.mjs', ['--workspace', WS, '--apply', '--plan', hash]);
+    expect(applied.code).toBe(0);
+    expect(applied.stdout).toMatch(/APPLIED/);
+    expect((await Item.findOne({ itemId: 'a' }).lean()).invoicedBy).toBe('INV-24 (ISO+™)');
+
+    const preview = await script('invoice-marker-backfill.mjs', ['--workspace', WS, '--undo']);
+    expect(preview.stdout).toMatch(/UNDO PREVIEW/);
+    const undone = await script('invoice-marker-backfill.mjs', ['--workspace', WS, '--undo', '--apply']);
+    expect(undone.stdout).toMatch(/cleared 2 markers/);
+  });
+});

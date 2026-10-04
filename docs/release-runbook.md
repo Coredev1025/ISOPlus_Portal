@@ -665,17 +665,50 @@ db.invoicenumbers.aggregate([
 ])
 ```
 
-The backfill *(to be written, `Backend/scripts/backfill-invoiced-markers.mjs`, dry run
-by default)* sets `invoicedBy` to the logged number, exactly as stored (including its
-`(ISO+™)` or `(Xero)` suffix, which is what the readers already accept), and
-`invoicedAt` to the log row's `createdAt`, on every item that has none. Where an item has
-both a `PDF` and a `Xero` row (203 existing items do on the copy), the earliest row
-wins, as the claim does today. The log keeps one row per item per type and 446 of
-its 597 rows were revisited after creation, so a row's `createdAt` can belong to an
-earlier invoice than its number; report how many rows were revisited, and treat the
-resulting `invoicedAt` as approximate. It never overwrites an existing marker. Run it on the copy first,
-then production; its `--undo` clears only the markers it set. After it, query 6 must be
-empty.
+The backfill is `Backend/scripts/invoice-marker-backfill.mjs`, from `Backend/`:
+
+```bash
+npm run invoice-marker-backfill -- --workspace <id>                    # DRY RUN, the default; prints a plan hash
+npm run invoice-marker-backfill -- --all
+npm run invoice-marker-backfill -- --workspace <id> --apply --plan <hash>
+npm run invoice-marker-backfill -- --workspace <id> --undo             # PREVIEW; add --apply to do it
+```
+
+It sets `invoicedBy` to the logged number **exactly as stored** (including its `(ISO+™)` or
+`(Xero)` suffix, which is what the readers already accept) and `invoicedAt` to the log row's
+`createdAt`, on every logged item that exists and has no marker. **It never overwrites a marker**
+(a pending claim included), and the write itself only takes an item that still has none, so a
+live claim that lands after the dry run is never overwritten. Where an item has both a `PDF` and
+a `Xero` row (203 on the copy) they are one billing (decision D8): the **PDF number is the marker**
+and the Xero number lives on the portal invoice (the earlier text here said the earliest row
+wins; that would have left the portal invoice without its item). Among several rows of one type
+(an item that changed board) the **latest** row wins, because the invoice backfill points an item
+with no marker at the latest invoice that lists it, so marker and pointer agree. A row with a
+number but no usable creation date still marks the item (a missing marker would make it
+billable again); its date falls back to the row's last update, then to when the row was written,
+and is counted approximate. The log keeps one row per item
+per type and 446 of its 597 rows were revisited after creation, so a row's `createdAt` can
+belong to an earlier invoice than its number; the dry run counts them (270 on the copy) and
+`invoicedAt` from such a row is approximate. It sets `invoicedPeriodKey` to `backfill-from-log`
+so `--undo` clears exactly what it set (a live claim overwrites that field, so an item a claim
+has since taken over is left alone). The plan hash, the per-workspace re-plan before writing,
+the per-workspace progress and the refusal of a non-local database work as in "Running the
+invoice backfill". `--undo --apply` is only safe **before scheduled selection stops reading the old
+log**: after that, clearing these markers makes all 368 items billable again. A marker that
+`repairInvoice` has since confirmed is no longer the backfill's and undo leaves it. Items whose
+logged number has no invoice record (the invoice backfill's `unplaceable` list) are marked too,
+which is right (they were billed), and the audit then reports them under `markerWithoutInvoice`.
+
+**Order:** run the invoice backfill first, then this, so each item's pointer and marker agree.
+Both must be done before automation is enabled.
+
+**On the production copy (2026-10-05):** 368 items to mark (352 from PDF rows, 16 from Xero rows;
+149 PDF only, 203 both, 16 Xero only: the same 368 as query 6), 23 log rows belong to deleted
+items. After applying, query 6 returned 0 and 368 items carried a marker; a second run marked
+nothing; `--undo` returned the items collection to a hash identical to before. The audit then
+reports `markerWithoutInvoice` for 66 items: exactly the items on the 8 invoices the invoice
+backfill reported `unplaceable` (see its report). Those are the list for a person to work
+through; the markers themselves are right (those items were billed).
 
 ### Phases 1 to 5
 
