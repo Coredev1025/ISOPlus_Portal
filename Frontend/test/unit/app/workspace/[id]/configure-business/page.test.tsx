@@ -21,9 +21,9 @@ import * as toastUtils from '@/lib/toast-utils';
  * saves everything back as one multipart PUT.
  *
  * Bank details and document numbering UI live under Finance Settings; this page
- * still loads and re-sends those sequences on save so a Basic Info save does
- * not clear Financial Settings. Number-sequence dialog coverage belongs with
- * the finance-settings panel tests.
+ * neither loads them into its form nor sends them on save (KAN-322), so a save
+ * here cannot clear or be blocked by them. Coverage of those fields belongs
+ * with the finance-settings panel tests.
  *
  * It has no client-side validation at all: every field is submitted as typed
  * and the only errors shown are the ones the server sends back.
@@ -74,7 +74,8 @@ const PROFILE = {
   wideLogo: '',
 };
 
-/** Every field the form owns, exactly as it should reach the backend. */
+/** Every field this page owns, exactly as it should reach the backend. Bank
+ * details and document numbering belong to Finance Settings (KAN-322). */
 const EXPECTED_FIELDS = {
   name: 'Hillsgrade Care',
   phone: '02 5550 1234',
@@ -88,14 +89,9 @@ const EXPECTED_FIELDS = {
   abn: '51824753556',
   acn: '004085616',
   workspaceId: 'ws-1',
-  bankAccountName: 'Hillsgrade Care Pty Ltd',
-  bankName: 'Westpac',
-  bsb: '032002',
-  accountNumber: '123456',
-  paymentReference: 'HG-REF',
-  accountsReceivableTerms: '14 days',
-  accountsPayableTerms: '30 days',
   headOfficeTimezone: 'Australia/Brisbane',
+  // KAN-322: names the page, so the server validates only these fields.
+  section: 'business',
 };
 
 let profileRequests: string[] = [];
@@ -432,19 +428,9 @@ describe('configure business page', () => {
     clickSave();
 
     await waitFor(() => expect(savedForms).toHaveLength(1));
-    const { documentNumbering, ...fields } = savedForms[0];
-    expect(fields).toEqual(EXPECTED_FIELDS);
-    // Omit statement (STM-): mergeDocumentNumbering keeps the live automation
-    // counter. Sending clone defaults before/without a load would overwrite it.
-    expect(JSON.parse(String(documentNumbering))).toEqual({
-      invoice: { prefix: 'HG-INV-', nextNumber: 2400 },
-      purchaseOrder: { prefix: 'HG-PO-', nextNumber: 300 },
-      quote: { prefix: 'HG-QT-', nextNumber: 12 },
-      statementOfAccount: { prefix: 'SOA-', nextNumber: 1 },
-    });
-    expect(
-      Object.keys(JSON.parse(String(documentNumbering))),
-    ).not.toContain('statement');
+    // Neither the stored bank details nor the numbering are re-sent: a value
+    // this page does not show must never be validated by it (KAN-322).
+    expect(savedForms[0]).toEqual(EXPECTED_FIELDS);
     // Nothing was uploaded or removed, so no logo keys ride along.
     expect(Object.keys(savedForms[0])).not.toContain('defaultLogo');
     expect(Object.keys(savedForms[0])).not.toContain('defaultLogoRemoved');

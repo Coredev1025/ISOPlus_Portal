@@ -70,22 +70,35 @@ describe('FinancialSettingsPanel', () => {
     expect(showFetchSuccessToast).toHaveBeenCalledWith('Financial settings');
   });
 
-  it('blocks save when business name is missing and maps API validation errors', async () => {
+  // KAN-322: the business name belongs to Business Configuration, so an empty
+  // one must not stop Finance Settings saving (a new workspace has none).
+  it('saves with no business name, sending only the fields this page owns', async () => {
     const user = userEvent.setup();
     (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({
-      data: { ...PROFILE, name: '' },
+      data: { ...PROFILE, name: '', abn: 'REDACTED', email: 'not-an-email' },
     });
+    (axios.put as ReturnType<typeof vi.fn>).mockResolvedValue({ status: 200, data: PROFILE });
 
     render(<FinancialSettingsPanel workspaceId="ws-1" />);
     await screen.findByDisplayValue('CBA');
-
     await user.click(screen.getByRole('button', { name: /save changes/i }));
 
-    expect(
-      await screen.findByText(/set company name in configure business first/i)
-    ).toBeInTheDocument();
-    expect(axios.put).not.toHaveBeenCalled();
-    expect(showSaveErrorToast).toHaveBeenCalled();
+    await waitFor(() => expect(axios.put).toHaveBeenCalled());
+    const [, body] = (axios.put as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(Array.from(body.keys()).sort()).toEqual(
+      [
+        'accountNumber',
+        'accountsPayableTerms',
+        'accountsReceivableTerms',
+        'bankAccountName',
+        'bankName',
+        'bsb',
+        'documentNumbering',
+        'section',
+        'workspaceId',
+      ].sort()
+    );
+    expect(body.get('section')).toBe('finance');
   });
 
   it('saves merged bank details and document numbering', async () => {
@@ -150,27 +163,21 @@ describe('FinancialSettingsPanel', () => {
     expect(await screen.findByRole('button', { name: /save changes/i })).toBeInTheDocument();
   });
 
-  it('remaps save validation errors for missing business name', async () => {
+  it('shows the server field errors for the fields this page owns', async () => {
     const user = userEvent.setup();
     (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: PROFILE });
     (axios.put as ReturnType<typeof vi.fn>).mockRejectedValue({
       response: {
-        data: { errors: ['Business name is required'] },
+        data: { errors: ['BSB must be exactly 6 digits'] },
       },
     });
 
     render(<FinancialSettingsPanel workspaceId="ws-1" />);
     await screen.findByDisplayValue('CBA');
 
-    expect(
-      screen.queryByRole('button', { name: /restore defaults/i })
-    ).not.toBeInTheDocument();
-
     await user.click(screen.getByRole('button', { name: /save changes/i }));
 
-    expect(
-      await screen.findByText(/set company name in configure business first/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText('BSB must be exactly 6 digits')).toBeInTheDocument();
     expect(showSaveErrorToast).toHaveBeenCalled();
   });
 

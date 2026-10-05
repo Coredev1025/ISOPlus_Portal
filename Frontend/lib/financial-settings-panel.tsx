@@ -6,7 +6,7 @@ import Spinner from "@/components/ui/spin";
 import {
   cloneDefaultSequences,
   extractDocumentNumberingSequences,
-  mapBusinessProfileToFormData,
+  mapBusinessProfileToBankFormData,
 } from "@/lib/configure-business-helpers";
 import {
   FinancialSettingsForm,
@@ -39,42 +39,13 @@ const EMPTY_BANK: BankDetailsForm = {
   accountsPayableTerms: "",
 };
 
-const EMPTY_BUSINESS_PROFILE: Record<string, never> = Object.freeze({});
-
-const MISSING_BUSINESS_NAME_HINT =
-  "Set Company Name in Configure Business first, then save Financial Settings again.";
-
-function mapFinancialSettingsErrors(errors: string[]): string[] {
-  return errors.map((error) =>
-    error.toLowerCase().includes("business name is required")
-      ? MISSING_BUSINESS_NAME_HINT
-      : error
-  );
-}
-
 type FinancialSettingsPanelProps = Readonly<{
   workspaceId: string;
 }>;
 
-function bankFromProfileForm(
-  form: ReturnType<typeof mapBusinessProfileToFormData>
-): BankDetailsForm {
-  return {
-    bankName: form.bankName,
-    bankAccountName: form.bankAccountName,
-    bsb: form.bsb,
-    accountNumber: form.accountNumber,
-    accountsReceivableTerms: form.accountsReceivableTerms,
-    accountsPayableTerms: form.accountsPayableTerms,
-  };
-}
-
 export function FinancialSettingsPanel({
   workspaceId,
 }: FinancialSettingsPanelProps) {
-  const [profileForm, setProfileForm] = useState(() =>
-    mapBusinessProfileToFormData(EMPTY_BUSINESS_PROFILE, workspaceId)
-  );
   const [bankDetails, setBankDetails] = useState<BankDetailsForm>(EMPTY_BANK);
   const [sequences, setSequences] =
     useState<DocumentSequences>(cloneDefaultSequences);
@@ -104,9 +75,7 @@ export function FinancialSettingsPanel({
         );
         if (abortController.signal.aborted) return;
 
-        const mapped = mapBusinessProfileToFormData(response.data, workspaceId);
-        setProfileForm(mapped);
-        setBankDetails(bankFromProfileForm(mapped));
+        setBankDetails(mapBusinessProfileToBankFormData(response.data));
         setSequences(extractDocumentNumberingSequences(response.data));
         setNumberingInitialized(response.data.documentNumberingInitialized !== false);
         showFetchSuccessToast("Financial settings");
@@ -169,14 +138,11 @@ export function FinancialSettingsPanel({
 
   // What must be fixed before anything is sent, or an empty list.
   const findBlockingErrors = (): string[] => {
-    if (!profileForm.name?.trim()) return [MISSING_BUSINESS_NAME_HINT];
     return numberingInitialized ? [] : initialNumberErrors(initialNumbers);
   };
 
   const applySavedProfile = (data: Record<string, any>) => {
-    const mapped = mapBusinessProfileToFormData(data, workspaceId);
-    setProfileForm(mapped);
-    setBankDetails(bankFromProfileForm(mapped));
+    setBankDetails(mapBusinessProfileToBankFormData(data));
     setSequences(extractDocumentNumberingSequences(data));
     setNumberingInitialized(data.documentNumberingInitialized !== false);
     if (data.initialNumbersApplied === false) {
@@ -196,7 +162,7 @@ export function FinancialSettingsPanel({
     setShowSuccess(false);
     const { errors: responseErrors, message } = describeSaveFailure(
       error,
-      mapFinancialSettingsErrors
+      (errors) => errors
     );
     showSaveErrorToast("financial settings", message);
     if (responseErrors.length > 0) {
@@ -223,7 +189,6 @@ export function FinancialSettingsPanel({
       const response = await axios.put(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`,
         buildFinancialSettingsFormData({
-          profileForm,
           bankDetails,
           workspaceId,
           sequences,

@@ -614,3 +614,144 @@ describe('Business profile — Head Office Timezone and the automation schedules
     expect(res.body.headOfficeTimezone).toBe('Australia/Perth');
   });
 });
+
+/**
+ * KAN-322. Each page sends a `section` and is validated only for the fields it
+ * owns. A stored legacy value on the other page, or an empty brand-new
+ * workspace, must not block a save.
+ */
+describe('Business profile - each page validates its own fields (KAN-322)', () => {
+  beforeEach(() => {
+    process.env.JWT_SECRET = 'test-jwt-secret';
+    process.env.PERSONAL_ACCESS_TOKEN = 'test-pat';
+  });
+
+  const BAD_BANK = { bsb: '12', accountNumber: '1' };
+
+  it('saves Finance Settings first on a brand-new workspace with no business name', async () => {
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent
+      .put('/api/business/profile')
+      .field('section', 'finance')
+      .field('workspaceId', 'ws-kan322-new-finance')
+      .field('bsb', '062000')
+      .field('accountNumber', '12345678');
+    expect(res.status).toBe(200);
+    const saved = await Business.findOne({ workspaceId: 'ws-kan322-new-finance' }).lean();
+    expect(saved.bankDetails.bsb).toBe('062000');
+    expect(saved.headOfficeTimezone).toBe('Australia/Sydney');
+  });
+
+  it('saves Business Configuration first on a brand-new workspace with no bank details', async () => {
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent
+      .put('/api/business/profile')
+      .field('section', 'business')
+      .field('workspaceId', 'ws-kan322-new-business')
+      .field('name', 'Fresh Co');
+    expect(res.status).toBe(200);
+  });
+
+  it('saves either page after the other on the same new workspace', async () => {
+    const { agent } = await authenticatedAgent(app);
+    const workspaceId = 'ws-kan322-order';
+    const finance = await agent.put('/api/business/profile')
+      .field('section', 'finance').field('workspaceId', workspaceId).field('bsb', '062000');
+    const business = await agent.put('/api/business/profile')
+      .field('section', 'business').field('workspaceId', workspaceId).field('name', 'Order Co');
+    expect(finance.status).toBe(200);
+    expect(business.status).toBe(200);
+    const saved = await Business.findOne({ workspaceId }).lean();
+    expect(saved.name).toBe('Order Co');
+    expect(saved.bankDetails.bsb).toBe('062000');
+    // The Business page no longer sends numbering; the schema supplies the prefixes.
+    expect(saved.documentNumbering.invoice.prefix).toBe('INV-');
+  });
+
+  it('saves Business Configuration while an invalid BSB is stored, leaving it untouched', async () => {
+    await Business.collection.insertOne({
+      workspaceId: 'ws-kan322-bad-bsb', name: 'Old Co', bankDetails: { bsb: 'REDACTED', accountNumber: 'x' },
+    });
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.put('/api/business/profile')
+      .field('section', 'business').field('workspaceId', 'ws-kan322-bad-bsb').field('name', 'New Co');
+    expect(res.status).toBe(200);
+    const saved = await Business.findOne({ workspaceId: 'ws-kan322-bad-bsb' }).lean();
+    expect(saved.name).toBe('New Co');
+    expect(saved.bankDetails.bsb).toBe('REDACTED');
+  });
+
+  it('saves Finance Settings while an invalid ABN is stored, leaving it untouched', async () => {
+    await Business.collection.insertOne({ workspaceId: 'ws-kan322-bad-abn', name: 'Old Co', abn: 'REDACTED' });
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.put('/api/business/profile')
+      .field('section', 'finance').field('workspaceId', 'ws-kan322-bad-abn').field('bsb', '062000');
+    expect(res.status).toBe(200);
+    const saved = await Business.findOne({ workspaceId: 'ws-kan322-bad-abn' }).lean();
+    expect(saved.abn).toBe('REDACTED');
+    expect(saved.name).toBe('Old Co');
+    expect(saved.bankDetails.bsb).toBe('062000');
+  });
+
+  it('does not reset the head office timezone when Finance Settings saves', async () => {
+    await Business.create({ workspaceId: 'ws-kan322-tz', name: 'TZ Co', headOfficeTimezone: 'Australia/Perth' });
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.put('/api/business/profile')
+      .field('section', 'finance').field('workspaceId', 'ws-kan322-tz').field('bsb', '062000');
+    expect(res.status).toBe(200);
+    const saved = await Business.findOne({ workspaceId: 'ws-kan322-tz' }).lean();
+    expect(saved.headOfficeTimezone).toBe('Australia/Perth');
+  });
+
+  it('rejects an invalid ABN on Business Configuration with a clear message', async () => {
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.put('/api/business/profile')
+      .field('section', 'business').field('workspaceId', 'ws-kan322-reject-abn')
+      .field('name', 'Acme').field('abn', '123');
+    expect(res.status).toBe(400);
+    expect(res.body.errors).toEqual(['ABN must be exactly 11 digits']);
+    expect(await Business.findOne({ workspaceId: 'ws-kan322-reject-abn' })).toBeNull();
+  });
+
+  it('rejects an invalid BSB on Finance Settings with a clear message', async () => {
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.put('/api/business/profile')
+      .field('section', 'finance').field('workspaceId', 'ws-kan322-reject-bsb').field('bsb', '12');
+    expect(res.status).toBe(400);
+    expect(res.body.errors).toEqual(['BSB must be exactly 6 digits']);
+  });
+
+  it('rejects an invalid ABN and email sent under section=finance, and stores nothing', async () => {
+    await Business.collection.insertOne({ workspaceId: 'ws-kan322-spoof-finance', name: 'Keep Co', abn: '51121558187' });
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.put('/api/business/profile')
+      .field('section', 'finance').field('workspaceId', 'ws-kan322-spoof-finance')
+      .field('abn', 'junk').field('email', 'notanemail');
+    expect(res.status).toBe(400);
+    expect(res.body.errors).toEqual(expect.arrayContaining(['ABN must be exactly 11 digits', 'Invalid email format']));
+    const saved = await Business.findOne({ workspaceId: 'ws-kan322-spoof-finance' }).lean();
+    expect(saved.abn).toBe('51121558187');
+  });
+
+  it('rejects an invalid BSB sent under section=business, and stores nothing', async () => {
+    await Business.collection.insertOne({
+      workspaceId: 'ws-kan322-spoof-business', name: 'Keep Co', bankDetails: { bsb: '062000', accountNumber: '12345678' },
+    });
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.put('/api/business/profile')
+      .field('section', 'business').field('workspaceId', 'ws-kan322-spoof-business')
+      .field('name', 'Keep Co').field('bsb', '12').field('accountNumber', 'x');
+    expect(res.status).toBe(400);
+    expect(res.body.errors).toContain('BSB must be exactly 6 digits');
+    const saved = await Business.findOne({ workspaceId: 'ws-kan322-spoof-business' }).lean();
+    expect(saved.bankDetails.bsb).toBe('062000');
+  });
+
+  it('still validates every field when a caller names no section', async () => {
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.put('/api/business/profile')
+      .field('name', 'Acme').field('workspaceId', 'ws-kan322-legacy').field('bsb', '12');
+    expect(res.status).toBe(400);
+    expect(res.body.errors).toContain('BSB must be exactly 6 digits');
+  });
+});

@@ -1,3 +1,4 @@
+import { BUSINESS_PROFILE_SECTION } from '../constants/businessProfile.js';
 import { EMAIL_PATTERN } from '../constants/validation.js';
 import {
   hasAllInitialNumbers,
@@ -38,8 +39,8 @@ function validateInitialNumbers(body, numbering, errors) {
   }
 }
 
-function validateIdentityFields(body, errors) {
-  if (!body.name || body.name.length > 100) {
+function validateIdentityFields(body, errors, requireName) {
+  if (requireName ? (!body.name || body.name.length > 100) : (body.name && body.name.length > 100)) {
     errors.push('Business name is required and must be less than 100 characters');
   }
   if (body.phone && !/^\+?[\d\s-]{8,20}$/.test(body.phone)) {
@@ -80,11 +81,19 @@ function validateBankFields(body, errors) {
   }
 }
 
-export function collectBusinessProfileErrors(body) {
+// Business Configuration owns identity, address and registration (the logos are
+// files, not validated here). The business name is required on this page only.
+export function collectBusinessConfigurationErrors(body, { requireName = true } = {}) {
   const errors = [];
-  validateIdentityFields(body, errors);
+  validateIdentityFields(body, errors, requireName);
   validateAddressFields(body, errors);
   validateRegistrationFields(body, errors);
+  return errors;
+}
+
+// Finance Settings owns bank details, payment terms and document numbering.
+export function collectFinanceSettingsErrors(body) {
+  const errors = [];
   validateBankFields(body, errors);
   if (!body.documentNumbering) {
     if (wantsInitialNumbers(body)) validateInitialNumbers(body, {}, errors);
@@ -100,4 +109,18 @@ export function collectBusinessProfileErrors(body) {
   }
 
   return errors;
+}
+
+// Every format rule runs on every field that is present, whichever page the
+// request names: the route writes whatever the body carries, so a field must never
+// be stored without being checked. Each page sends only the fields it owns, so
+// this cannot block a page on the other page's stored values. The `section` only
+// decides whether the business name is required: a Finance Settings save does not
+// need one (a new workspace can start from either page), every other request does.
+export function collectBusinessProfileErrors(body) {
+  const requireName = body.section !== BUSINESS_PROFILE_SECTION.FINANCE;
+  return [
+    ...collectBusinessConfigurationErrors(body, { requireName }),
+    ...collectFinanceSettingsErrors(body),
+  ];
 }

@@ -1,6 +1,7 @@
 import { DEFAULT_BUSINESS_TIMEZONE } from "@/constants/timezone";
 
-export function mapBusinessProfileToFormData(data: Record<string, any>, workspaceId: string) {
+/** What Business Configuration edits: identity, address, registration, timezone. */
+export function mapBusinessProfileToBusinessFormData(data: Record<string, any>, workspaceId: string) {
   return {
     name: data.name || '',
     phone: data.phone || '',
@@ -14,14 +15,28 @@ export function mapBusinessProfileToFormData(data: Record<string, any>, workspac
     abn: data.abn || '',
     acn: data.acn || '',
     workspaceId,
+    headOfficeTimezone: (data.headOfficeTimezone as string) || DEFAULT_BUSINESS_TIMEZONE,
+  };
+}
+
+/** What Finance Settings edits from the profile: bank details and payment terms. */
+export function mapBusinessProfileToBankFormData(data: Record<string, any>) {
+  return {
     bankAccountName: data.bankDetails?.accountName || '',
     bankName: data.bankDetails?.bankName || '',
     bsb: data.bankDetails?.bsb || '',
     accountNumber: data.bankDetails?.accountNumber || '',
-    paymentReference: data.bankDetails?.paymentReference || '',
     accountsReceivableTerms: data.bankDetails?.accountsReceivableTerms || '',
     accountsPayableTerms: data.bankDetails?.accountsPayableTerms || '',
-    headOfficeTimezone: (data.headOfficeTimezone as string) || DEFAULT_BUSINESS_TIMEZONE,
+  };
+}
+
+/** The whole profile as one form: both pages' fields. Each page sends only its own. */
+export function mapBusinessProfileToFormData(data: Record<string, any>, workspaceId: string) {
+  return {
+    ...mapBusinessProfileToBusinessFormData(data, workspaceId),
+    ...mapBusinessProfileToBankFormData(data),
+    paymentReference: data.bankDetails?.paymentReference || '',
   };
 }
 

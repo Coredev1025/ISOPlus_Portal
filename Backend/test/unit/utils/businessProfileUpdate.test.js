@@ -136,8 +136,8 @@ describe('buildBusinessUpdateData', () => {
       documentNumbering: {
         invoice: { prefix: 'INV-', nextNumber: 11 },
       },
-      headOfficeTimezone: 'Australia/Sydney',
     });
+    expect(update).not.toHaveProperty('headOfficeTimezone');
     expect(update).not.toHaveProperty('address');
     expect(update).not.toHaveProperty('bankDetails');
     expect(update).not.toHaveProperty('phone');
@@ -198,13 +198,16 @@ describe('buildBusinessUpdateData', () => {
     });
   });
 
-  it('defaults headOfficeTimezone to Australia/Sydney when absent or empty', () => {
-    expect(buildBusinessUpdateData({ workspaceId: 'ws_1' }).headOfficeTimezone).toBe(
-      'Australia/Sydney',
+  // KAN-322: Finance Settings does not send the timezone, so a save must not
+  // write one. A default here reset a stored zone to Sydney on every such save;
+  // the schema default covers a business created without one.
+  it('leaves headOfficeTimezone out when absent or empty', () => {
+    expect(buildBusinessUpdateData({ workspaceId: 'ws_1' })).not.toHaveProperty(
+      'headOfficeTimezone',
     );
     expect(
-      buildBusinessUpdateData({ workspaceId: 'ws_1', headOfficeTimezone: '' }).headOfficeTimezone,
-    ).toBe('Australia/Sydney');
+      buildBusinessUpdateData({ workspaceId: 'ws_1', headOfficeTimezone: '' }),
+    ).not.toHaveProperty('headOfficeTimezone');
   });
 
   it('drops fields that are not part of the business profile', () => {

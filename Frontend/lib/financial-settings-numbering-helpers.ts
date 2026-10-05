@@ -1,3 +1,4 @@
+import { BUSINESS_PROFILE_SECTION } from "@/constants/businessProfile";
 import {
   INITIAL_NUMBER_SERIES,
   type InitialNumberSeriesType,
@@ -52,8 +53,6 @@ export function withInitialNumbers<T extends Record<string, NumberSequence>>(
 export const NUMBERS_NOT_APPLIED_MESSAGE =
   "Your starting numbers were not saved. They may already have been set, from another session or because a document was issued while you were saving, or they could not be applied yet. The numbers shown are the current ones, and the rest of your changes were saved. If this keeps happening, contact support.";
 
-type ProfileFormFields = Record<string, unknown>;
-
 /**
  * The request body for saving Financial Settings.
  *
@@ -66,14 +65,12 @@ type ProfileFormFields = Record<string, unknown>;
  * by the server and only the prefixes matter.
  */
 export function buildFinancialSettingsFormData({
-  profileForm,
   bankDetails,
   workspaceId,
   sequences,
   numberingInitialized,
   initialNumbers,
 }: {
-  profileForm: ProfileFormFields;
   bankDetails: BankDetailsForm;
   workspaceId: string;
   sequences: DocumentSequences;
@@ -81,13 +78,12 @@ export function buildFinancialSettingsFormData({
   initialNumbers: InitialNumbers;
 }): FormData {
   const formData = new FormData();
-  const merged: ProfileFormFields = { ...profileForm, ...bankDetails, workspaceId };
-  for (const [key, value] of Object.entries(merged)) {
-    const isScalar =
-      typeof value === "string" ||
-      typeof value === "number" ||
-      typeof value === "boolean";
-    formData.append(key, isScalar ? String(value) : "");
+  // Only what this page edits (KAN-322): a stored identity or registration
+  // value is never re-sent, so it cannot block or be changed by this save.
+  formData.append("section", BUSINESS_PROFILE_SECTION.FINANCE);
+  formData.append("workspaceId", workspaceId);
+  for (const [key, value] of Object.entries(bankDetails)) {
+    formData.append(key, value);
   }
   const toSend = {
     invoice: sequences.invoice,

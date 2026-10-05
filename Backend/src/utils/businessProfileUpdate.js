@@ -207,7 +207,9 @@ export function buildBusinessUpdateData(body) {
       accountsPayableTerms,
     }),
     documentNumbering,
-    headOfficeTimezone: headOfficeTimezone || 'Australia/Sydney',
+    // Left out when the page did not send it (Finance Settings does not), so a
+    // save never resets a stored zone. The schema default covers a new business.
+    headOfficeTimezone: headOfficeTimezone || undefined,
   });
 }
 

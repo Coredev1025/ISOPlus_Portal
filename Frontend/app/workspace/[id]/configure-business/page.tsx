@@ -32,12 +32,8 @@ import {
   type LogoField,
 } from "@/lib/business-logo";
 import { showSaveSuccessToast, showSaveErrorToast, showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
-import {
-  cloneDefaultSequences,
-  extractDocumentNumberingSequences,
-  mapBusinessProfileToFormData,
-  type NumberSequence,
-} from "@/lib/configure-business-helpers";
+import { BUSINESS_PROFILE_SECTION } from "@/constants/businessProfile";
+import { mapBusinessProfileToBusinessFormData } from "@/lib/configure-business-helpers";
 
 type CardHeaderBlockProps = Readonly<{
   icon: ReactNode;
@@ -147,17 +143,6 @@ export default function ConfigureBusinessPage() {
   const [wideLogoPreview, setWideLogoPreview] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
   const [showError, setShowError] = useState(false);
-  // Document number sequences (passthrough so Basic save does not clear Financial Settings)
-  const [invoiceSequence, setInvoiceSequence] = useState<NumberSequence>(
-    () => cloneDefaultSequences().invoice
-  );
-  const [purchaseOrderSequence, setPurchaseOrderSequence] =
-    useState<NumberSequence>(() => cloneDefaultSequences().purchaseOrder);
-  const [quoteSequence, setQuoteSequence] = useState<NumberSequence>(
-    () => cloneDefaultSequences().quote
-  );
-  const [statementOfAccountSequence, setStatementOfAccountSequence] =
-    useState<NumberSequence>(() => cloneDefaultSequences().statementOfAccount);
   const [loading, setLoading] = useState(false);
   const [profileReady, setProfileReady] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
@@ -423,13 +408,6 @@ export default function ConfigureBusinessPage() {
     abn: "",
     acn: "",
     workspaceId: id,
-    bankAccountName: "",
-    bankName: "",
-    bsb: "",
-    accountNumber: "",
-    paymentReference: "",
-    accountsReceivableTerms: "",
-    accountsPayableTerms: "",
     headOfficeTimezone: "Australia/Sydney",
   });
 
@@ -448,13 +426,7 @@ export default function ConfigureBusinessPage() {
 
         if (!abortController.signal.aborted) {
           const data = response.data;
-          setFormData(mapBusinessProfileToFormData(data, id));
-
-          const sequences = extractDocumentNumberingSequences(data);
-          setInvoiceSequence(sequences.invoice);
-          setPurchaseOrderSequence(sequences.purchaseOrder);
-          setQuoteSequence(sequences.quote);
-          setStatementOfAccountSequence(sequences.statementOfAccount);
+          setFormData(mapBusinessProfileToBusinessFormData(data, id));
 
           // Load logo previews via authenticated API (no expiring presigned URLs in UI)
           await applyLogoPreviews({
@@ -476,8 +448,7 @@ export default function ConfigureBusinessPage() {
         }
         console.error("Failed to fetch business profile:", error);
         showFetchErrorToast("business profile", error.response?.data?.message || "Failed to load business profile");
-        // Allow save after a failed load so operators are not stuck; numbering
-        // omit of STM- still protects the automation counter on existing rows.
+        // Allow save after a failed load so operators are not stuck.
         setProfileReady(true);
       }
     };
@@ -520,16 +491,8 @@ export default function ConfigureBusinessPage() {
       Object.keys(formData).forEach((key) => {
         formDataToSend.append(key, formData[key as keyof typeof formData]);
       });
-      formDataToSend.append('documentNumbering', JSON.stringify({
-        invoice: invoiceSequence,
-        purchaseOrder: purchaseOrderSequence,
-        quote: quoteSequence,
-        // Omit statement (STM-): this page does not edit it. The server never
-        // takes a nextNumber from this form for an existing business (KAN-290),
-        // so the live counters are untouched.
-        statementOfAccount: statementOfAccountSequence,
-      }));
-
+      // Names this page so the server validates only what it owns (KAN-322).
+      formDataToSend.append("section", BUSINESS_PROFILE_SECTION.BUSINESS);
       if (logoFile) {
         formDataToSend.append("defaultLogo", logoFile);
       }
