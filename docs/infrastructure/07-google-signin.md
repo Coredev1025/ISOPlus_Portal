@@ -108,6 +108,10 @@ about the second. The console was read, nothing was changed.
   not a member (`classifyDirectoryMembershipError` maps 400 and 404 to refusal). So the secret holds a valid
   key, the delegation entry and scope are right, and the admin account can read the group. Note that this
   reads the secret, so its "last retrieved" date in Secrets Manager moves.
+* Client secret stored correctly, checked 2026-10-06 (read into memory only, nothing printed): 35 characters,
+  starts with `GOCSPX-`, ends with the console's mask `nRj_`, no whitespace, plain text. Google's
+  token endpoint, sent a deliberately fake code, answered `invalid_grant` (malformed code) and not
+  `invalid_client`, so it accepts the client ID and secret pair. Nothing is signed in by this call.
 * Its consent screen is Internal, the Admin SDK API is enabled, and its data access lists exactly the three
   basic scopes dev has (`openid`, `userinfo.email`, `userinfo.profile`) and no others (added 2026-10-05).
 * Service account `workspace-group-checker` created 2026-10-05, enabled, with no project roles. Its Unique

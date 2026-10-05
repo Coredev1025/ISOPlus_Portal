@@ -24,6 +24,9 @@ the IAM access around them. This is where to start when building or changing it.
 | [`07-google-signin.md`](07-google-signin.md) | Setting up and operating support-admin Google sign-in | Stage 1 of the release, or sign-in is broken |
 | [`08-google-signin-dev.md`](08-google-signin-dev.md) | The dev Google sign-in setup as built, for reference | Comparing production with a working setup |
 | [`09-production-environment-properties.md`](09-production-environment-properties.md) | Which Elastic Beanstalk properties production has and which it lacks | Preparing the production release |
+| [`10-production-runtime.md`](10-production-runtime.md) | What the running product is made of: Elastic Beanstalk, Redis, S3, Atlas | Anything touching the running environment |
+| [`11-dns-and-cloudflare.md`](11-dns-and-cloudflare.md) | Who holds `isoplus.online`, the hosts, and the records stage 2 adds | DNS changes, SES verification |
+| [`12-backups-and-recovery.md`](12-backups-and-recovery.md) | What is backed up, where, how long, and what is not | Before a release, or after data loss |
 | [`../../infrastructure/terraform/`](../../infrastructure/terraform/) | The infrastructure as code (written, **never applied**) | Building UAT and production |
 | [`../../infrastructure/iam/`](../../infrastructure/iam/) | Dev team access policies (applied to dev on 20 August 2026) | Giving or reviewing access |
 
@@ -84,14 +87,17 @@ This matches the release runbook's two stages, so infrastructure and release do 
 * **The original IAM access key** pending rotation, and the NDIS record-keeping check on the removed
   outbound mail archive (both in `overview.md`).
 
-## Gaps: not documented anywhere yet
+## Still open
 
-These exist or are needed but have no guide. Each should become a short document in this folder:
-* The existing production runtime: the Elastic Beanstalk environments, load balancer and network,
-  Redis (ElastiCache, `REDIS_CLUSTER`), the S3 buckets, MongoDB Atlas, and how their settings and
-  secrets are held. Only the deploy workflow and the timeout settings are in the repository.
-* DNS: who controls `isoplus.online` and where the verification records are added.
-* Backups and recovery for MongoDB and the S3 documents.
+The three guides above (production runtime, DNS, backups) are written from what could be read in AWS and public
+DNS. What they could not establish is marked **to confirm** in each, and needs someone with the access:
+
+* MongoDB Atlas: the production cluster, its backups, network access and who owns the account.
+* Cloudflare: who holds the account, the origin each host points at, the plan, and the request time limit.
+* One real test restore of the nightly MongoDB backup (it does dump the production database).
+* How the frontend is hosted and deployed.
+* The two empty `-green` Elastic Beanstalk environments and their load balancers.
+* The documents bucket has no versioning or backup.
 
 ## Placeholders in these files
 
