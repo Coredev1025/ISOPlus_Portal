@@ -2,7 +2,9 @@
 
 Concise orientation for a new session picking up this repo. `CLAUDE.md` is
 still the source of truth for conventions (branching, PR format, code style,
-migrations); this file is state, not rules.
+migrations); this file is state, not rules. What an agent needs outside the code
+(tool access, local environment, databases, backups before a reinstall) is in
+[`agent-setup.md`](agent-setup.md).
 
 ## Architecture
 

@@ -55,7 +55,7 @@ Full detail in **`docs/local-development.md`**; worktrees in **`docs/worktrees.m
 | `docs/ongoing/` | Handover notes for work in flight — what is done, what is blocked, what local state a successor needs. One file per ticket, **deleted on merge**. | Days |
 | `docs/open/` | Documentation for readers **outside this repo** — chiefly the ISO+ teams, who integrate via webhooks and have no source access. Describes interfaces from the outside; never file paths or internals. | Ongoing |
 
-Reference material sits outside that progression and stays current: [`docs/full-stack-engineering.md`](docs/full-stack-engineering.md), `docs/local-development.md`, `docs/worktrees.md`, `docs/migrations.md`, `docs/scheduling.md`, [`docs/release-runbook.md`](docs/release-runbook.md) (read before any production release, and add any new migration to its pending table).
+Reference material sits outside that progression and stays current: [`docs/agent-setup.md`](docs/agent-setup.md) (what an AI agent needs outside the code: tool access, local environment, databases, backups), [`docs/full-stack-engineering.md`](docs/full-stack-engineering.md), `docs/local-development.md`, `docs/worktrees.md`, `docs/migrations.md`, `docs/scheduling.md`, [`docs/release-runbook.md`](docs/release-runbook.md) (read before any production release, and add any new migration to its pending table).
 
 ## How to work here
 
