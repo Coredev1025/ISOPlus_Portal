@@ -11,6 +11,7 @@
 //   node scripts/dev.mjs login         print a one-time URL that signs you in locally
 //   node scripts/dev.mjs agents        unify AGENTS.md + skills across assistants
 //   node scripts/dev.mjs worktree ...  create / list / remove worktrees
+//   node scripts/dev.mjs rehearse ...  rehearse a release on a copy of production
 //   node scripts/dev.mjs doctor        check prerequisites
 //
 // Equivalent npm scripts exist for every command (npm run dev:up, and so on).
@@ -26,6 +27,7 @@ import * as docker from './lib/docker.mjs'
 import * as seed from './lib/seed.mjs'
 import * as wt from './lib/worktree.mjs'
 import * as branchLib from './lib/branch.mjs'
+import * as rehearsal from './lib/rehearse.mjs'
 import { tickConfig, tickOnce, resolveTickInterval, describeFetchFailure } from './lib/tick.mjs'
 import {
   copyAppEnvFiles, missingAppEnvFiles, readEnv, setBackendMongoUri, writeEnv, DEFAULTS,
@@ -754,6 +756,46 @@ EventBridge rule. Reads the port from .env and SCHEDULER_API_KEY from Backend/.e
 
 // --- doctor -----------------------------------------------------------------
 
+async function rehearse(args) {
+  const [sub, ...rest] = args
+  const flags = {}
+  for (let i = 0; i < rest.length; i += 1) {
+    if (!rest[i].startsWith('--')) fail(`unexpected argument "${rest[i]}"`)
+    const key = rest[i].slice(2)
+    const boolean = ['learn', 'keep'].includes(key)
+    flags[key] = boolean ? true : rest[(i += 1)]
+  }
+  try {
+    if (sub === 'prepare') {
+      if (!flags.input || !flags.out) fail('usage: rehearse prepare --input <Atlas .tgz or extracted folder> --out <archive.gz> [--db <database>]')
+      const result = await rehearsal.prepare({ input: flags.input, out: flags.out, db: flags.db })
+      green(`Wrote ${result.archive} (database "${result.database}"). Use it with: rehearse run --archive <that file> --source-db ${result.database}`)
+      return
+    }
+    if (sub === 'run') {
+      if (!flags.archive || !flags['source-db']) fail('usage: rehearse run --archive <dump.gz> --source-db <database inside the archive> [--expect <file> | --learn] [--out <report dir>] [--keep]')
+      const chosen = flags.learn ? undefined : (flags.expect || join('scripts', 'rehearse', 'expectations.2026-10-03.json'))
+      const result = await rehearsal.run({
+        archive: flags.archive, sourceDb: flags['source-db'], expectFile: chosen, learn: Boolean(flags.learn), outDir: flags.out, keep: Boolean(flags.keep),
+      })
+      console.log(result.summary)
+      for (const d of result.diffs) console.log(`  differs: ${d.path}: expected ${JSON.stringify(d.expected)}, got ${JSON.stringify(d.actual)} (${d.reason})`)
+      note(`report: ${result.reportFile}`)
+      if (result.draftFile) note(`draft expectations to review and commit: ${result.draftFile}`)
+      if (!result.ok) process.exit(1)
+      return
+    }
+    if (sub === 'down') {
+      rehearsal.stopMongo()
+      green('Removed the rehearsal database container.')
+      return
+    }
+  } catch (err) {
+    fail(err.message)
+  }
+  fail('usage: rehearse prepare | run | down  (see docs/roadmap/release-rehearsal.md)')
+}
+
 async function doctor() {
   const checks = []
   const add = (name, ok, detail) => checks.push([ok ? 'PASS' : 'FAIL', name, detail])
@@ -821,7 +863,7 @@ async function doctor() {
 
 // --- dispatch ---------------------------------------------------------------
 
-const COMMANDS = { up, down, status, seed: runSeed, fixture, migrate, schema, login, agents, tick, worktree, doctor }
+const COMMANDS = { up, down, status, seed: runSeed, fixture, migrate, schema, login, agents, tick, worktree, rehearse, doctor }
 
 const [command, ...rest] = process.argv.slice(2)
 const handler = COMMANDS[command]

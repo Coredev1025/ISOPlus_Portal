@@ -17,6 +17,7 @@
     "dev:fixture": "node scripts/dev.mjs fixture",
     "worktree": "node scripts/dev.mjs worktree",
     "doctor": "node scripts/dev.mjs doctor",
+    "rehearse": "node scripts/dev.mjs rehearse",
     "migrate": "node scripts/dev.mjs migrate",
     "schema": "node scripts/dev.mjs schema",
     "agents": "node scripts/dev.mjs agents",

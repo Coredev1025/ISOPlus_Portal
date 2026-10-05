@@ -1,0 +1,70 @@
+{
+  "snapshot": "Atlas download of 2026-10-03 (MongoDB 8.0), scrubbed, taken before the migrations",
+  "note": "Numbers from the 2026-10-05 manual rehearsal with the ledger code on develop (KAN-315 included). A different snapshot will differ: run with --learn, review the draft, and commit a new file with a reason for every number.",
+  "expectations": {
+    "restore.collections.items": {
+      "value": 517206,
+      "reason": "items in the snapshot; a restore that loses items is a failed restore"
+    },
+    "migrations.applied": {
+      "value": 8,
+      "reason": "the eight migrations pending in production (seven older ones and invoice-ledger-indexes)"
+    },
+    "backfill.created.log-only": {
+      "value": 14,
+      "reason": "portal invoices known only from the old log, after items superseded by a later Xero row are moved"
+    },
+    "backfill.created.xero-later": {
+      "value": 26,
+      "reason": "D9: items whose Xero row is later than their PDF row, on a Xero invoice"
+    },
+    "backfill.created.xero-only": {
+      "value": 15,
+      "reason": "items whose only record is a Xero row"
+    },
+    "backfill.found.unplaceable": {
+      "value": 8,
+      "reason": "invoices the backfill cannot place (no participant, or no derivable total); they need a person"
+    },
+    "backfill.found.unplaceableLedgerRows": {
+      "value": 19,
+      "reason": "document rows with no invoice number"
+    },
+    "backfill.found.deletedItems": {
+      "value": 27,
+      "reason": "old-log rows whose item no longer exists"
+    },
+    "backfill.found.duplicateNumbers": {
+      "value": 9,
+      "reason": "one number held by several participants or boards in the old data, all in test workspaces 55369 and 55390"
+    },
+    "backfill.found.xeroSpansInvoices": {
+      "value": 2,
+      "reason": "a Xero number covering a portal invoice and items on no invoice"
+    },
+    "backfill.found.supersededByXero": {
+      "value": 200,
+      "reason": "D9: items moved from a portal invoice to a later Xero invoice"
+    },
+    "backfill.found.supersededPortalInvoices": {
+      "value": 20,
+      "reason": "portal invoices (per participant) left with no item after D9"
+    },
+    "markers.toMark": {
+      "value": 368,
+      "reason": "logged items with no marker; the same 368 as audit query 6"
+    },
+    "markers.fromXero": {
+      "value": 216,
+      "reason": "D9: the later row is a Xero row (200 superseded plus 16 Xero only)"
+    },
+    "markers.fromPdf": {
+      "value": 152,
+      "reason": "the later row is a PDF row"
+    },
+    "audit.markerWithoutInvoice": {
+      "value": 66,
+      "reason": "items on the 8 unplaceable invoices: marked, but no invoice can hold them until a person decides"
+    }
+  }
+}

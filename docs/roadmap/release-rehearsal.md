@@ -1,7 +1,39 @@
 # Release rehearsal: an automated regression run on production data
 
-Status: **proposed** (KAN-316, 2026-10-05). Not built yet. This is the plan; the harness
-comes in the pull requests listed at the end, one at a time.
+Status: **in progress** (KAN-316, 2026-10-05). Agreed by the owner (who runs it, on the owner's Mac, a copy of the production database is handed to other developers). Stages 0 to 3 are built and run; stages 4 to 8 are not. The plan below is the target; the build order is at the end.
+
+## How to run it (stages 0 to 3)
+
+Needs Docker, and the backend image once: `npm run dev:build`. The production snapshot comes
+from the owner (a copy of the Atlas download); keep it outside the repo.
+
+```bash
+# 1. Atlas snapshot download (.tgz, or the extracted folder) to a dump archive. Once per snapshot.
+npm run rehearse -- prepare --input ~/path/Cluster0-....tgz --out ~/path/prod.archive.gz --db iso-plus   # production's database name; the download also holds sample databases
+
+# 2. The rehearsal: restore, scrub, migrate, backfill, audit, second run, undo, compare.
+npm run rehearse -- run --archive ~/path/prod.archive.gz --source-db <database name printed by prepare>
+
+# A different snapshot has different numbers: write a draft expectations file to review and commit.
+npm run rehearse -- run --archive ... --source-db ... --learn
+
+npm run rehearse -- down     # remove the throwaway MongoDB container if a run was interrupted
+```
+
+It prints one line per stage and ends with a pass or fail; the full report (JSON, mode 0600) is
+written under `~/isoplus-rehearsal-runs/`. A run uses a throwaway MongoDB container on an internal Docker network (no published port and
+no route out, which also isolates the Backend scripts that share it), and removes the container,
+its volumes (they hold the dump as restored, before the scrub) and the network at the end,
+unless `--keep` is given, and also if the run crashes. `--out` is the archive file for `prepare`
+but a report directory for `run`. `--source-db` is required for `run`. An already extracted
+snapshot folder is opened read-write by `mongod`: copy it first.
+The expectations are in `scripts/rehearse/expectations.2026-10-03.json`, each with its reason;
+a drift is printed with that reason. On the 2026-10-03 snapshot a run takes about 25 seconds.
+The logic that needs no Docker is unit tested (`npm run test:scripts`).
+
+What the run does not do yet: the `down` of each migration on a separate restore, the read
+comparison with the ledger flags off, shadow and on (stage 4), the booted app and end-to-end
+tests (5), the writers on real shapes (6), the rollback rehearsal (7) and the committed report (8).
 
 ## Why
 
@@ -110,9 +142,10 @@ the only one that needs a browser. Stage 6 needs the most new test code.
 
 ## Build order (each its own pull request, test first)
 
-1. **Harness skeleton** in Node: restore, scrub, baseline, report writer, no-egress check.
-   Replaces the shell helpers used so far (their commands are in the handover).
-2. **Runbook replay** (stages 1 to 3) and the expectations file.
+1. **Harness skeleton** in Node: restore, scrub, baseline, report writer. **Done** (KAN-316, with
+   `prepare`). The no-egress assertion is still to do. Replaces the shell helpers used so far.
+2. **Runbook replay** (stages 1 to 3) and the expectations file. **Done** (undo is tested on the
+   same database and then re-applied; the migration `down` tests are still to do).
 3. **Read comparison** (stage 4), with the allow-list.
 4. **Application boot and end to end** (stage 5), reusing the worktree-stack recipe.
 5. **Writers on real shapes** (stage 6) and **rollback** (stage 7).

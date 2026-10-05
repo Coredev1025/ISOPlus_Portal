@@ -427,7 +427,7 @@ so it cannot show how the migrations, a backfill or new billing code behave on t
 real shapes and volumes. The design behind it is section 8 of
 [`2026-10-04-invoice-source-of-truth-design.md`](superpowers/specs/2026-10-04-invoice-source-of-truth-design.md).
 
-**Automating this.** The steps below are done by hand today. The plan to script them end to end (one command, a pass or fail report, expectations committed with reasons) is in [`roadmap/release-rehearsal.md`](roadmap/release-rehearsal.md); when the harness exists it replays this section, so change both together.
+**Automating this.** `npm run rehearse` replays steps 1 to 4, 6 and the backfill part of 7 below on a throwaway MongoDB 8.0 in Docker, in about half a minute for the production snapshot, and compares the result with `scripts/rehearse/expectations.*.json`. How to run it, what it covers and what is still manual is in [`roadmap/release-rehearsal.md`](roadmap/release-rehearsal.md); change both together.
 
 **Handling.** The copy holds real participant and business data and may hold live
 credentials. Keep it outside the repo and only in the local Mongo, in its own
@@ -450,8 +450,10 @@ or use any credential found in it.
    `oauthtickets.accessToken` and `xeroconnecttickets`; set `enabled: false` on every
    `scheduledjobs` row and every `AutomationSettings`; clear queued delivery state;
    treat `users` (real emails and password hashes) as sensitive and replace or remove
-   them where the rehearsal does not need them. This will be a reviewed script in the
-   repo *(to be written)*; until then write down exactly what was run.
+   them where the rehearsal does not need them. The reviewed script is
+   [`scripts/rehearse/scrub.js`](../scripts/rehearse/scrub.js); `npm run rehearse` runs it
+   and stops unless every count afterwards is zero. Anything it does not clear is not
+   scrubbed: add to the script, do not work around it.
 3. **Run the backend fully offline**: `ISOPLUS_OFFLINE=1`, `AUTOMATION_ENABLED`
    unset, the offline email backend. Nothing may reach ISO+, S3 or SES. Point the
    backend at the copy with a Compose override kept outside the repo (the recipe in
