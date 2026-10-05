@@ -258,8 +258,13 @@ async function deliverToAccountingPlatform(job) {
   info('Automation', 'Automation invoices pushed to the accounting platform as drafts', {
     kind, workspaceId, boardId, periodKey, documents: results.length, drafts: pushed.length,
   });
-  // No recipient: this route creates drafts in Xero and emails nobody.
-  return { recipient: null };
+  // No recipient: this route creates drafts in Xero and emails nobody. It
+  // still says why it was quiet (KAN-267), or System Health shows the bare
+  // "No emails were sent for this run" for a run that did exactly its job.
+  return {
+    recipient: null,
+    outcomeReason: results.length === 0 ? OUTCOME_NO_DOCUMENTS : OUTCOME_NO_EMAILS_SENT,
+  };
 }
 
 async function composeAndDeliver(job) {
@@ -309,20 +314,14 @@ async function composeAndDeliver(job) {
 
   const groups = deliveryGroups(results);
 
-  // KAN-267. A run that generated nothing, or generated documents that were
-  // never emailed, closes Succeeded and is silent — correctly. Naming which
-  // of the two happened is what lets System Health explain itself instead of
-  // showing a bare "No emails were sent for this run".
-  //
-  // `results` empty means the period had nothing billable in it, which is by
-  // far the common case and the one this ticket was raised for. Documents but
-  // no groups means they went somewhere other than email — the accounting
-  // platform — and that is a different answer to give.
-  const outcomeReason = (() => {
-    if (results.length === 0) return OUTCOME_NO_DOCUMENTS;
-    if (groups.length === 0) return OUTCOME_NO_EMAILS_SENT;
-    return null;
-  })();
+  // KAN-267. A run that generated nothing closes Succeeded and is silent —
+  // correctly — so it says so, instead of System Health showing a bare "No
+  // emails were sent for this run". That is by far the common case and the
+  // one the ticket was raised for. Documents that were generated always have
+  // a delivery group here (deliveryGroups makes one per document); the other
+  // quiet outcome, documents that went to the accounting platform, is
+  // reported by deliverToAccountingPlatform, which returns before this point.
+  const outcomeReason = results.length === 0 ? OUTCOME_NO_DOCUMENTS : null;
   for (const group of groups) {
     await deliverGroup({
       kind,

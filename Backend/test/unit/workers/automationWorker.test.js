@@ -1169,6 +1169,59 @@ describe('startAutomationWorker', () => {
       expect(args.documents[0].invoiceNumber).toBe('IN-900');
     });
 
+    // KAN-267. An accounting run emails nobody by design, so without a reason
+    // System Health showed its run as the bare "No emails were sent for this
+    // run" — the exact silence the ticket was raised to end. The route returned
+    // before the reason was worked out, so it was never recorded.
+    describe('the reason an accounting run sent no email', () => {
+      const ACCT_JOB = { ...JOB, id: 'inv:board-a:20260116-0900:acct', opts: { attempts: 1 } };
+
+      async function seedAccountingRun() {
+        await AutomationRun.deleteMany({ jobId: ACCT_JOB.id });
+        await AutomationRun.create({
+          workspaceId: 'ws-1', boardId: 'board-a', kind: 'invoice_automation',
+          periodKey: '20260116-0900', jobId: ACCT_JOB.id,
+        });
+        await AutomationSettings.create({
+          workspaceId: 'ws-1',
+          invoice: { enabled: true, sendMethod: 'accounting', emailSubject: 'Invoice run' },
+        });
+      }
+
+      afterEach(async () => {
+        await AutomationRun.deleteMany({ jobId: ACCT_JOB.id });
+      });
+
+      it('records that the documents went to the accounting platform, not email', async () => {
+        await seedWorkerNdisBoard();
+        await connectXero();
+        await seedAccountingRun();
+        vi.spyOn(pushXero, 'pushDraftInvoicesToXero').mockResolvedValue([]);
+        startAutomationWorker();
+
+        await registeredHandler()(ACCT_JOB);
+
+        const run = await AutomationRun.findOne({ jobId: ACCT_JOB.id }).lean();
+        expect(run.status).toBe(RUN_SUCCEEDED);
+        expect(run.outcomeReason).toBe('documents_generated_but_not_emailed');
+      });
+
+      it('records an empty period as nothing to bill, on this route too', async () => {
+        await seedWorkerNdisBoard();
+        await Item.deleteMany({ itemId: WORKER_MASTER });
+        await connectXero();
+        await seedAccountingRun();
+        vi.spyOn(pushXero, 'pushDraftInvoicesToXero').mockResolvedValue([]);
+        startAutomationWorker();
+
+        await registeredHandler()(ACCT_JOB);
+
+        const run = await AutomationRun.findOne({ jobId: ACCT_JOB.id }).lean();
+        expect(run.status).toBe(RUN_SUCCEEDED);
+        expect(run.outcomeReason).toBe('no_documents_generated');
+      });
+    });
+
     // Same guarantee composeAndDeliver already makes for email: deliverability
     // is settled before anything irreversible happens, so a workspace that
     // picked "accounting" without connecting Xero does not mint invoice
