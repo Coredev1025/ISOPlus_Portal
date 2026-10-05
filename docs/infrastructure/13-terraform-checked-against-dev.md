@@ -98,6 +98,20 @@ Consequences to keep in mind:
   so it does not widen access to ISO+'s identity `isoplus.online`.
 * Rollback is detaching the one policy from `isoplus-app`; nothing else changes.
 
+**How dev does it (checked 2026-10-06):** dev did not create a separate key or user for email.
+`isoplus-app-dev` has one access key (created March 2025, before the email work) and one policy,
+`isoplus-app-dev-policy`, with an S3 statement and a `SesSendDev` statement. The application's key in dev is that
+key. Production follows the same pattern: one existing user, one key, a policy statement added.
+
+**Do not copy dev's gap.** Dev's policy has **no statement allowing the queue to be read**, and the dev
+application has no `SES_EVENTS_QUEUE_URL` set, so its event consumer is not running. The result seen on
+2026-10-06: `isoplus-dev-ses-events` holds 62 unread messages and the alarm `isoplus-dev-ses-events-stalled` is in
+**ALARM**, so delivery, bounce and complaint states are not reaching documents in dev. The production
+Terraform does include the queue statement (`ConsumeSesEvents`), and stage 2 sets `SES_EVENTS_QUEUE_URL`
+(see [`09-production-environment-properties.md`](09-production-environment-properties.md)); both are required in
+production. Fixing dev is a separate change, planned after the production release (KAN-329): add the queue
+statement to `isoplus-app-dev-policy` and set `SES_EVENTS_QUEUE_URL` on the dev environment.
+
 ### 3. Wrong values in `prod.tfvars.example`
 
 | Value | In the example | Real |
@@ -111,7 +125,9 @@ Consequences to keep in mind:
   only) watch the whole account, so a dev test that bounces moves the same number. Suppression is account-wide too.
 * **Production already sends** through this account, so a configuration mistake here is not a quiet one.
 * The runbook says to build UAT first and promote to production only after UAT has run one full invoicing
-  cycle. No UAT environment exists. That sequencing is a decision for the owners.
+  cycle. No UAT environment exists, and **the owners decided on 2026-10-06 to skip it** and apply straight to
+  production. The mitigations (this comparison with dev, a re-run plan, scheduler rules left disabled, simulator
+  addresses only, proving the alarms) are in section 8 of [`02-terraform-runbook.md`](02-terraform-runbook.md).
 * Remote state (S3 bucket and a lock table) does not exist yet; the runbook's section 3 creates it by hand.
 
 ## Not compared
