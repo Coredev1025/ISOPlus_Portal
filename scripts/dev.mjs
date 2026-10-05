@@ -792,8 +792,8 @@ async function rehearse(args) {
       return
     }
     if (sub === 'down') {
-      rehearsal.stopMongo()
-      green('Removed the rehearsal database container.')
+      rehearsal.down()
+      green('Removed the rehearsal database and prepare containers.')
       return
     }
   } catch (err) {

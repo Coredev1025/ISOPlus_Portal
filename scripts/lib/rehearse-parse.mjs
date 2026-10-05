@@ -22,6 +22,12 @@ export function parsePendingMigrations(listOutput) {
     .sort()
 }
 
+/** `migrate list` prints `<timestamp>-<name>`; `migrate up <name>` takes the bare name. */
+export const migrationName = (filename) => filename.replace(/^\d+-/, '')
+
+/** The image `npm run dev:build` makes: compose names it `<project>-backend`, and a worktree's .env sets the project. */
+export const backendImage = (env) => `${env.COMPOSE_PROJECT_NAME}-backend`
+
 /** The invoice backfill dry run: invoices by reason, categories found with their counts, the plan hash. */
 export function parseBackfillDryRun(output) {
   const lines = stripAnsi(output).split('\n')
@@ -71,6 +77,9 @@ export function summariseAudit(auditJson) {
   return totals
 }
 
+/** The value at a dotted path, or undefined. */
+const at = (obj, path) => path.split('.').reduce((node, key) => (node == null ? undefined : node[key]), obj)
+
 /** `--ack category=count` arguments for every category found, so a real run is exactly the plan read. */
 export const acknowledgements = (found) => Object.entries(found).flatMap(([name, count]) => ['--ack', `${kebab(name)}=${count}`])
 
@@ -82,32 +91,31 @@ export const acknowledgements = (found) => Object.entries(found).flatMap(([name,
 export function compareExpectations(actual, expectations) {
   const diffs = []
   for (const [path, { value, reason }] of Object.entries(expectations)) {
-    const got = path.split('.').reduce((node, key) => (node == null ? undefined : node[key]), actual)
+    const got = at(actual, path)
     if (JSON.stringify(got) !== JSON.stringify(value)) diffs.push({ path, expected: value, actual: got ?? null, reason })
   }
   return diffs
 }
+
+/** Objects whose keys are open-ended: a key no expectation names is a new category to decide on. */
+export const OPEN_ENDED_PATHS = ['backfill.created', 'backfill.found', 'audit']
+
+/** Dotted paths of every key the run produced under the given objects (for a `--learn` draft). */
+export const keyPaths = (actual, objectPaths) => objectPaths.flatMap((objectPath) => Object.keys(at(actual, objectPath) || {}).map((key) => `${objectPath}.${key}`))
 
 /**
  * Keys present in the run under the given objects (for example `backfill.created`) that no expectation
  * names. A category or reason that appears for the first time is acknowledged by the harness so the run
  * can finish, so it must be flagged here or it would pass unnoticed.
  */
-export function unexpectedKeys(actual, expectations, objectPaths) {
-  const diffs = []
-  for (const objectPath of objectPaths) {
-    const node = objectPath.split('.').reduce((n, key) => (n == null ? undefined : n[key]), actual) || {}
-    for (const key of Object.keys(node)) {
-      if (!(`${objectPath}.${key}` in expectations)) diffs.push({ path: `${objectPath}.${key}`, expected: 'not expected', actual: node[key], reason: 'a new category or reason: decide what it means before accepting it' })
-    }
-  }
-  return diffs
-}
+export const unexpectedKeys = (actual, expectations, objectPaths) => keyPaths(actual, objectPaths)
+  .filter((path) => !(path in expectations))
+  .map((path) => ({ path, expected: 'not expected', actual: at(actual, path), reason: 'a new category or reason: decide what it means before accepting it' }))
 
 /** A draft expectations object from an actual run, for a human to review and commit (`--learn`). */
 export function draftExpectations(actual, paths) {
   return Object.fromEntries(paths.map((path) => [path, {
-    value: path.split('.').reduce((node, key) => (node == null ? undefined : node[key]), actual) ?? null,
+    value: at(actual, path) ?? null,
     reason: 'TO CONFIRM: why this number is the right one',
   }]))
 }

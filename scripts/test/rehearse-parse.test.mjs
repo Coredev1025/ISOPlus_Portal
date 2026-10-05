@@ -3,8 +3,10 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
+import { DEFAULTS } from '../lib/env.mjs'
 import {
-  acknowledgements, camel, compareExpectations, draftExpectations, exponentForm, leakPatterns, unexpectedKeys, kebab, parseBackfillDryRun,
+  OPEN_ENDED_PATHS, acknowledgements, backendImage, camel, compareExpectations, draftExpectations, exponentForm, keyPaths, leakPatterns,
+  migrationName, unexpectedKeys, kebab, parseBackfillDryRun,
   parseMarkerDryRun, parsePendingMigrations, stripAnsi, summariseAudit, summariseStages,
 } from '../lib/rehearse-parse.mjs'
 
@@ -74,6 +76,20 @@ describe('parsePendingMigrations', () => {
   })
 })
 
+describe('migrationName', () => {
+  test('list prints <timestamp>-<name>; up takes the bare name', () => {
+    assert.equal(migrationName('1791102300000-invoice-ledger-indexes'), 'invoice-ledger-indexes')
+    assert.equal(migrationName('1771401600000-remove-xero-connection-logs'), 'remove-xero-connection-logs')
+  })
+})
+
+describe('backendImage', () => {
+  test('follows the compose project, so a worktree uses the image its own dev:build made', () => {
+    assert.equal(backendImage(DEFAULTS), 'isoplus-portal-backend')
+    assert.equal(backendImage({ COMPOSE_PROJECT_NAME: 'isoplus-bugfix-x' }), 'isoplus-bugfix-x-backend')
+  })
+})
+
 describe('summariseAudit', () => {
   test('sums violations per category over the workspaces and leaves out empty ones', () => {
     const audit = {
@@ -122,6 +138,19 @@ describe('leakPatterns', () => {
       'LEAK:phone\t0412345678', 'LEAK:name1\tAshley', 'LEAK:name\tJane Citizen',
     ].join('\n')
     assert.deepEqual(leakPatterns(out), ['0412345678', 'Jane Citizen', 'jane@real.example'])
+  })
+})
+
+describe('open-ended paths include the audit', () => {
+  const actual = { backfill: { found: { unplaceable: 8 } }, audit: { markerWithoutInvoice: 66, brandNew: 2 } }
+
+  test('a new audit violation category is flagged', () => {
+    const expectations = { 'backfill.found.unplaceable': { value: 8, reason: 'r' }, 'audit.markerWithoutInvoice': { value: 66, reason: 'r' } }
+    assert.deepEqual(unexpectedKeys(actual, expectations, OPEN_ENDED_PATHS).map((d) => d.path), ['audit.brandNew'])
+  })
+
+  test('a --learn draft lists every audit category seen', () => {
+    assert.deepEqual(keyPaths(actual, OPEN_ENDED_PATHS), ['backfill.found.unplaceable', 'audit.markerWithoutInvoice', 'audit.brandNew'])
   })
 })
 

@@ -9,9 +9,10 @@ import { homedir, tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { readEnv } from './env.mjs'
 import {
-  acknowledgements, compareExpectations, draftExpectations, leakPatterns, parseBackfillDryRun, unexpectedKeys, parseMarkerDryRun,
-  parsePendingMigrations, stripAnsi, summariseAudit, summariseStages,
+  OPEN_ENDED_PATHS, acknowledgements, backendImage, compareExpectations, draftExpectations, keyPaths, leakPatterns, migrationName,
+  parseBackfillDryRun, unexpectedKeys, parseMarkerDryRun, parsePendingMigrations, stripAnsi, summariseAudit, summariseStages,
 } from './rehearse-parse.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -19,7 +20,8 @@ const BACKEND = join(REPO, 'Backend')
 export const MONGO_CONTAINER = 'isoplus-rehearsal-mongo'
 export const MONGO_IMAGE = 'mongo:8.0'
 export const NETWORK = 'isoplus-rehearsal-net'
-const BACKEND_IMAGE = 'isoplus-portal-backend'
+export const PREPARE_CONTAINER = 'isoplus-rehearsal-prepare'
+const BACKEND_IMAGE = backendImage(readEnv(REPO))
 const OLD_STORES = ['items', 'invoicenumbers', 'pdflinks', 'invoices', 'businesses', 'boards']
 
 function docker(args, options = {}) {
@@ -50,6 +52,31 @@ function pipeFile(file, args) {
 export function assertPrerequisites() {
   if (docker(['version', '--format', '{{.Server.Version}}']).code !== 0) throw new Error('Docker is not running.')
   if (docker(['image', 'inspect', BACKEND_IMAGE]).code !== 0) throw new Error(`The image ${BACKEND_IMAGE} is missing: run "npm run dev:build" once.`)
+  // The scripts are mounted from this checkout but node_modules come from the image: they must agree.
+  const lock = docker(['run', '--rm', '--entrypoint', 'cat', BACKEND_IMAGE, '/app/package-lock.json'])
+  if (lock.code !== 0 || lock.stdout !== readFileSync(join(BACKEND, 'package-lock.json'), 'utf8')) {
+    throw new Error(`The image ${BACKEND_IMAGE} was built from a different Backend/package-lock.json: run "npm run dev:build".`)
+  }
+}
+
+/**
+ * Run fn, and run cleanup afterwards even on Ctrl-C: a signal skips `finally`, and the cleanup is what
+ * removes the copy of production data. Exits 130 on a signal.
+ */
+async function withCleanup(cleanup, fn) {
+  const onSignal = () => {
+    cleanup()
+    process.exit(130)
+  }
+  process.once('SIGINT', onSignal)
+  process.once('SIGTERM', onSignal)
+  try {
+    return await fn()
+  } finally {
+    process.off('SIGINT', onSignal)
+    process.off('SIGTERM', onSignal)
+    cleanup()
+  }
 }
 
 function waitForMongo(container) {
@@ -76,6 +103,12 @@ export function startMongo() {
 export function stopMongo() {
   docker(['rm', '-fv', MONGO_CONTAINER])
   docker(['network', 'rm', NETWORK])
+}
+
+/** `rehearse down`: everything a run or a prepare can leave behind, including an interrupted prepare's container. */
+export function down() {
+  stopMongo()
+  docker(['rm', '-fv', PREPARE_CONTAINER])
 }
 
 function mongosh(db, args) {
@@ -109,35 +142,34 @@ const backendOk = (db, args, env) => {
 /** Atlas download (.tgz of raw storage files, or the extracted folder) to a mongodump archive. */
 export async function prepare({ input, out, db }) {
   const work = mkdtempSync(join(tmpdir(), 'isoplus-prepare-'))
-  let dataDir = input
-  if (/\.(tgz|tar\.gz)$/.test(input)) {
-    const extracted = spawnSync('tar', ['-xzf', input, '-C', work], { stdio: 'inherit' })
-    if (extracted.status !== 0) throw new Error('tar could not extract the snapshot.')
-    const dirs = readdirSync(work)
-    dataDir = dirs.length === 1 ? join(work, dirs[0]) : work
-  }
-  const name = 'isoplus-rehearsal-prepare'
-  docker(['rm', '-fv', name])
-  try {
-    dockerOk(['run', '-d', '--name', name, '--network', 'none', '-v', `${dataDir}:/data/db`, MONGO_IMAGE, 'mongod', '--dbpath', '/data/db', '--bind_ip', '127.0.0.1', '--wiredTigerCacheSizeGB', '1'])
-    waitForMongo(name)
-    const dbs = JSON.parse(dockerOk(['exec', name, 'mongosh', '--quiet', '--eval', 'print(JSON.stringify(db.adminCommand({listDatabases:1}).databases.map(d=>d.name)))']).stdout.trim())
+  docker(['rm', '-fv', PREPARE_CONTAINER])
+  return withCleanup(() => {
+    docker(['rm', '-fv', PREPARE_CONTAINER])
+    rmSync(work, { recursive: true, force: true })
+  }, async () => {
+    let dataDir = input
+    if (/\.(tgz|tar\.gz)$/.test(input)) {
+      const extracted = spawnSync('tar', ['-xzf', input, '-C', work], { stdio: 'inherit' })
+      if (extracted.status !== 0) throw new Error('tar could not extract the snapshot.')
+      const dirs = readdirSync(work)
+      dataDir = dirs.length === 1 ? join(work, dirs[0]) : work
+    }
+    dockerOk(['run', '-d', '--name', PREPARE_CONTAINER, '--network', 'none', '-v', `${dataDir}:/data/db`, MONGO_IMAGE, 'mongod', '--dbpath', '/data/db', '--bind_ip', '127.0.0.1', '--wiredTigerCacheSizeGB', '1'])
+    waitForMongo(PREPARE_CONTAINER)
+    const dbs = JSON.parse(dockerOk(['exec', PREPARE_CONTAINER, 'mongosh', '--quiet', '--eval', 'print(JSON.stringify(db.adminCommand({listDatabases:1}).databases.map(d=>d.name)))']).stdout.trim())
     const candidates = dbs.filter((d) => !['admin', 'config', 'local'].includes(d))
     const wanted = db ? candidates.filter((d) => d === db) : candidates
     if (wanted.length !== 1) throw new Error(`Name the application database with --db. The snapshot holds: ${candidates.join(', ') || 'none'}.`)
     mkdirSync(dirname(resolve(out)), { recursive: true, mode: 0o700 })
     await new Promise((resolvePromise, reject) => {
-      const child = spawn('docker', ['exec', name, 'mongodump', '--quiet', '--db', wanted[0], '--archive', '--gzip'], { stdio: ['ignore', 'pipe', 'inherit'] })
+      const child = spawn('docker', ['exec', PREPARE_CONTAINER, 'mongodump', '--quiet', '--db', wanted[0], '--archive', '--gzip'], { stdio: ['ignore', 'pipe', 'inherit'] })
       const file = createWriteStream(resolve(out), { mode: 0o600 })
       child.stdout.pipe(file)
       child.on('error', reject)
       child.on('close', (code) => (code === 0 ? resolvePromise() : reject(new Error(`mongodump exited ${code}`))))
     })
     return { database: wanted[0], archive: resolve(out) }
-  } finally {
-    docker(['rm', '-fv', name])
-    rmSync(work, { recursive: true, force: true })
-  }
+  })
 }
 
 // ---- the run -----------------------------------------------------------------------------------
@@ -176,15 +208,16 @@ const EXPECTED_PATHS = [
 /** The whole rehearsal, stages 0 to 3. Returns { ok, stages, actual, diffs, reportFile }. */
 export async function run(options) {
   assertPrerequisites()
-  try {
-    return await runStages(options)
-  } finally {
-    // A crash must not leave a container with an unscrubbed copy running.
-    if (!options.keep) stopMongo()
-  }
+  const state = { scrubbed: false }
+  // A crash or Ctrl-C must not leave a container with an unscrubbed copy running, --keep or not.
+  return withCleanup(() => {
+    if (options.keep && state.scrubbed) return
+    if (options.keep) console.warn('--keep ignored: the run stopped before the scrub finished, so the unscrubbed copy was removed.')
+    stopMongo()
+  }, () => runStages(options, state))
 }
 
-async function runStages({ archive, sourceDb, expectFile, learn = false, outDir, keep = false }) {
+async function runStages({ archive, sourceDb, expectFile, learn = false, outDir }, state) {
   if (!sourceDb) throw new Error('Name the database inside the archive with --source-db (for production it is "iso-plus"; `prepare` prints it).')
   if (!existsSync(archive)) throw new Error(`Archive not found: ${archive}`)
   const runId = new Date().toISOString().replace(/[:.]/g, '-')
@@ -207,7 +240,7 @@ async function runStages({ archive, sourceDb, expectFile, learn = false, outDir,
     }
   }
   if (keepGoing()) {
-    timed(stages, '0c scrub, then verify nothing sensitive is left', () => {
+    state.scrubbed = timed(stages, '0c scrub, then verify nothing sensitive is left', () => {
       dockerOk(['cp', join(REPO, 'scripts', 'rehearse', 'scrub.js'), `${MONGO_CONTAINER}:/tmp/scrub.js`])
       const result = JSON.parse(mongosh(db, ['--file', '/tmp/scrub.js']).split('\n').pop())
       actual.scrub = result
@@ -218,17 +251,22 @@ async function runStages({ archive, sourceDb, expectFile, learn = false, outDir,
   }
   let baseline = null
   if (keepGoing()) timed(stages, '1 migrations: every pending one, in order, timed', () => {
+    // As the runbook does it: `up <name> --single`, oldest first, each one timed.
     const pending = parsePendingMigrations(backendOk(db, ['scripts/migrate.mjs', 'list']))
-    const started = Date.now()
-    backendOk(db, ['scripts/migrate.mjs', 'up'])
+    const timings = {}
+    for (const file of pending) {
+      const started = Date.now()
+      backendOk(db, ['scripts/migrate.mjs', 'up', migrationName(file), '--single'])
+      timings[file] = Math.round((Date.now() - started) / 100) / 10
+    }
     const left = parsePendingMigrations(backendOk(db, ['scripts/migrate.mjs', 'list']))
     if (left.length) throw new Error(`still pending after up: ${left.join(', ')}`)
-    actual.migrations = { applied: pending.length, seconds: Math.round((Date.now() - started) / 100) / 10 }
+    const seconds = Math.round(Object.values(timings).reduce((a, b) => a + b, 0) * 10) / 10
+    actual.migrations = { applied: pending.length, seconds, timings }
     baseline = oldStoresHash(db)
-    return `${pending.length} applied in ${actual.migrations.seconds}s`
+    return `${pending.length} applied in ${seconds}s (${Object.entries(timings).map(([f, t]) => `${migrationName(f)} ${t}s`).join(', ')})`
   })
 
-  const acksFor = (found) => acknowledgements(found)
   let backfillPlan = null
   if (keepGoing()) timed(stages, '2a invoice backfill dry run', () => {
     backfillPlan = parseBackfillDryRun(backendOk(db, ['scripts/invoice-backfill.mjs', '--all']))
@@ -236,7 +274,7 @@ async function runStages({ archive, sourceDb, expectFile, learn = false, outDir,
     return `${Object.values(backfillPlan.created).reduce((a, b) => a + b, 0)} invoices planned`
   })
   if (keepGoing()) timed(stages, '2b invoice backfill apply, every category acknowledged', () => {
-    backendOk(db, ['scripts/invoice-backfill.mjs', '--all', '--apply', '--plan', backfillPlan.planHash, ...acksFor(backfillPlan.found)])
+    backendOk(db, ['scripts/invoice-backfill.mjs', '--all', '--apply', '--plan', backfillPlan.planHash, ...acknowledgements(backfillPlan.found)])
   })
   let markerPlan = null
   if (keepGoing()) timed(stages, '2c marker backfill dry run and apply', () => {
@@ -261,7 +299,7 @@ async function runStages({ archive, sourceDb, expectFile, learn = false, outDir,
     if (oldStoresHash(db) !== baseline) throw new Error('the database hash after undo differs from before the backfill')
     const replan = parseBackfillDryRun(backendOk(db, ['scripts/invoice-backfill.mjs', '--all']))
     if (replan.planHash !== backfillPlan.planHash) throw new Error(`the plan after undo differs from the first plan (${replan.planHash} against ${backfillPlan.planHash})`)
-    backendOk(db, ['scripts/invoice-backfill.mjs', '--all', '--apply', '--plan', replan.planHash, ...acksFor(replan.found)])
+    backendOk(db, ['scripts/invoice-backfill.mjs', '--all', '--apply', '--plan', replan.planHash, ...acknowledgements(replan.found)])
     const remark = parseMarkerDryRun(backendOk(db, ['scripts/invoice-marker-backfill.mjs', '--all']))
     backendOk(db, ['scripts/invoice-marker-backfill.mjs', '--all', '--apply', '--plan', remark.planHash])
     const again = auditSummary(db)
@@ -271,12 +309,12 @@ async function runStages({ archive, sourceDb, expectFile, learn = false, outDir,
   let diffs = []
   let draftFile = null
   if (learn) {
-    const seen = ['backfill.created', 'backfill.found'].flatMap((o) => Object.keys(o.split('.').reduce((n, k) => (n || {})[k], actual) || {}).map((k) => `${o}.${k}`))
+    const seen = keyPaths(actual, OPEN_ENDED_PATHS)
     draftFile = join(dir, 'expectations.draft.json')
     if (keepGoing()) writeFileSync(draftFile, JSON.stringify(draftExpectations(actual, [...new Set([...EXPECTED_PATHS, ...seen])]), null, 2))
   } else if (expectFile && keepGoing()) {
     const expectations = JSON.parse(readFileSync(isAbsolute(expectFile) ? expectFile : join(REPO, expectFile), 'utf8')).expectations
-    diffs = [...compareExpectations(actual, expectations), ...unexpectedKeys(actual, expectations, ['backfill.created', 'backfill.found'])]
+    diffs = [...compareExpectations(actual, expectations), ...unexpectedKeys(actual, expectations, OPEN_ENDED_PATHS)]
     stages.push({ name: 'expectations', ok: diffs.length === 0, detail: diffs.length ? `${diffs.length} differ` : 'all as expected' })
   }
   const reportFile = join(dir, 'report.json')

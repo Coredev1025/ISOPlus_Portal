@@ -4,7 +4,9 @@ Status: **in progress** (KAN-316, 2026-10-05). Agreed by the owner (who runs it,
 
 ## How to run it (stages 0 to 3)
 
-Needs Docker, and the backend image once: `npm run dev:build`. The production snapshot comes
+Needs Docker, and the backend image built from this checkout: `npm run dev:build` (in a worktree
+it is `<COMPOSE_PROJECT_NAME>-backend`; the run refuses an image whose `package-lock.json`
+differs from `Backend/package-lock.json`). The production snapshot comes
 from the owner (a copy of the Atlas download); keep it outside the repo.
 
 ```bash
@@ -17,18 +19,25 @@ npm run rehearse -- run --archive ~/path/prod.archive.gz --source-db <database n
 # A different snapshot has different numbers: write a draft expectations file to review and commit.
 npm run rehearse -- run --archive ... --source-db ... --learn
 
-npm run rehearse -- down     # remove the throwaway MongoDB container if a run was interrupted
+npm run rehearse -- down     # remove the throwaway MongoDB and prepare containers if a run was interrupted
 ```
 
 It prints one line per stage and ends with a pass or fail; the full report (JSON, mode 0600) is
 written under `~/isoplus-rehearsal-runs/`. A run uses a throwaway MongoDB container on an internal Docker network (no published port and
 no route out, which also isolates the Backend scripts that share it), and removes the container,
 its volumes (they hold the dump as restored, before the scrub) and the network at the end,
-unless `--keep` is given, and also if the run crashes. `--out` is the archive file for `prepare`
+unless `--keep` is given, and also if the run crashes or is stopped with Ctrl-C. `--keep` is
+ignored, with a message, when the run stops before the scrub has finished: an unscrubbed copy
+is never left running. `prepare` likewise removes its container and extracted files on a
+failure or Ctrl-C. `--out` is the archive file for `prepare`
 but a report directory for `run`. `--source-db` is required for `run`. An already extracted
 snapshot folder is opened read-write by `mongod`: copy it first.
+Stage 1 applies the pending migrations one at a time (`up <name> --single`, oldest first, as
+the runbook does) and records each one's seconds under `migrations.timings` in the report.
 The expectations are in `scripts/rehearse/expectations.2026-10-03.json`, each with its reason;
-a drift is printed with that reason. On the 2026-10-03 snapshot a run takes about 25 seconds.
+a drift is printed with that reason. A backfill reason or category, or an audit violation
+category, that no expectation names fails the run as a new one to explain. A `--learn` draft
+for a fresh snapshot is reviewed and signed off by the release owner before it is committed. On the 2026-10-03 snapshot a run takes about 25 seconds.
 The logic that needs no Docker is unit tested (`npm run test:scripts`).
 
 ## The redacted copy (safe to share)
@@ -169,7 +178,7 @@ the only one that needs a browser. Stage 6 needs the most new test code.
 * **Keep the context small between sessions.** The handover and the runbook are the memory.
   A new session reads those two files, not the history.
 
-## What would have to be true to start
+## What was agreed to start (KAN-316)
 
 * The snapshot and its handling rules are agreed (the Atlas download of 2026-10-03 is
   the current one; a fresh snapshot is taken for the release candidate).
@@ -177,7 +186,7 @@ the only one that needs a browser. Stage 6 needs the most new test code.
   rehearsal (55 invoices over 302 items; 200 items on a later Xero invoice; 368 markers;
   the same 66 audit findings; the statements totalling the same money) are the starting
   point, each with its reason.
-* Where it runs, and who owns it, is decided.
+* Where it runs, and who owns it: on the release owner's Mac, run by the release owner.
 
 ## Build order (each its own pull request, test first)
 
