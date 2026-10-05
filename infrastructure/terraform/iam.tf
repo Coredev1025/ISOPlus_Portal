@@ -5,8 +5,26 @@
 # SMTP credentials anywhere in this stack and none are needed.
 # ---------------------------------------------------------------------------
 
+locals {
+  create_app_user = var.existing_app_user_name == ""
+}
+
 resource "aws_iam_user" "app" {
+  count = local.create_app_user ? 1 : 0
+
   name = "${var.name_prefix}-app"
+}
+
+# The user the application already authenticates as. Looked up, not managed: this
+# stack attaches one policy to it and never creates, changes or deletes the user.
+data "aws_iam_user" "existing_app" {
+  count = local.create_app_user ? 0 : 1
+
+  user_name = var.existing_app_user_name
+}
+
+locals {
+  app_user_name = local.create_app_user ? aws_iam_user.app[0].name : data.aws_iam_user.existing_app[0].user_name
 }
 
 data "aws_iam_policy_document" "app" {
@@ -79,7 +97,7 @@ resource "aws_iam_policy" "app" {
 }
 
 resource "aws_iam_user_policy_attachment" "app" {
-  user       = aws_iam_user.app.name
+  user       = local.app_user_name
   policy_arn = aws_iam_policy.app.arn
 }
 
@@ -88,5 +106,5 @@ resource "aws_iam_user_policy_attachment" "app" {
 # the application's secret store.
 resource "aws_iam_access_key" "app" {
   count = var.create_app_access_key ? 1 : 0
-  user  = aws_iam_user.app.name
+  user  = local.app_user_name
 }
