@@ -632,7 +632,7 @@ export default function ConfigureBusinessPage() {
         </Button>
 
         <h1 className="mb-2 text-2xl font-bold tracking-tight sm:text-3xl">
-          Business Settings
+          Business Configuration
         </h1>
         <p className="mb-2 max-w-3xl text-sm text-muted-foreground sm:text-base">
           Manage your business details, address, and branding.

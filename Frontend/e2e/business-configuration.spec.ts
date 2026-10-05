@@ -22,6 +22,11 @@ test.describe("business configuration logos", () => {
       new RegExp(`/workspace/${WORKSPACE}/configure-business$`),
     );
 
+    // KAN-319: the page is titled the same as the tile that opens it.
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Business Configuration" }),
+    ).toBeVisible();
+
     const defaultLogo = page
       .getByRole("heading", { name: "Default Logo" })
       .locator("..");

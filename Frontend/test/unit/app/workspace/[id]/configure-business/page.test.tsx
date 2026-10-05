@@ -408,7 +408,7 @@ describe('configure business page', () => {
     renderPage();
 
     expect(
-      await screen.findByRole('heading', { name: 'Business Settings' }),
+      await screen.findByRole('heading', { name: 'Business Configuration' }),
     ).toBeInTheDocument();
     expect(
       screen.getByText('Manage your business details, address, and branding.'),
