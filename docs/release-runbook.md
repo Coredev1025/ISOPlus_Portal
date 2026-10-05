@@ -427,6 +427,8 @@ so it cannot show how the migrations, a backfill or new billing code behave on t
 real shapes and volumes. The design behind it is section 8 of
 [`2026-10-04-invoice-source-of-truth-design.md`](superpowers/specs/2026-10-04-invoice-source-of-truth-design.md).
 
+**Automating this.** The steps below are done by hand today. The plan to script them end to end (one command, a pass or fail report, expectations committed with reasons) is in [`roadmap/release-rehearsal.md`](roadmap/release-rehearsal.md); when the harness exists it replays this section, so change both together.
+
 **Handling.** The copy holds real participant and business data and may hold live
 credentials. Keep it outside the repo and only in the local Mongo, in its own
 database (for example `isoplus-prod-copy`); never commit it; delete the dump, any
