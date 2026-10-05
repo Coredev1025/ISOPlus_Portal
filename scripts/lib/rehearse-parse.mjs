@@ -112,6 +112,39 @@ export function draftExpectations(actual, paths) {
   }]))
 }
 
+const CHECKED_KINDS = new Set(['email', 'phone', 'address', 'id', 'name', 'business'])
+const NOT_PERSONAL = new Set(['No Specific Location', 'Not Provided', '13 Sample Street', '13 Sample Street Test'])
+const OWNER_EMAIL = /^masoud(\+(participant|billing|cc|replyto))?@isoconsultingservices\.com\.au$/i
+
+/**
+ * The original values the redaction replaced (its `LEAK:<kind><TAB><value>` lines), as the list the proof
+ * searches for in the redacted copy. Only kinds that identify a person or an organisation are searched;
+ * fragments, free text and links are not. Placeholders and the owner's own operational addresses are not
+ * personal data and would only produce false matches.
+ */
+export function leakPatterns(redactOutput) {
+  const values = new Set()
+  for (const line of String(redactOutput).split('\n')) {
+    const match = /^LEAK:([a-z0-9]+)\t(.+)$/.exec(line)
+    if (!match || !CHECKED_KINDS.has(match[1])) continue
+    const value = match[2].trim()
+    if (value.length < 5 || value.length > 120 || NOT_PERSONAL.has(value) || OWNER_EMAIL.test(value) || /@example\.com$/i.test(value)) continue
+    values.add(value)
+    const exponent = exponentForm(value)
+    if (exponent) values.add(exponent)
+  }
+  return [...values].sort()
+}
+
+/**
+ * mongoexport writes a whole number of ten digits or more as an exponent (12345678901 becomes
+ * 1.2345678901E+10), so the proof must search for that spelling too. Null for anything else.
+ */
+export function exponentForm(value) {
+  if (!/^[1-9]\d{9,}$/.test(value)) return null
+  return Number(value).toExponential().toUpperCase()
+}
+
 /** One line per stage for the terminal summary. */
 export const summariseStages = (stages) => stages
   .map((stage) => `${stage.ok ? 'PASS' : 'FAIL'}  ${stage.name}${stage.seconds != null ? `  (${stage.seconds}s)` : ''}${stage.detail ? `  ${stage.detail}` : ''}`)

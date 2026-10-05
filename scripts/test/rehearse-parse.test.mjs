@@ -4,7 +4,7 @@ import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
-  acknowledgements, camel, compareExpectations, draftExpectations, unexpectedKeys, kebab, parseBackfillDryRun,
+  acknowledgements, camel, compareExpectations, draftExpectations, exponentForm, leakPatterns, unexpectedKeys, kebab, parseBackfillDryRun,
   parseMarkerDryRun, parsePendingMigrations, stripAnsi, summariseAudit, summariseStages,
 } from '../lib/rehearse-parse.mjs'
 
@@ -114,6 +114,17 @@ describe('unexpectedKeys', () => {
   })
 })
 
+describe('leakPatterns', () => {
+  test('keeps the kinds that identify someone and drops fragments, placeholders and the owner addresses', () => {
+    const out = [
+      'COUNTS:{}', 'LEAK:name\tJane Citizen', 'LEAK:email\tjane@real.example', 'LEAK:email\tmasoud+billing@isoconsultingservices.com.au',
+      'LEAK:email\tsomeone@example.com', 'LEAK:free\tsome note text here', 'LEAK:link\thttps://x/y.pdf', 'LEAK:address\tNot Provided',
+      'LEAK:phone\t0412345678', 'LEAK:name1\tAshley', 'LEAK:name\tJane Citizen',
+    ].join('\n')
+    assert.deepEqual(leakPatterns(out), ['0412345678', 'Jane Citizen', 'jane@real.example'])
+  })
+})
+
 describe('draftExpectations and summariseStages', () => {
   test('a draft takes the actual values and asks for the reason', () => {
     const draft = draftExpectations({ a: { b: 5 } }, ['a.b', 'a.c'])
@@ -126,4 +137,18 @@ describe('draftExpectations and summariseStages', () => {
     const out = summariseStages([{ name: 'restore', ok: true, seconds: 12 }, { name: 'audit', ok: false, detail: '3 differ' }])
     assert.equal(out, 'PASS  restore  (12s)\nFAIL  audit  3 differ')
   })
+})
+
+test('exponentForm: the spelling mongoexport uses for a number of ten digits or more', () => {
+  assert.equal(exponentForm('12345678901'), '1.2345678901E+10')
+  assert.equal(exponentForm('51000000000'), '5.1E+10')
+  assert.equal(exponentForm('123456789'), null)
+  assert.equal(exponentForm('0412 345 678'), null)
+  assert.equal(exponentForm('0412345678'), null) // a leading zero is stored as text, never as a number
+})
+
+test('leakPatterns: a long numeric original is also searched in its exponent spelling', () => {
+  const patterns = leakPatterns('LEAK:id\t12345678901\n')
+  assert.ok(patterns.includes('12345678901'))
+  assert.ok(patterns.includes('1.2345678901E+10'))
 })

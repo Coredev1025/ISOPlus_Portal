@@ -31,6 +31,45 @@ The expectations are in `scripts/rehearse/expectations.2026-10-03.json`, each wi
 a drift is printed with that reason. On the 2026-10-03 snapshot a run takes about 25 seconds.
 The logic that needs no Docker is unit tested (`npm run test:scripts`).
 
+## The redacted copy (safe to share)
+
+The raw production dump must not be passed around. Make a redacted copy once and share that:
+
+```bash
+npm run rehearse -- redact --archive ~/path/prod.archive.gz --source-db iso-plus --out ~/path/prod-redacted.archive.gz
+npm run rehearse -- run --archive ~/path/prod-redacted.archive.gz --source-db isoplus-redacted   # the rehearsal on it
+```
+
+`redact` restores into the throwaway MongoDB, runs `scripts/rehearse/scrub.js` (tokens, sessions, hook
+secrets, OAuth tickets, users, enabled schedules) and then `scripts/rehearse/redact.js`:
+
+* Names, phone numbers, addresses, ABNs, bank details and identifiers of participants, their billing
+  contacts, workers and businesses become deterministic pseudonyms: **the same original always gives the
+  same replacement in every collection**, so a participant keeps one name across items, document rows and
+  logs and statements still match by name. Business and Xero organisation names, addresses and contact
+  details are replaced too. Free-text notes and care notes, attachments, photos and document links are
+  replaced or cleared.
+* **Emails that the operations tests must receive are the owner's plus-addresses**: a participant's
+  email becomes `masoud+participant@isoconsultingservices.com.au`, a billing email
+  `masoud+billing@isoconsultingservices.com.au`, a business email `masoud@isoconsultingservices.com.au`,
+  so each message identifies its recipient and purpose. Set the copy and reply-to addresses of the
+  workspace under test to `masoud+cc@` and `masoud+replyto@` in its automation settings. Every other
+  email becomes a random `user<hash>@example.com`; no other `isoconsultingservices.com.au` address survives.
+* **Proof, not trust:** every original value that is replaced is recorded, and the command exports every
+  collection of the redacted copy and searches it for each recorded email, phone, address, identifier,
+  person name and business name. If any survives it fails and writes nothing. The numbers in
+  `expectations.2026-10-03.json` hold on the redacted copy (the pseudonyms are consistent), which is
+  checked by running the rehearsal on it.
+* **What it cannot promise:** personal data in a place no rule names (for example a name typed into
+  a free-text field that is not on the replaced list, or a name that was never recorded as a name). The
+  proof covers every value the script replaced, not every value in the data. Treat the redacted copy
+  as sensitive until a person has read it, share it only inside the team, and report anything found so
+  the script can be extended. A user collection is removed entirely (sign in with `npm run dev:login`).
+
+The finished copies are kept in the private repository `ISO-Consulting-Services/isoplus-portal-prod-redacted-db`
+(naming convention, how to make one, and `HOW-TO-TEST-APP.md`: restore a copy into an isolated worktree, run the
+release steps, turn the ledger on and walk the app). Use that guide to test new code on real shapes of data.
+
 What the run does not do yet: the `down` of each migration on a separate restore, the read
 comparison with the ledger flags off, shadow and on (stage 4), the booted app and end-to-end
 tests (5), the writers on real shapes (6), the rollback rehearsal (7) and the committed report (8).

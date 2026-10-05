@@ -785,6 +785,12 @@ async function rehearse(args) {
       if (!result.ok) process.exit(1)
       return
     }
+    if (sub === 'redact') {
+      if (!flags.archive || !flags['source-db'] || !flags.out) fail('usage: rehearse redact --archive <dump.gz> --source-db <database inside the archive> --out <redacted.archive.gz>')
+      const result = await rehearsal.redact({ archive: flags.archive, sourceDb: flags['source-db'], out: flags.out, keep: Boolean(flags.keep) })
+      green(`Wrote ${result.archive} (database "${result.database}"): ${result.checked} original values replaced and proven absent. Use it with: rehearse run --archive <that file> --source-db ${result.database}`)
+      return
+    }
     if (sub === 'down') {
       rehearsal.stopMongo()
       green('Removed the rehearsal database container.')
@@ -793,7 +799,7 @@ async function rehearse(args) {
   } catch (err) {
     fail(err.message)
   }
-  fail('usage: rehearse prepare | run | down  (see docs/roadmap/release-rehearsal.md)')
+  fail('usage: rehearse prepare | redact | run | down  (see docs/roadmap/release-rehearsal.md)')
 }
 
 async function doctor() {

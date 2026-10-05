@@ -10,7 +10,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import {
-  acknowledgements, compareExpectations, draftExpectations, parseBackfillDryRun, unexpectedKeys, parseMarkerDryRun,
+  acknowledgements, compareExpectations, draftExpectations, leakPatterns, parseBackfillDryRun, unexpectedKeys, parseMarkerDryRun,
   parsePendingMigrations, stripAnsi, summariseAudit, summariseStages,
 } from './rehearse-parse.mjs'
 
@@ -283,4 +283,55 @@ async function runStages({ archive, sourceDb, expectFile, learn = false, outDir,
   writeFileSync(reportFile, JSON.stringify({ runId, database: db, stages, actual, diffs }, null, 2), { mode: 0o600 })
   const ok = stages.every((st) => st.ok)
   return { ok, stages, diffs, reportFile, draftFile, summary: summariseStages(stages) + (ok ? '' : '\nStages after the first failure were not run.') }
+}
+
+// ---- redact: a copy of production that is safe to share ------------------------------------------------
+
+/**
+ * Restore a dump into a throwaway MongoDB, scrub it, redact it (scripts/rehearse/redact.js), PROVE that no
+ * replaced original value is left anywhere (an export of every collection searched for each one), and
+ * write the redacted dump. Fails, and writes nothing, if any original value survives.
+ */
+export async function redact({ archive, sourceDb, out, keep = false }) {
+  assertPrerequisites()
+  if (!sourceDb) throw new Error('Name the database inside the archive with --source-db.')
+  const db = 'isoplus-redacted'
+  try {
+    startMongo()
+    await pipeFile(archive, ['exec', '-i', MONGO_CONTAINER, 'mongorestore', '--quiet', '--archive', '--gzip', '--nsFrom', `${sourceDb}.*`, '--nsTo', `${db}.*`])
+    for (const script of ['scrub.js', 'redact.js']) dockerOk(['cp', join(REPO, 'scripts', 'rehearse', script), `${MONGO_CONTAINER}:/tmp/${script}`])
+    const scrub = JSON.parse(mongosh(db, ['--file', '/tmp/scrub.js']).split('\n').pop())
+    const left = Object.entries(scrub.after).filter(([, n]) => n !== 0)
+    if (left.length) throw new Error(`still present after the scrub: ${left.map(([k, n]) => `${k}=${n}`).join(', ')}`)
+    const redacted = dockerOk(['exec', MONGO_CONTAINER, 'mongosh', '--quiet', db, '--file', '/tmp/redact.js']).stdout
+    const patterns = leakPatterns(redacted)
+    const work = mkdtempSync(join(tmpdir(), 'isoplus-redact-'))
+    try {
+      // a purely numeric original (an id, a phone number) is searched as a whole number, so a short one does not
+      // match inside a longer number such as a timestamp
+      const isNumeric = (value) => /^[\d\s+()-]+$/.test(value)
+      writeFileSync(join(work, 'patterns.txt'), `${patterns.filter((v) => !isNumeric(v)).join('\n')}\n`, { mode: 0o600 })
+      writeFileSync(join(work, 'numeric.txt'), `${patterns.filter(isNumeric).join('\n')}\n`, { mode: 0o600 })
+      dockerOk(['cp', join(work, 'patterns.txt'), `${MONGO_CONTAINER}:/tmp/patterns.txt`])
+      dockerOk(['cp', join(work, 'numeric.txt'), `${MONGO_CONTAINER}:/tmp/numeric.txt`])
+    } finally {
+      // the lists hold every original value, so they never outlive this step
+      rmSync(work, { recursive: true, force: true })
+    }
+    const proof = dockerOk(['exec', MONGO_CONTAINER, 'sh', '-c', `rm -rf /tmp/exp && mkdir -p /tmp/exp && for c in $(mongosh --quiet ${db} --eval 'db.getCollectionNames().join(" ")'); do mongoexport --quiet --db ${db} --collection $c --out /tmp/exp/$c.json 2>/dev/null || { echo EXPORT_FAILED $c; exit 1; }; n=$(( $(grep -F -i -f /tmp/patterns.txt -c /tmp/exp/$c.json) + $(grep -F -w -f /tmp/numeric.txt -c /tmp/exp/$c.json) )); [ "$n" != "0" ] && echo "LEAKED $c $n"; done; echo PROOF_DONE`]).stdout
+    const leaked = proof.split('\n').filter((l) => l.startsWith('LEAKED'))
+    if (!proof.includes('PROOF_DONE')) throw new Error('the leak check did not finish')
+    if (leaked.length) throw new Error(`${patterns.length} original values were checked and some survive (${leaked.join('; ')}). Extend scripts/rehearse/redact.js: nothing was written.`)
+    mkdirSync(dirname(resolve(out)), { recursive: true, mode: 0o700 })
+    await new Promise((resolvePromise, reject) => {
+      const child = spawn('docker', ['exec', MONGO_CONTAINER, 'mongodump', '--quiet', '--db', db, '--archive', '--gzip'], { stdio: ['ignore', 'pipe', 'inherit'] })
+      const file = createWriteStream(resolve(out), { mode: 0o600 })
+      child.stdout.pipe(file)
+      child.on('error', reject)
+      child.on('close', (code) => (code === 0 ? resolvePromise() : reject(new Error(`mongodump exited ${code}`))))
+    })
+    return { archive: resolve(out), database: db, checked: patterns.length }
+  } finally {
+    if (!keep) stopMongo()
+  }
 }
