@@ -21,6 +21,9 @@ the IAM access around them. This is where to start when building or changing it.
 | [`04-invoice-statement-generator.md`](04-invoice-statement-generator.md) and [`templates/`](templates/) | The invoice and statement design (already built in the application) | Background for the generators |
 | [`05-document-storage-notes.md`](05-document-storage-notes.md) | Attachment against link for statements | Background only |
 | [`06-improvements-and-roadmap.md`](06-improvements-and-roadmap.md) | Out-of-scope improvements that need approval and budget | Planning |
+| [`07-google-signin.md`](07-google-signin.md) | Setting up and operating support-admin Google sign-in | Stage 1 of the release, or sign-in is broken |
+| [`08-google-signin-dev.md`](08-google-signin-dev.md) | The dev Google sign-in setup as built, for reference | Comparing production with a working setup |
+| [`09-production-environment-properties.md`](09-production-environment-properties.md) | Which Elastic Beanstalk properties production has and which it lacks | Preparing the production release |
 | [`../../infrastructure/terraform/`](../../infrastructure/terraform/) | The infrastructure as code (written, **never applied**) | Building UAT and production |
 | [`../../infrastructure/iam/`](../../infrastructure/iam/) | Dev team access policies (applied to dev on 20 August 2026) | Giving or reviewing access |
 
@@ -38,7 +41,7 @@ Not in this section: how the application is deployed (a push to `develop` or `ma
 | CloudWatch alarms and the alert topic | Built by hand, proven to fire and clear | Terraform written, not applied | **Does not exist** |
 | EventBridge scheduler rules | Created, **disabled** | Terraform written, not applied | **Does not exist** |
 | IAM for the application and for the team | Applied | Terraform written, not applied | **Does not exist** |
-| Google sign-in for support admins | Set up | Not documented | **Does not exist, and the release needs it** |
+| Google sign-in for support admins | Set up | Guide written, not set up | **Does not exist, and the release needs it** |
 
 Production's list is from the team on 2026-10-04 and is repeated in the release runbook ("Production
 today, and what must exist before the release"). Dev was built by hand and is deliberately not imported
@@ -51,7 +54,7 @@ This matches the release runbook's two stages, so infrastructure and release do 
 **Stage 1: before the release (automation stays off)**
 1. **Google sign-in** for support admins in production (OAuth client, service account, Workspace group,
    the `GOOGLE_*` variables). **Hard blocker**: password sign-in is removed on `develop`. This is *not*
-   covered by the Terraform or by any document here; it needs its own short guide (see "Gaps").
+   covered by the Terraform; the guide is [`07-google-signin.md`](07-google-signin.md).
 2. Release with `AUTOMATION_ENABLED=false`. Nothing scheduled or emailed starts.
 
 **Stage 2: automation (invoices and statements emailed on a schedule)**
@@ -84,7 +87,6 @@ This matches the release runbook's two stages, so infrastructure and release do 
 ## Gaps: not documented anywhere yet
 
 These exist or are needed but have no guide. Each should become a short document in this folder:
-* Google sign-in setup for support admins (production and UAT).
 * The existing production runtime: the Elastic Beanstalk environments, load balancer and network,
   Redis (ElastiCache, `REDIS_CLUSTER`), the S3 buckets, MongoDB Atlas, and how their settings and
   secrets are held. Only the deploy workflow and the timeout settings are in the repository.
