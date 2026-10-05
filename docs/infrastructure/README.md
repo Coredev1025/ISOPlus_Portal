@@ -27,6 +27,7 @@ the IAM access around them. This is where to start when building or changing it.
 | [`10-production-runtime.md`](10-production-runtime.md) | What the running product is made of: Elastic Beanstalk, Redis, S3, Atlas | Anything touching the running environment |
 | [`11-dns-and-cloudflare.md`](11-dns-and-cloudflare.md) | Who holds `isoplus.online`, the hosts, and the records stage 2 adds | DNS changes, SES verification |
 | [`12-backups-and-recovery.md`](12-backups-and-recovery.md) | What is backed up, where, how long, and what is not | Before a release, or after data loss |
+| [`13-terraform-checked-against-dev.md`](13-terraform-checked-against-dev.md) | The Terraform compared with dev as built, and the checklist before ISO+ moves to `mail.isoplus.online` | Before planning or applying the Terraform, and before ISO+ changes its sending domain |
 | [`../../infrastructure/terraform/`](../../infrastructure/terraform/) | The infrastructure as code (written, **never applied**) | Building UAT and production |
 | [`../../infrastructure/iam/`](../../infrastructure/iam/) | Dev team access policies (applied to dev on 20 August 2026) | Giving or reviewing access |
 

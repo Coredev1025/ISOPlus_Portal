@@ -61,6 +61,10 @@ creates it. The exact values come from the SES console or the Terraform outputs,
 
 Dev's sending domain is `dev.isoplus.online`, with its records built by hand earlier.
 
+ISO+ Portal sends from `mail.isoplus.online`. ISO+ (the main platform) sends from `isoplus.online` today and is
+expected to move to the same subdomain; read the checklist in
+[`13-terraform-checked-against-dev.md`](13-terraform-checked-against-dev.md) before that happens.
+
 ## Changing a host
 
 Adding or repointing a portal host (for example a new backend) is a change to production traffic: do it in

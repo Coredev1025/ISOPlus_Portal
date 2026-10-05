@@ -280,6 +280,12 @@ You should get a recovery email too, which confirms `ok_actions` works.
 
 Do not run this until UAT has been stable through at least one full invoicing cycle.
 
+> **Production sends from `mail.isoplus.online`, not `isoplus.online`.** The parent domain is already a verified SES
+> identity used by ISO+, the main platform. Use `sending_domain = "mail.isoplus.online"` and
+> `mail_from_subdomain = "bounce"`. ISO+ is expected to move to `mail.isoplus.online` later; read
+> [`13-terraform-checked-against-dev.md`](13-terraform-checked-against-dev.md) first, because ISO+ sends that do not
+> name their own configuration set would flood this product's event queue.
+
 ### What differs
 
 | Setting | UAT | Production | Why |
