@@ -31,13 +31,75 @@ service account delegated with the read-only group scope, and a group that gates
 * **The same Workspace domain holds dev and production.** The Internal audience therefore does not
   separate the two; the separation is the project, the client and the group.
 
+## Cross-check of dev against the guide (2026-10-05)
+
+Each item the guide asks for, and what dev shows. Used to check the production build for gaps.
+
+| Guide step | Dev | Matches the guide |
+|---|---|---|
+| 1 Project per environment | "ISO Plus Portal - DEV" | Yes |
+| 2 Admin SDK API enabled | Enabled, and in use: 17 requests in the 24 hours read, median latency about 200 ms | Yes |
+| 3 Internal consent screen | Internal | Yes |
+| 4 Web OAuth client | One, with dev, localhost and ngrok redirect URIs | Yes, plus dev-only extras |
+| 5 Service account | `workspace-group-checker` | Yes |
+| 6 Domain-wide delegation | One entry, scope `admin.directory.group.readonly` only | Yes |
+| 7 Group | 4 direct members | Yes |
+| 8 Admin mailbox | The main Super Admin account, set as `GOOGLE_ADMIN_EMAIL` | **No.** Works, but over-privileged (see below) |
+
+Observations worth following up, not copying:
+
+* **The Admin SDK showed a 70% error rate over the 24 hours read (17 requests).** A group lookup for a
+  person who is not a member can legitimately end as an error response, so this may be normal, or it may
+  be a real fault. The portal's Application Logs under `Google-Directory` separate the two: a plain
+  "not a member" is an expected deny, a `verify_error` is a fault. Check before assuming dev is the
+  reference for a healthy setup.
+* **The project came with about 23 default APIs enabled** (BigQuery, Cloud Storage, Logging and others).
+  Only the Admin SDK API is needed. A new production project should enable the Admin SDK API and leave
+  the rest as Google provides them; do not enable more.
+* **The older project "ISO Plus Portal"** also has the Admin SDK API enabled, but showed no traffic over
+  30 days. This supports it being unused for sign-in.
+
+Read from the console on the same day:
+
+| Item | Dev |
+|---|---|
+| Consent screen data access scopes | Exactly `openid`, `userinfo.email` and `userinfo.profile`. No sensitive or restricted scopes. Matches the guide |
+| Project IAM | Two people, both organization administrators (inherited); one is also project Owner. The service account holds **no** project roles, which is what the guide wants |
+| Service account keys | **Two active keys**, created 2 Sep and 8 Sep 2026, neither with an expiry date |
+
+Findings for the production build:
+
+* **Two active keys is one more than needed.** One is in use (it is the value in Secrets Manager); the
+  other is probably left from setup. An unused key is still a working credential. Find out which one the
+  environment uses, then delete the other. For production, create one key and keep it to one, except
+  briefly during a rotation (see "Rotation and offboarding" in [`07-google-signin.md`](07-google-signin.md)).
+* **Dev impersonates a Super Admin.** Delegation limits what the service account may *call* (group read
+  only), but the calls are made *as* the impersonated user, who here is the organization's Super Admin
+  and a login people use. That is more identity than the lookup needs, and it ties dev's Directory activity
+  to a human-used account in the audit log. Production deliberately does not copy this (its own dedicated
+  groups-read user, see [`07-google-signin.md`](07-google-signin.md)). Whether to tighten dev the same way
+  is a separate change: create a dedicated user, give it a groups-read role, change dev's
+  `GOOGLE_ADMIN_EMAIL`, and check sign-in still works.
+* **Dev's role could read every secret in the account, and was narrowed on 2026-10-05.** Its inline policy
+  `ElasticBeanstalkSecretsManagerAccess` allowed `secretsmanager:GetSecretValue` on `Resource: "*"`. It now
+  names dev's one secret (`GOOGLE_SERVICE_ACCOUNT_JSON`, by ARN). Only `Resource` changed. Rollback is putting
+  `"*"` back. Status: saved; the proof is a re-deploy of dev followed by a Google sign-in (see below).
+* **A restart does not re-read secrets.** Restarting the app server on dev with a changed policy kept
+  everything working, because the process restarts with the settings Elastic Beanstalk already built.
+  Only a deployment or an environment update fetches the secret again. A permission change is therefore
+  untested until one of those runs, and a mistake would show up at the next deploy, not when it is made.
+* Keys never expire. The date created is the only record of age, so write it down at creation.
+* A Google Cloud warning on the Keys page recommends Workload Identity Federation over downloaded keys.
+  That is not possible for a domain-wide delegation lookup from Elastic Beanstalk today without a change to
+  how the application authenticates, so it is out of scope here; noted as an improvement.
+
 ## How dev's environment is configured (Elastic Beanstalk `isoplus-be-dev-blue`)
 
 Read from the console on 2026-10-05. Values that are secrets are not recorded.
 
 | Property | What it is in dev |
 |---|---|
-| `GOOGLE_ADMIN_EMAIL` | A shared admin mailbox on the Workspace domain, not a named person's address (the recommended pattern) |
+| `GOOGLE_ADMIN_EMAIL` | The organization's main admin account, "ISO CS Admin" (the `admin@` address). It holds the **Super Admin** role (all admin privileges) and is also used for interactive sign-in. **Not** the least-privilege dedicated user the guide recommends |
 | `GOOGLE_TARGET_GROUP` | The dev support-admin group address |
 | `GOOGLE_OAUTH_CALLBACK_URL` | Set explicitly to the dev backend callback (it matches `BACKEND_URL`) |
 | `GOOGLE_OAUTH_CLIENT_ID` / `_SECRET` | The DEV project's client, held as plain text environment properties |
@@ -57,10 +119,9 @@ and the buckets are `isoplus-portal-dev` and `isoplus-portal-dev-public`.
 * Who holds the dev client secret outside AWS (the console shows it, so a copy may not exist elsewhere).
 * Whether dev's secrets have been rotated since being readable in the environment configuration.
 
-## Another project in the organization
+## The other project in the organization
 
-The organization also has a project named **ISO Plus Portal** (no suffix). It has one Web client,
-created 27 Aug 2026, whose only redirect URI is the dev backend callback, and no service account.
-It is older than the DEV client and does not do the group lookup, so it is not what dev uses today.
-Whether it is the intended production project or leftover is a decision for the production build,
-recorded in [`07-google-signin.md`](07-google-signin.md).
+The project named **ISO Plus Portal** (no suffix) is production's Google project. It still holds one early
+Web client, created 27 Aug 2026, whose only redirect URI is the dev backend callback, and it has no service
+account. It is not what dev uses. It is covered in [`07-google-signin.md`](07-google-signin.md) under
+production.

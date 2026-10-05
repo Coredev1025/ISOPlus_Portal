@@ -47,7 +47,7 @@ never sign anyone into production.
 | 5 | A **service account** | IAM and admin > Service accounts | No project roles needed. Create one JSON key. |
 | 6 | **Domain-wide delegation** for that service account | Workspace admin console > Security > API controls > Domain-wide delegation | Client id is the service account's numeric id. Scope is exactly `https://www.googleapis.com/auth/admin.directory.group.readonly`. |
 | 7 | A **Workspace group** of the people allowed in | Workspace admin console > Groups | Its address is `GOOGLE_TARGET_GROUP`. |
-| 8 | A **Workspace admin user** to act as | Existing admin | Its address is `GOOGLE_ADMIN_EMAIL`. Delegation impersonates this user, so it needs the right to read groups. Use a dedicated admin account, not a person who may leave. |
+| 8 | A **dedicated Workspace user** to act as, one per environment | Workspace admin console > Directory > Users, then Account > Admin roles | Its address is `GOOGLE_ADMIN_EMAIL`. Delegation impersonates this user, so it needs the right to read groups, and nothing more: give it a role that can read groups (the built-in "Groups Reader" role if your edition has it, otherwise a custom role with Groups > Read), not Super Admin. One user per environment keeps each environment's Directory API calls separate in the audit log. It is never signed in to interactively. Not a person who may leave. |
 
 The callback URL is `${BACKEND_URL}/api/auth/google/callback`, for example
 `https://<backend host>/api/auth/google/callback`. It must match the redirect URI registered
@@ -80,16 +80,46 @@ about the second. The console was read, nothing was changed.
 | Authorized redirect URI on that client | The **dev** backend callback (`https://<dev backend host>/api/auth/google/callback`) |
 | Service accounts | None |
 
-**This project is not yet production.** Despite its name it holds a client wired to the dev
-backend, and it has no service account, so it cannot do the group lookup. Decide before building
-production whether to:
+**This project is production's.** Decided 2026-10-05: production uses the project named
+**ISO Plus Portal** (no suffix; the name is deliberately left as it is). It is not finished:
 
-* create a new project for production (the guide's rule is one project per environment), or
-* keep this project for production and add a production client, which means the dev client in it
-  has to be understood first (who uses it, and is it safe to leave).
+* Its one OAuth client ("ISO+™ Portal", Web application) was created on 27 Aug 2026 with the **dev**
+  backend callback. On 2026-10-05 it was **reused for production** instead of creating a second one: the
+  JavaScript origin is now `https://portal.isoplus.online` and the only redirect URI is
+  `https://portal-backend.isoplus.online/api/auth/google/callback`. No localhost, no ngrok, nothing from dev.
+  A new client secret was created that day and the original (created 27 Aug) has been deleted, so there is
+  one secret. Verified from a fresh load of the saved client on 2026-10-05.
 
-Still to record once decided: the production project, OAuth client and service account, and which
-admin user `GOOGLE_ADMIN_EMAIL` is. Add them by name, never by secret.
+  | Client secret | Created | Use |
+  |---|---|---|
+  | ends `nRj_` | 2026-10-05 | **Production's.** The value goes in the secret store; this suffix is only for finding it |
+  | ends `qrE5` | 2026-08-27 | Original. Deleted 2026-10-05 |
+
+  Only the last four characters the console itself displays are recorded. Never write a full secret here.
+* Its consent screen is Internal, the Admin SDK API is enabled, and its data access lists exactly the three
+  basic scopes dev has (`openid`, `userinfo.email`, `userinfo.profile`) and no others (added 2026-10-05).
+* Service account `workspace-group-checker` created 2026-10-05, enabled, with no project roles. Its Unique
+  ID is needed for the delegation entry and is read from the account's details page; it is not recorded here.
+* It has **one** key, created 2026-10-05, no expiry. The key ID begins `d6118397ea25` (the downloaded file
+  is named `iso-plus-portal-<that prefix>.json`); this is only for finding the key, the private key is not
+  recorded anywhere in the repository. It goes into Secrets Manager as `GOOGLE_SERVICE_ACCOUNT_JSON` and the
+  local copy is deleted. Rotation is due on a schedule set by whoever owns this account; none is set yet.
+* Domain-wide delegation is set up (2026-10-05): one entry named "ISO+™ Portal" for this service account,
+  scope `admin.directory.group.readonly` only. It sits beside dev's own entry ("ISO+™ Portal - DEV") and an
+  unrelated Letsignit entry.
+
+Decided 2026-10-05: production uses the **same** account as dev for `GOOGLE_ADMIN_EMAIL`, the
+organization's main admin account ("ISO CS Admin", Super Admin). This is an accepted deviation from step 8,
+which recommends a dedicated groups-read user per environment. What it costs:
+
+* Delegation still limits the service account to group reads, but the calls are made as a Super Admin who is
+  also a human login.
+* Dev and production Directory calls are made as the same user. They are distinguishable by the delegating
+  service account, not by the user.
+* If that account is renamed, suspended, or has its password policy changed, both sign-ins are affected.
+
+Revisit by creating a dedicated groups-read user and changing the `GOOGLE_ADMIN_EMAIL` property; nothing else
+needs to change.
 
 
 ## Environment properties
