@@ -96,6 +96,18 @@ about the second. The console was read, nothing was changed.
   | ends `qrE5` | 2026-08-27 | Original. Deleted 2026-10-05 |
 
   Only the last four characters the console itself displays are recorded. Never write a full secret here.
+* Pre-release check, 2026-10-06: Google's authorize URL for the production client and callback
+  (`portal-backend.isoplus.online/api/auth/google/callback`) shows the account chooser with no
+  `redirect_uri_mismatch`, so the client, its redirect URI and the consent screen are accepted. This needs no
+  release and no secret; it stops at the account chooser. It does not test the delegation or the group lookup.
+* Delegation and group lookup tested before the release, 2026-10-06: the production service account key was
+  read from Secrets Manager into memory only (never written to disk or printed) and used to call the Directory
+  API `members.hasMember` on the production group, impersonating the `GOOGLE_ADMIN_EMAIL` account, with the
+  group-read scope only. Results: a group member returns `isMember = true`; an in-domain non-member returns
+  `false`; an address on another domain returns HTTP 400 "Invalid Input: memberKey", which the app treats as
+  not a member (`classifyDirectoryMembershipError` maps 400 and 404 to refusal). So the secret holds a valid
+  key, the delegation entry and scope are right, and the admin account can read the group. Note that this
+  reads the secret, so its "last retrieved" date in Secrets Manager moves.
 * Its consent screen is Internal, the Admin SDK API is enabled, and its data access lists exactly the three
   basic scopes dev has (`openid`, `userinfo.email`, `userinfo.profile`) and no others (added 2026-10-05).
 * Service account `workspace-group-checker` created 2026-10-05, enabled, with no project roles. Its Unique
