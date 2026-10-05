@@ -100,6 +100,8 @@ Related docs-only PR: **961** (design, runbook, rehearsal notes, this handover).
 
 ## Real-app check on the production copy (2026-10-05)
 
+**Run before D9 (KAN-315).** The 49 invoices and the `(Xero)` to `(ISO+™)` direction below are D8 results. Under D9 the backfill makes 55 invoices and those 200 items take the Xero number, so repeat this check before relying on it for the announcement.
+
 Backend run offline against a scrubbed copy with both backfills applied, once with `INVOICE_LEDGER_READ` unset and once with `on`, signed in through the one-time ticket. Across the 12 boards that have ledger invoices:
 
 - NDIS invoice export (`invoice-csv-ndis`): identical, ignoring the `exportDurationMs` timing field.

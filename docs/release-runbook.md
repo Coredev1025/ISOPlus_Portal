@@ -307,15 +307,18 @@ row once the migration has run in production and the release is closed.
 
 #### Migrations that ship when `develop` is promoted (snapshot 2026-10-04)
 
-All seven are in `develop` (PR #953 merged on 2026-10-04).
+All eight are in `develop`: the seven of PR #953 (merged on 2026-10-04) and
+`invoice-ledger-indexes` (KAN-302).
 
-None of these has run in production (all seven have run on dev, 2026-10-04). Pending migrations apply in
+None of these has run in production (the first seven ran on dev on 2026-10-04). Pending migrations apply in
 timestamp order, and `up <name>` without `--single` takes every older one with it. All of them only add indexes, clean up, or disable rows; none
 reshapes data the old code reads. Run the index migrations **before the deploy**,
 so the new code never runs without them (the unique one is the guard against
 billing a period twice), and the KAN-292 backfill **before it as well**: until it
 has run, a business with a missing counter is refused when it tries to set its
-first numbers. So all seven run before the deploy. Keep `AUTOMATION_ENABLED` off
+first numbers. `invoice-ledger-indexes` only builds indexes on the new, empty
+`invoices` collection (and a partial one on `pdflinks.invoiceId`, a field no row has yet),
+so it is safe at any time. So all eight run before the deploy. Keep `AUTOMATION_ENABLED` off
 until they have run.
 
 | Migration | What it does | Risk and pre-check | Undo |
@@ -327,6 +330,7 @@ until they have run.
 | `1787186180650-pdflink-invoice-period` | Drops and recreates the **unique** partial index `automation_period_item_unique` (the double-billing guard) after the duplicate check. It does not add the period fields themselves; they are optional fields written by automation runs. | It checks for duplicate rows first and refuses to build, with a clear message naming them, if any exist; no index is left behind. If it refuses, the duplicates must be understood, not deleted blindly. | `down` drops the index and removes `periodStart`, `periodEnd`, `invoiceType` and `invoiceTotal` from rows that have them. `periodKey` is left alone. |
 | `1787291724206-disable-portal-board-sync-schedule` | Sets `enabled: false` on the old EventBridge-era `scheduledjobs` row with `kind: 'board_sync'` and `targetId: 'portal'`. | That row must stay disabled or a tick claims it with no handler. Check: `db.scheduledjobs.find({kind: 'board_sync', targetId: 'portal'})`. | `down` sets it back to enabled, which you do not want. |
 | `1791050490815-backfill-document-numbering-initialized` (KAN-292, PR #953) | The row above. | The row above. On the 2026-10-03 production snapshot it flags 93 of 95 businesses as initialized, because production counters started at 1000 (83 businesses sit at 1000/1000/1000/1 and have most likely issued nothing); for them the first-numbers screen is read-only. **Accepted (Masoud, 2026-10-04)**: a business that asks is updated by a support script. | The row above. |
+| `1791102300000-invoice-ledger-indexes` (KAN-302) | Creates the indexes of the new `invoices` collection, including the unique `invoice_number_unique` that makes committing an invoice idempotent, and the partial index `invoice_document` on `pdflinks.invoiceId`. | Nothing is built on existing data, so it is fast and safe against the old code. `commitInvoice` and the invoice backfill refuse to write without it, and the ledger reads scan without `invoice_line_item`. Check: `db.invoices.getIndexes()` lists `invoice_number_unique`, `invoice_line_item`, `invoice_legacy_number`, `invoice_participant`, `invoice_slot`. | `down` drops the indexes and keeps every invoice. Only run it with the ledger flags `off`: without the unique index a retried write can create a second invoice. |
 
 Before running any of them in production: take the backup (section 1), then
 `MONGODB_URI='<production uri>' npm run migrate -- list` to see exactly which are
@@ -340,7 +344,7 @@ environment change. See "After the deploy" for what to watch.
 
 0. **Run the pre-deploy migrations** (section 2): the backup, then `list`, then
    each migration with `--single` oldest first, then the checks in the table. All
-   seven are pre-deploy. Do not merge until they have run and been checked.
+   eight are pre-deploy. Do not merge until they have run and been checked.
 1. Open a PR from `develop` to `main` (hotfixes go from `hotfix/...` to `main`,
    see "Hotfix"). Check the diff is the scope you agreed.
 2. Merge with a **merge commit**. The `CICD` workflow starts on the push to `main`.
@@ -427,7 +431,7 @@ so it cannot show how the migrations, a backfill or new billing code behave on t
 real shapes and volumes. The design behind it is section 8 of
 [`2026-10-04-invoice-source-of-truth-design.md`](superpowers/specs/2026-10-04-invoice-source-of-truth-design.md).
 
-**Automating this.** `npm run rehearse` replays steps 1 to 4, 6 and the backfill part of 7 below on a throwaway MongoDB 8.0 in Docker, in about half a minute for the production snapshot, and compares the result with `scripts/rehearse/expectations.*.json`. How to run it, what it covers and what is still manual is in [`roadmap/release-rehearsal.md`](roadmap/release-rehearsal.md); change both together.
+**Automating this.** `npm run rehearse` replays steps 1 to 4, 6 and the invoice and marker backfills of 7 below on a throwaway MongoDB 8.0 in Docker, in about half a minute for the production snapshot, and compares the result with `scripts/rehearse/expectations.*.json`. How to run it, what it covers and what is still manual is in [`roadmap/release-rehearsal.md`](roadmap/release-rehearsal.md); change both together.
 
 **Handling.** The copy holds real participant and business data and may hold live
 credentials. Keep it outside the repo and only in the local Mongo, in its own
@@ -448,7 +452,8 @@ or use any credential found in it.
    count queries. Offline mode does not cover Xero, so the only protection is that
    no token exists. Unset `businesses.xeroTokens`; drop or clear `sessions`; clear
    `oauthtickets.accessToken` and `xeroconnecttickets`; set `enabled: false` on every
-   `scheduledjobs` row and every `AutomationSettings`; clear queued delivery state;
+   `scheduledjobs` row and every `AutomationSettings`; clear queued delivery state
+   (not yet in `scrub.js`);
    treat `users` (real emails and password hashes) as sensitive and replace or remove
    them where the rehearsal does not need them. The reviewed script is
    [`scripts/rehearse/scrub.js`](../scripts/rehearse/scrub.js); `npm run rehearse` runs it
@@ -467,8 +472,11 @@ or use any credential found in it.
    re-running `up` does not bring it back. Drop the throwaway restore afterwards.
 6. **Run the audit** (next section) and read every category.
 7. **For a release that ships the invoice ledger**: set `INVOICE_LEDGER_WRITE=on`,
-   run the backfill script's dry run, then `--apply`, then run it again (it must
-   create nothing), then `--undo` on a throwaway restore; check the invariants; set
+   run the backfill script's dry run, then `--apply`, then the marker backfill's dry
+   run and `--apply` (invoices first, then markers), then both again (they must create
+   and mark nothing); run the audit (query 6 must be empty); then `--undo --apply`,
+   markers first, then invoices, and check the old stores hash equals the hash from
+   before the backfills; apply both again; set
    `INVOICE_LEDGER_READ=shadow` and generate statements and generator lists for a
    sample of real workspaces. The only differences allowed are the classes in the
    design (section 7), with counts matching the audit.
@@ -486,9 +494,9 @@ timings can be estimated.
 
 ## Invoice ledger rollout
 
-Applies only to the release that ships the invoice ledger (KAN-302). Nothing in
-this section is built yet; the commands marked *(to be written)* are finalised
-with the code. The design, the phases and the reasoning are in
+Applies only to the release that ships the invoice ledger (KAN-302). The scripts
+below (`invoice-audit`, `invoice-backfill`, `invoice-marker-backfill`) are built and
+were rehearsed on the production copy. The design, the phases and the reasoning are in
 [`2026-10-04-invoice-source-of-truth-design.md`](superpowers/specs/2026-10-04-invoice-source-of-truth-design.md).
 
 Phases 0 to 4 are reversible by turning a flag off. Phase 5 is not, which is why
@@ -587,11 +595,16 @@ differently (design section 6).
 
 ### Running the invoice backfill
 
-`Backend/scripts/invoice-backfill.mjs`, from `Backend/`:
+`Backend/scripts/invoice-backfill.mjs`, from `Backend/`. The commands below are written as for a
+local database. Against production the two scripts that write (`invoice-backfill` and
+`invoice-marker-backfill`) each need `MONGODB_URI='<production uri>'` in front and `--allow-remote`
+after, as in section 2, step 3: without the URI the scripts read `Backend/.env`, which usually points
+at dev, and `--allow-remote` then lets the write through. `invoice-audit` only reads, so give it
+`MONGODB_URI` and no `--allow-remote` (it rejects options it does not know).
 
 ```bash
 npm run invoice-backfill -- --workspace <id>            # DRY RUN, the default: writes nothing, prints a plan hash
-npm run invoice-backfill -- --all --report-file /tmp/backfill.json
+npm run invoice-backfill -- --all --report-file <private dir>/backfill.json
 npm run invoice-backfill -- --workspace <id> --apply --plan <hash> --ack double-billed=3 --ack stale-legacy=1
 npm run invoice-backfill -- --workspace <id> --undo              # PREVIEW only
 npm run invoice-backfill -- --workspace <id> --undo --apply      # does it
@@ -671,7 +684,8 @@ db.invoicenumbers.aggregate([
 ])
 ```
 
-The backfill is `Backend/scripts/invoice-marker-backfill.mjs`, from `Backend/`:
+The backfill is `Backend/scripts/invoice-marker-backfill.mjs`, from `Backend/` (against production,
+with `MONGODB_URI` and `--allow-remote` as above):
 
 ```bash
 npm run invoice-marker-backfill -- --workspace <id>                    # DRY RUN, the default; prints a plan hash
@@ -710,7 +724,7 @@ which is right (they were billed), and the audit then reports them under `marker
 **Order:** run the invoice backfill first, then this, so each item's pointer and marker agree.
 Both must be done before automation is enabled.
 
-**On the production copy (2026-10-05):** 368 items to mark (352 from PDF rows, 16 from Xero rows;
+**On the production copy (2026-10-05):** 368 items to mark (152 from PDF rows, 216 from Xero rows under D9;
 149 PDF only, 203 both, 16 Xero only: the same 368 as query 6), 23 log rows belong to deleted
 items. After applying, query 6 returned 0 and 368 items carried a marker; a second run marked
 nothing; `--undo` returned the items collection to a hash identical to before. The audit then
@@ -722,10 +736,11 @@ through; the markers themselves are right (those items were billed).
 
 | Phase | Do | Check before the next | Back out |
 |---|---|---|---|
-| 1. Ship, flags off | Deploy. `INVOICE_LEDGER_WRITE` and `INVOICE_LEDGER_READ` are unset or `off`. | Release checks in section 4. Behaviour is unchanged | Roll back the code (section 5) |
-| 2. Dual write, then backfill | Backup first. **Run the `invoice-ledger-indexes` migration** (`commitInvoice` refuses to write without its unique index). Set `INVOICE_LEDGER_WRITE=on` **first**, outside a scheduled slot (changing a property restarts the environment's processes). Then the backfill script's dry run, `--apply` with each category acknowledged, and a second run (it must create nothing), as in "Running the invoice backfill". Write comes first so nothing issued during the backfill is missed | The audit invariants hold for every workspace; counts match the dry run; the second run creates nothing | Set `INVOICE_LEDGER_WRITE=off`; run the script with `--undo`, which removes only backfilled invoices |
+| 1. Ship, flags off | Deploy, with `invoice-ledger-indexes` already run (section 2). `INVOICE_LEDGER_WRITE` and `INVOICE_LEDGER_READ` are unset or `off`, and `AUTOMATION_ENABLED` stays off. | Release checks in section 4, plus the two ledger flags read back as unset or `off` in the environment's properties. Behaviour is unchanged | Roll back the code (section 5) |
+| 2. Dual write, then both backfills | Backup first. Confirm with `list` that `invoice-ledger-indexes` has run (`commitInvoice` refuses to write without its unique index). Set `INVOICE_LEDGER_WRITE=on` **first**, outside a scheduled slot (changing a property restarts the environment's processes). Then the invoice backfill: dry run, `--apply` with each category acknowledged, a second run (it must create nothing), as in "Running the invoice backfill". **Then** the marker backfill the same way (invoices first, so pointer and marker agree). Write comes first so nothing issued during the backfills is missed. `AUTOMATION_ENABLED` stays off throughout | Counts match the dry runs; both second runs create and mark nothing; query 6 returns 0; the audit's only violations are the known ones: on the production copy that is `markerWithoutInvoice` for the 66 items on the 8 `unplaceable` invoices, which a person must work through (they were billed, so the markers are right). Any other violation stops the rollout | In this order: `INVOICE_LEDGER_WRITE=off`; `invoice-marker-backfill --all --undo`, read the preview, then `--undo --apply`; then `invoice-backfill --all --undo`, read it, then `--undo --apply`. `--undo` without `--apply` only previews. Undo is only safe while `INVOICE_LEDGER_READ` is `off` |
+| 2b. Automation on (optional, its own decision) | Only after phase 2's checks, and only with the Google and email settings verified (section 1). Set `AUTOMATION_ENABLED=true` | Query 6 still returns 0; watch the first scheduled run (section 4) | Set `AUTOMATION_ENABLED=false`. Documents already issued stay issued |
 | 3. Shadow read | Set `INVOICE_LEDGER_READ=shadow`. The old answer is served; each difference is logged with a class | The agreed soak (a full week and a full statement cycle) with every difference in a known class, class counts matching the audit, and none unclassified | Set `INVOICE_LEDGER_READ=off` |
-| 4. Switch | Set `INVOICE_LEDGER_READ=on`. **Statements change here**, as accepted. Watch the first scheduled run and the first statement after it | Statements and generator lists for workspaces whose numbers are known; the expected changes and nothing else | Set it back to `shadow` or `off`. The old stores are still complete because dual write continues |
+| 4. Switch | **Precondition:** the markers are backfilled and query 6 returns 0, and decision D10 (whether a live Xero push follows D9; until then new pushes follow D8 and backfilled data follows D9) has been taken or knowingly deferred. Set `INVOICE_LEDGER_READ=on`. **Statements change here**, as accepted. Watch the first scheduled run and the first statement after it | Statements and generator lists for workspaces whose numbers are known; the expected changes and nothing else | Set it back to `shadow` or `off`. The old stores are still complete because dual write continues |
 | 5. Contract | A later release: stop writing the old log, remove the old read paths | Phase 4 stable for a full cycle | Redeploy the previous release. The old log is stale from here on, so this is the point of no easy return |
 
 If `INVOICE_LEDGER_WRITE` is turned off after it has been on, invoices issued
