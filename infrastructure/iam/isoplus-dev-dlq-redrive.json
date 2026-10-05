@@ -1,0 +1,44 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "RedriveFromDevDlq",
+      "Effect": "Allow",
+      "Action": [
+        "sqs:StartMessageMoveTask",
+        "sqs:CancelMessageMoveTask"
+      ],
+      "Resource": "arn:aws:sqs:ap-southeast-2:<AWS_ACCOUNT_ID>:isoplus-dev-ses-events-dlq"
+    },
+    {
+      "Sid": "ReadMoveTaskStatusOnBothDevQueues",
+      "Effect": "Allow",
+      "Action": "sqs:ListMessageMoveTasks",
+      "Resource": [
+        "arn:aws:sqs:ap-southeast-2:<AWS_ACCOUNT_ID>:isoplus-dev-ses-events-dlq",
+        "arn:aws:sqs:ap-southeast-2:<AWS_ACCOUNT_ID>:isoplus-dev-ses-events"
+      ]
+    },
+    {
+      "Sid": "ManualRedriveReadDeleteFromDevDlq",
+      "Effect": "Allow",
+      "Action": [
+        "sqs:ReceiveMessage",
+        "sqs:DeleteMessage"
+      ],
+      "Resource": "arn:aws:sqs:ap-southeast-2:<AWS_ACCOUNT_ID>:isoplus-dev-ses-events-dlq"
+    },
+    {
+      "Sid": "ManualRedriveSendToDevQueue",
+      "Effect": "Allow",
+      "Action": "sqs:SendMessage",
+      "Resource": "arn:aws:sqs:ap-southeast-2:<AWS_ACCOUNT_ID>:isoplus-dev-ses-events"
+    },
+    {
+      "Sid": "DenyPurgeAnywhere",
+      "Effect": "Deny",
+      "Action": "sqs:PurgeQueue",
+      "Resource": "*"
+    }
+  ]
+}

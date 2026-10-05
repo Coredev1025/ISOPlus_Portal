@@ -1,0 +1,12 @@
+# Real tfvars carry the scheduler API keys. Only the .example files belong in git.
+*.tfvars
+!*.tfvars.example
+
+# State can contain secrets even with create_app_access_key false.
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+crash.log
+*.plan

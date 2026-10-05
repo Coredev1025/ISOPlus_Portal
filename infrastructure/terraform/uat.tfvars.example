@@ -1,0 +1,80 @@
+# UAT configuration.
+#
+# Copy to uat.tfvars and fill in. Do NOT commit uat.tfvars, it carries the
+# scheduler API keys.
+#
+#   cp uat.tfvars.example uat.tfvars
+#   terraform apply -var-file=uat.tfvars
+
+environment = "uat"
+name_prefix = "isoplus-uat"
+aws_region  = "ap-southeast-2"
+
+# ---------------------------------------------------------------------------
+# SES
+# ---------------------------------------------------------------------------
+
+sending_domain      = "uat.isoplus.online"
+mail_from_subdomain = "mail"
+
+# Set true only if the zone is in Route 53 in this account.
+manage_dns      = false
+route53_zone_id = ""
+
+# ---------------------------------------------------------------------------
+# Recipient allowlist
+#
+# Keep this restrictive in UAT. Remember:
+#   - every recipient of a send must match, one bad address fails the whole call
+#   - subdomains do not match a parent pattern
+# ---------------------------------------------------------------------------
+
+recipient_allowlist = [
+  "*@isoconsultingservices.com.au",
+  "*@isoplus.online",
+  "*@uat.isoplus.online",
+  "*@simulator.amazonses.com",
+]
+
+# ---------------------------------------------------------------------------
+# Application
+# ---------------------------------------------------------------------------
+
+app_s3_buckets = [
+  "isoplus-portal-uat",
+  "isoplus-portal-uat-public",
+]
+
+# Leave false and create the key by hand to keep the secret out of state.
+create_app_access_key = false
+
+# ---------------------------------------------------------------------------
+# Alerting
+# ---------------------------------------------------------------------------
+
+alert_email               = "alerts-uat@example.com"
+subscribe_email_to_events = true # useful while proving the pipeline, turn off later
+
+# ---------------------------------------------------------------------------
+# Scheduler
+#
+# Supply the keys via environment rather than this file where you can:
+#   export TF_VAR_scheduler_rules='{"invoice":{...},"statement":{...}}'
+# ---------------------------------------------------------------------------
+
+enable_scheduler        = true
+scheduler_endpoint      = "https://portal-be-uat.isoplus.online/api/scheduler/tick"
+scheduler_rules_enabled = false # leave false until the endpoint is deployed
+
+scheduler_rules = {
+  invoice = {
+    schedule_expression = "rate(1 minute)"
+    api_key             = "REPLACE_ME"
+    description         = "Scheduler tick for invoice issuance"
+  }
+  statement = {
+    schedule_expression = "rate(1 minute)"
+    api_key             = "REPLACE_ME"
+    description         = "Scheduler tick for statement generation"
+  }
+}

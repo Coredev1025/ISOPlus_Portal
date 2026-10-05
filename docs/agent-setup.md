@@ -7,6 +7,8 @@ reinstalling a tool. It lists **names and locations, never secret values**. Rule
 conventions are in [`CLAUDE.md`](../CLAUDE.md) (`AGENTS.md` is a symlink to it); state is in
 [`claude-handoff.md`](claude-handoff.md) and the notes under [`ongoing/`](ongoing/).
 
+This guide is about the machine an AI agent works on. The cloud infrastructure of the product (AWS) is a different topic, in [`infrastructure/`](infrastructure/).
+
 Private notes that must not be in the repo (preferences about how time is logged, personal
 paths and the like) are kept by the owner in a local file outside the repo,
 `~/Documents/work/isoplus/ai-private-notes.md`. A new agent should ask the owner for it.

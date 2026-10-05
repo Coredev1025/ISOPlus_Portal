@@ -1,0 +1,76 @@
+# Production configuration.
+#
+# Do not apply this until UAT has been running cleanly for at least one full
+# billing cycle. See section 8 of 02-terraform-runbook.md.
+#
+# IMPORTANT: production shares this AWS account with dev and UAT. A careless
+# apply here can affect live client email. Always run plan and read every line
+# before applying.
+
+environment = "prod"
+name_prefix = "isoplus-prod"
+aws_region  = "ap-southeast-2"
+
+# ---------------------------------------------------------------------------
+# SES
+# ---------------------------------------------------------------------------
+
+sending_domain      = "isoplus.online"
+mail_from_subdomain = "mail"
+
+manage_dns      = false
+route53_zone_id = ""
+
+# ---------------------------------------------------------------------------
+# Recipient allowlist
+#
+# EMPTY in production. Real clients are on arbitrary domains and any allowlist
+# would silently block them. The empty list removes the IAM condition entirely.
+# ---------------------------------------------------------------------------
+
+recipient_allowlist = []
+
+# ---------------------------------------------------------------------------
+# Application
+# ---------------------------------------------------------------------------
+
+app_s3_buckets = [
+  "isoplus-portal-prod",
+  "isoplus-portal-prod-public",
+]
+
+create_app_access_key = false
+
+# ---------------------------------------------------------------------------
+# Alerting
+#
+# Use a distribution list, not one person. Alarms that only reach someone on
+# annual leave are not monitoring.
+# ---------------------------------------------------------------------------
+
+alert_email               = "alerts@example.com"
+subscribe_email_to_events = false # would be thousands of emails a day
+
+# Tighter than UAT. Production invoicing is time sensitive.
+stalled_queue_threshold_seconds = 600
+
+# ---------------------------------------------------------------------------
+# Scheduler
+# ---------------------------------------------------------------------------
+
+enable_scheduler        = true
+scheduler_endpoint      = "https://portal-be.isoplus.online/api/scheduler/tick"
+scheduler_rules_enabled = false # enable deliberately, as its own change
+
+scheduler_rules = {
+  invoice = {
+    schedule_expression = "rate(1 minute)"
+    api_key             = "REPLACE_ME"
+    description         = "Scheduler tick for invoice issuance"
+  }
+  statement = {
+    schedule_expression = "rate(1 minute)"
+    api_key             = "REPLACE_ME"
+    description         = "Scheduler tick for statement generation"
+  }
+}
