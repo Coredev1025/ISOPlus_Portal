@@ -8,7 +8,7 @@ function totalsLines(totals) {
     `  ${pad('items to mark', 28)} ${totals.toMark}`,
     ...Object.entries(totals.byType).map(([type, n]) => `    ${pad(`from ${type} rows`, 26)} ${n}`),
     `  ${pad('already marked (left alone)', 28)} ${totals.alreadyMarked}`,
-    `  ${pad('also had a Xero row', 28)} ${totals.hadBothTypes}  (one billing: the PDF number is the marker)`,
+    `  ${pad('had both PDF and Xero', 28)} ${totals.hadBothTypes}  (the later one is the marker)`,
     `  ${pad('dates that are approximate', 28)} ${totals.approximateDates}  (the log row was rewritten later)`,
     `  ${pad('items deleted since (log rows)', 28)} ${totals.deletedItems}`,
     `  ${pad('items whose log rows are unusable', 28)} ${totals.unusableRows}`,

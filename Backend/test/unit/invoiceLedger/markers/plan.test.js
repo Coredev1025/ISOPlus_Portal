@@ -30,7 +30,7 @@ describe('planMarkers', () => {
     }]);
   });
 
-  it('prefers the PDF number over the Xero number: one billing, the portal invoice holds the Xero number (D8)', () => {
+  it('keeps the PDF number when the PDF row is the later one (D8: the portal invoice holds the Xero number)', () => {
     const plan = planMarkers({
       items: [item('a')],
       logRows: [
@@ -40,6 +40,31 @@ describe('planMarkers', () => {
     });
     expect(plan.markers[0]).toMatchObject({ invoicedBy: 'INV-24 (ISO+™)', from: 'PDF' });
     expect(plan.report.counts.hadBothTypes).toBe(1);
+  });
+
+  // KAN-315: the latest invoice an item has wins, whichever system issued it.
+  it('takes the Xero number when the Xero row is later than the PDF row', () => {
+    const plan = planMarkers({
+      items: [item('a')],
+      logRows: [
+        log('a', 'INV-24 (ISO+™)', { createdAt: new Date('2026-06-01Z'), updatedAt: new Date('2026-06-01Z') }),
+        log('a', 'INV-0501 (Xero)', { type: 'Xero', createdAt: new Date('2026-07-01Z'), updatedAt: new Date('2026-07-01Z') }),
+      ],
+    });
+    expect(plan.markers[0]).toMatchObject({ invoicedBy: 'INV-0501 (Xero)', from: 'Xero', invoicedAt: new Date('2026-07-01Z') });
+    expect(plan.report.counts.hadBothTypes).toBe(1);
+  });
+
+  it('keeps the PDF number when the dates are equal: only a strictly later Xero row wins', () => {
+    const same = new Date('2026-07-01Z');
+    const plan = planMarkers({
+      items: [item('a')],
+      logRows: [
+        log('a', 'INV-0501 (Xero)', { type: 'Xero', createdAt: same, updatedAt: same }),
+        log('a', 'INV-24 (ISO+™)', { createdAt: same, updatedAt: same }),
+      ],
+    });
+    expect(plan.markers[0]).toMatchObject({ invoicedBy: 'INV-24 (ISO+™)', from: 'PDF' });
   });
 
   it('marks an item with only a Xero row with the Xero number', () => {

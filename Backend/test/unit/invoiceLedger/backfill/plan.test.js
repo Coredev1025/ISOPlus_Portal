@@ -265,6 +265,157 @@ describe('rule 5: Xero rows', () => {
   });
 });
 
+// KAN-315: for each item the latest invoice wins, PDF or Xero. A Xero row strictly later than the
+// item's PDF row means the Xero invoice is the current one; the item is not also on a portal invoice.
+describe('rule 5, latest wins (KAN-315)', () => {
+  const early = new Date('2026-06-01T00:00:00Z');
+  const late = new Date('2026-07-10T00:00:00Z');
+  const xeroRow = (itemId, number, at, over = {}) => log(itemId, number, {
+    type: 'Xero', pdfLink: null, createdAt: at, updatedAt: at, ...over,
+  });
+  const pdfRow = (itemId, number, at, over = {}) => log(itemId, number, { createdAt: at, updatedAt: at, ...over });
+
+  it('an item whose Xero row is later is on the Xero invoice only, and the superseded portal invoice is reported', async () => {
+    const result = await plan({
+      items: [item('a')],
+      logRows: [pdfRow('a', 'INV-24 (ISO+™)', early), xeroRow('a', 'INV-0501 (Xero)', late)],
+    });
+    expect(result.invoices).toHaveLength(1);
+    const xero = byNumber(result, 'INV-0501', 'xero');
+    expect(xero).toMatchObject({ source: 'xero', backfill: { reason: 'xero-later' }, lines: [{ itemId: 'a' }] });
+    expect(byNumber(result, 'INV-24')).toBeUndefined();
+    expect(result.report.lists.supersededByXero).toEqual([{
+      itemId: 'a', portal: 'INV-24', xero: 'INV-0501', portalAt: early, xeroAt: late,
+    }]);
+    expect(result.pointers).toEqual([{ itemId: 'a', ref: xero.ref, expected: null }]);
+  });
+
+  it('when the portal invoice has no other item, the Xero invoice keeps its document link and the portal invoice is reported as superseded', async () => {
+    const result = await plan({
+      items: [item('a')],
+      logRows: [pdfRow('a', 'INV-24 (ISO+™)', early), xeroRow('a', 'INV-0501 (Xero)', late)],
+    });
+    const xero = byNumber(result, 'INV-0501', 'xero');
+    expect(xero.pdf).toEqual({ pdfLink: 'https://s3/INV-24 (ISO+™).pdf' });
+    expect(result.report.lists.supersededPortalInvoices).toEqual([{
+      number: 'INV-24', boardId: NDIS, supersededBy: ['INV-0501'], itemIds: ['a'],
+    }]);
+  });
+
+  it('a portal invoice keeps the items the Xero invoice did not replace, and is not given the Xero number as a legacy form', async () => {
+    const result = await plan({
+      items: [item('a'), item('b')],
+      logRows: [
+        pdfRow('a', 'INV-24 (ISO+™)', early), pdfRow('b', 'INV-24 (ISO+™)', early),
+        xeroRow('a', 'INV-0501 (Xero)', late),
+      ],
+    });
+    expect(byNumber(result, 'INV-24').lines.map((l) => l.itemId)).toEqual(['b']);
+    const xero = byNumber(result, 'INV-0501', 'xero');
+    expect(xero.lines.map((l) => l.itemId)).toEqual(['a']);
+    expect(result.report.lists.supersededPortalInvoices).toEqual([]);
+  });
+
+  it('a PDF row later than the Xero row keeps D8: one portal invoice with the Xero number attached', async () => {
+    const result = await plan({
+      items: [item('a')],
+      logRows: [xeroRow('a', 'INV-0501 (Xero)', early), pdfRow('a', 'INV-24 (ISO+™)', late)],
+    });
+    expect(result.invoices).toHaveLength(1);
+    expect(byNumber(result, 'INV-24').xero).toEqual({ invoiceNumber: 'INV-0501' });
+    expect(result.report.lists.supersededByXero).toEqual([]);
+  });
+
+  it('equal dates keep D8: only a strictly later Xero row wins', async () => {
+    const result = await plan({
+      items: [item('a')],
+      logRows: [pdfRow('a', 'INV-24 (ISO+™)', early), xeroRow('a', 'INV-0501 (Xero)', early)],
+    });
+    expect(result.invoices).toHaveLength(1);
+    expect(byNumber(result, 'INV-24').xero).toEqual({ invoiceNumber: 'INV-0501' });
+  });
+
+  // The reviewer's cases: the PDF row must never be dropped unless the Xero invoice really takes the item.
+  it('an item with two Xero rows after its PDF row is on the later Xero invoice only, not on both', async () => {
+    const result = await plan({
+      items: [item('a')],
+      logRows: [
+        pdfRow('a', 'INV-24 (ISO+™)', early),
+        xeroRow('a', 'INV-0501 (Xero)', new Date('2026-07-05T00:00:00Z')),
+        xeroRow('a', 'INV-0502 (Xero)', late),
+      ],
+    });
+    expect(result.invoices.map((i) => `${i.source}:${i.number}`)).toEqual(['xero:INV-0502']);
+    expect(result.report.lists.supersededByXero.map((e) => e.xero)).toEqual(['INV-0502']);
+  });
+
+  it('breaks a tie between two Xero rows by the higher number, as the marker backfill does', async () => {
+    const same = new Date('2026-07-05T00:00:00Z');
+    const result = await plan({
+      items: [item('a')],
+      logRows: [pdfRow('a', 'INV-24 (ISO+™)', early), xeroRow('a', 'INV-0501 (Xero)', same), xeroRow('a', 'INV-0502 (Xero)', same)],
+    });
+    expect(result.invoices.map((i) => i.number)).toEqual(['INV-0502']);
+  });
+
+  it('keeps the portal invoice when the Xero number belongs to a deleted document: nothing is lost', async () => {
+    const result = await plan({
+      items: [item('a'), item('z')],
+      logRows: [pdfRow('a', 'INV-24 (ISO+™)', early), xeroRow('a', 'INV-0501 (Xero)', late)],
+      ledgerRows: [ledger('r1', 'z', 'INV-0501 (Xero)', { isDeleted: true })],
+    });
+    expect(byNumber(result, 'INV-24')).toMatchObject({ lines: [{ itemId: 'a' }] });
+    expect(result.report.lists.supersededByXero).toEqual([]);
+  });
+
+  it('places a Xero row that has only an update date: it is dated by the same clock as the comparison', async () => {
+    const result = await plan({
+      items: [item('a')],
+      logRows: [pdfRow('a', 'INV-24 (ISO+™)', early), xeroRow('a', 'INV-0501 (Xero)', late, { createdAt: undefined })],
+    });
+    expect(byNumber(result, 'INV-0501', 'xero')).toBeTruthy();
+    expect(result.report.lists.unplaceable).toEqual([]);
+  });
+
+  it('an item that already carries a marker keeps D8: no supersession', async () => {
+    const result = await plan({
+      items: [item('a', { invoicedBy: 'INV-24 (ISO+™)' })],
+      logRows: [pdfRow('a', 'INV-24 (ISO+™)', early), xeroRow('a', 'INV-0501 (Xero)', late)],
+    });
+    expect(result.invoices).toHaveLength(1);
+    expect(byNumber(result, 'INV-24').xero).toEqual({ invoiceNumber: 'INV-0501' });
+    expect(result.report.lists.supersededByXero).toEqual([]);
+  });
+
+  it('reports an emptied portal invoice against the item board, not the log row board', async () => {
+    const result = await plan({
+      items: [item('a', { boardId: AGE })],
+      logRows: [pdfRow('a', 'INV-24 (ISO+™)', early, { boardId: NDIS }), xeroRow('a', 'INV-0501 (Xero)', late, { boardId: NDIS })],
+    });
+    expect(result.report.lists.supersededPortalInvoices).toEqual([{
+      number: 'INV-24', boardId: AGE, supersededBy: ['INV-0501'], itemIds: ['a'],
+    }]);
+  });
+
+  it('is idempotent: a second run over the result plans nothing', async () => {
+    const inputs = {
+      items: [item('a'), item('b')],
+      logRows: [
+        pdfRow('a', 'INV-24 (ISO+™)', early), pdfRow('b', 'INV-24 (ISO+™)', early),
+        xeroRow('a', 'INV-0501 (Xero)', late),
+      ],
+    };
+    const first = await plan(inputs);
+    const existing = first.invoices.map((i) => ({
+      id: `id-${i.ref}`, boardId: i.boardId, participantName: i.participant.name, source: i.source, number: i.number,
+      duplicateOrdinal: i.duplicateOrdinal, itemIds: i.lines.map((l) => l.itemId), issuedAt: i.issuedAt, xero: i.xero,
+    }));
+    const second = await plan({ ...inputs, existing });
+    expect(second.invoices).toEqual([]);
+    expect(second.xeroAttachments).toEqual([]);
+  });
+});
+
 describe('section 6.3: the cases that need an explicit rule', () => {
   it('two different invoices sharing a number are both created, the later with a duplicate ordinal', async () => {
     const result = await plan({
@@ -512,7 +663,8 @@ describe('review: production-shape inputs', () => {
     const result = await plan({
       items: [item('a')],
       logRows: [
-        log('a', 'INV-24'),
+        // The PDF row is the latest, so the portal invoice holds the item (D8) and the Xero numbers attach to it.
+        log('a', 'INV-24', { createdAt: new Date('2026-07-10Z'), updatedAt: new Date('2026-07-10Z') }),
         log('a', 'INV-0502 (Xero)', { type: 'Xero', pdfLink: null, createdAt: new Date('2026-07-09Z') }),
         log('a', 'INV-0501 (Xero)', { type: 'Xero', pdfLink: null, createdAt: new Date('2026-07-05Z') }),
       ],

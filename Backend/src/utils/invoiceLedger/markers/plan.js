@@ -1,4 +1,6 @@
-import { isPending, validDate } from '../backfill/context.js';
+import {
+  isPending, latestFirst, rowDate, validDate, xeroIsLater,
+} from '../backfill/context.js';
 
 /**
  * The marker backfill planner (KAN-312): which items get `invoicedBy` and `invoicedAt` from
@@ -10,10 +12,10 @@ import { isPending, validDate } from '../backfill/context.js';
  *
  * Rules: an item with any marker (a pending claim included) is left alone. Otherwise the
  * marker is the logged number exactly as stored (`INV-24 (ISO+™)`, `INV-0501 (Xero)`), the
- * date is the log row's. Where an item has both a PDF and a Xero row they are one billing
- * (D8) and the portal number is the marker; the Xero number lives on the portal invoice. The
- * earliest row of the preferred type wins. A row's date belongs to the first time that row was
- * written, and the log keeps one row per item per type overwritten by the next number, so a date
+ * date is the log row's. Where an item has both a PDF and a Xero row the later row is the
+ * marker (KAN-315, replacing the earlier rule that the portal number always won); equal dates
+ * keep the portal number, and the invoice backfill makes the same choice. A row's date belongs
+ * to the first time that row was written, and the log keeps one row per item per type overwritten by the next number, so a date
  * from a revisited row (updated more than a minute after it was created) is approximate.
  *
  * An item with several rows of one type (it changed board, or two upserts raced) takes the
@@ -32,20 +34,19 @@ const isRevisited = (row) => new Date(row.updatedAt) - new Date(row.createdAt) >
 const hasMarker = (item) => Boolean(item.invoicedBy) || isPending(item.invoicedBy);
 const usable = (row) => typeof row.invoiceNumber === 'string' && row.invoiceNumber.trim() !== '';
 
-/** When a row was written: its creation date, else its last update, else the time its id was made, else nothing. */
-const rowDate = (row) => validDate(row.createdAt) ?? validDate(row.updatedAt) ?? validDate(row.idDate) ?? null;
 const hasCreatedDate = (row) => Boolean(validDate(row.createdAt));
 
-/** Latest first; a tie goes to the higher number, the same for any input order. */
-const latestFirst = (a, b) => (rowDate(b)?.getTime() ?? 0) - (rowDate(a)?.getTime() ?? 0)
-  || String(b.invoiceNumber).localeCompare(String(a.invoiceNumber));
-
-/** The row an item's marker comes from: the latest usable PDF row, else the latest usable Xero row. */
+/**
+ * The row an item's marker comes from: the latest invoice the item has, PDF or Xero (KAN-315).
+ * The latest PDF row wins unless the item's latest Xero row is strictly later. The invoice
+ * backfill makes the same choice, so marker and pointer agree.
+ */
 function chosenRow(rows) {
   const usableRows = rows.filter(usable);
-  const pdf = usableRows.filter((r) => r.type !== 'Xero').sort(latestFirst);
-  const xero = usableRows.filter((r) => r.type === 'Xero').sort(latestFirst);
-  return pdf[0] ?? xero[0];
+  const pdf = usableRows.filter((r) => r.type !== 'Xero').sort(latestFirst)[0];
+  const xero = usableRows.filter((r) => r.type === 'Xero').sort(latestFirst)[0];
+  if (pdf && xero) return xeroIsLater(pdf, xero) ? xero : pdf;
+  return pdf ?? xero;
 }
 
 const rowsByItem = (logRows) => {
@@ -65,7 +66,7 @@ function markerFor(itemId, rows, report) {
   const approximate = isRevisited(row) || !hasCreatedDate(row);
   report.counts.byType[from] = (report.counts.byType[from] || 0) + 1;
   if (approximate) report.counts.approximateDates += 1;
-  if (from === 'PDF' && rows.some((r) => r.type === 'Xero')) report.counts.hadBothTypes += 1;
+  if (rows.some((r) => r.type === 'Xero') && rows.some((r) => r.type !== 'Xero')) report.counts.hadBothTypes += 1;
   return {
     itemId, invoicedBy: row.invoiceNumber, invoicedAt: rowDate(row), from, approximate,
   };

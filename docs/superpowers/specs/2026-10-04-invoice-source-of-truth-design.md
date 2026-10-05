@@ -595,10 +595,12 @@ npm run invoice-audit -- --workspace <id>                        # read only
 ```
 
 * It reads the item markers, the document ledger and the old log and prints what a real run
-  would create (by reason: `ledger`, `marker-only`, `log-only`, `xero-only`) and every
+  would create (by reason: `ledger`, `marker-only`, `log-only`, `xero-only`, `xero-later`) and every
   category that needs a person: `unplaceable` (with the reason: `board-unknown`,
   `participant-unknown`, `date-unknown`, `total-underivable` and why), `unplaceableLedgerRows`,
   `staleLegacy`, `doubleBilled`, `duplicateNumbers`, `xeroSpansInvoices`, `xeroConflicts`,
+  `supersededByXero` (each item whose later Xero invoice replaced a portal invoice) and
+  `supersededPortalInvoices` (a portal invoice every item of which moved to a Xero invoice),
   `pendingTokens`, `deletedItems`, `deletedDocuments`, `markerMissing` and the others in the
   report. Each category printed shows the exact `--ack` flag, and the dry run prints a
   **plan hash**.
@@ -679,9 +681,11 @@ It sets `invoicedBy` to the logged number **exactly as stored** (including its `
 `createdAt`, on every logged item that exists and has no marker. **It never overwrites a marker**
 (a pending claim included), and the write itself only takes an item that still has none, so a
 live claim that lands after the dry run is never overwritten. Where an item has both a `PDF` and
-a `Xero` row (203 on the copy) they are one billing (decision D8): the **PDF number is the marker**
-and the Xero number lives on the portal invoice (the earlier text here said the earliest row
-wins; that would have left the portal invoice without its item). Among several rows of one type
+a `Xero` row (206 on the copy) the **later row is the marker** (decision D9, KAN-315; D8 had said
+the PDF number always wins). A Xero row strictly later than the PDF row means the Xero invoice is
+the current one for that item, so the marker is the Xero number; a PDF row that is later, or an
+equal or unusable date, keeps the PDF number and D8 (the Xero number lives on the portal
+invoice). The invoice backfill makes the same choice per item, so marker and pointer agree. Among several rows of one type
 (an item that changed board) the **latest** row wins, because the invoice backfill points an item
 with no marker at the latest invoice that lists it, so marker and pointer agree. A row with a
 number but no usable creation date still marks the item (a missing marker would make it
@@ -792,3 +796,23 @@ Fill these in and delete this list.
   reference for a Xero-only or marker-only item is the stored number (for example `INV-0600
   (Xero)`, which the export's sanitiser turns into `INV-0600_Xero`) where it was blank or the
   synced "Generated NDIS Invoice Number" before; portal invoices keep the number as stored.
+
+**KAN-315, decision D9: the latest invoice wins per item.** D8 treated an item with a PDF row and a
+Xero row as one billing and always showed the portal number. On the production copy the two rows
+are often weeks apart (141 of 206 more than a day, median about 25 days, mostly PDF first), which
+fits a client that began with portal invoices and later issued the same shifts in Xero. D9: for each
+item the invoice with the **later log timestamp** is the current one, PDF or Xero; only a strictly
+later Xero row supersedes the PDF row (equal or missing dates keep D8). In the backfill the item is
+then on the Xero invoice only (`xero-later`, source `xero`, the superseded document link kept as
+its PDF), the portal invoice keeps the items it still covers, and a portal invoice left with no
+item is not created and is reported (`supersededPortalInvoices`). Every such item is listed
+(`supersededByXero`) and, like every category, needs its `--ack`. The marker backfill takes the same
+row. Money is unchanged: the production copy still totals $52,499.35 across 37 statements; only the
+invoice numbers and which system holds them change. Rehearsed on the production copy: 55 invoices
+(14 `log-only`, 26 `xero-later`, 15 `xero-only`) over the same 302 items, 200 items superseded and 20
+portal invoices (counted per participant, since one number can be held by several) left with no item, 368 markers (216 Xero, 152 PDF), the audit shows the same 66
+`markerWithoutInvoice` and nothing new, a second run does nothing, undo restores the database
+identically. Limits, so nobody is surprised: an item that already carries a marker (written by some other means before the backfill) keeps D8, because the marker names its invoice; data created by an earlier D8-style run (a portal invoice with the Xero number attached) is never converted, because the backfill only adds; a PDF row is only left off the portal when the Xero invoice will really take the item (not when the Xero number belongs to a deleted document, and an item with several Xero rows takes only the latest, chosen with the marker backfill's own tie-break), so no item is ever left on no invoice. Also not covered: an item with several Xero rows and no PDF row is still placed on each Xero invoice (as before KAN-315; reported as `doubleBilled`), and a deleted-document or unparseable Xero number can make the marker and the planner disagree for that item (reported as `suppressedMarkers` and `staleLegacy`, or `markerWithoutInvoice` by the audit). Run the invoice backfill before the marker backfill, as above, so the Xero invoice keeps the superseded document link. Not changed: the live path (`recordXeroInvoice`) still follows D8 for new Xero pushes
+(attach the Xero number to the portal invoice, never a second charge); making new data follow D9
+needs its own decision, because it changes what a Xero push means for an item already on a portal
+invoice. Once the audit has run on the copy the two worlds are consistent only for backfilled data.

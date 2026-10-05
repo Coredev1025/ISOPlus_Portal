@@ -22,6 +22,8 @@ export function newReport() {
       doubleBilled: [],
       xeroSpansInvoices: [],
       xeroConflicts: [],
+      supersededByXero: [],
+      supersededPortalInvoices: [],
       suppressedMarkers: [],
       amountsUnknown: [],
       existingMissingItems: [],

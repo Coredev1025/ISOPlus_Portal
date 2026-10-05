@@ -44,12 +44,14 @@ async function seed() {
     item('c', { invoicedBy: 'INV-3', invoicedAt: new Date('2026-08-01T00:00:00Z') }),
     item('d', { invoicedBy: 'INV-5' }),
   ]);
-  const log = (itemId, invoiceNumber, type = 'PDF') => InvoiceNumber.create({
+  const log = (itemId, invoiceNumber, type = 'PDF', createdAt = undefined) => InvoiceNumber.create({
     workspaceId: WS, boardId: 'b1', itemId, invoiceNumber, type, pdfLink: type === 'PDF' ? 'https://s3/24.pdf' : null,
+    ...(createdAt ? { createdAt } : {}),
   });
   await log('a', 'INV-24 (ISO+™)');
   await log('b', 'INV-24 (ISO+™)');
-  await log('a', 'INV-0501 (Xero)', 'Xero');
+  // Dated before the PDF row, so the portal invoice is the later one and holds the item (D8, KAN-315).
+  await log('a', 'INV-0501 (Xero)', 'Xero', new Date('2026-06-01T00:00:00Z'));
   // Item c is marked INV-3, so its older log entry is stale.
   await log('c', 'INV-22');
   await PDFLink.create({
@@ -113,6 +115,33 @@ describe('the real run', () => {
     expect(twentyFour.lines.map((l) => l.itemId).sort()).toEqual(['a', 'b']);
     expect(String((await Item.findOne({ itemId: 'a' }).lean()).activeInvoiceId)).toBe(String(twentyFour._id));
     expect(String((await Item.findOne({ itemId: 'c' }).lean()).activeInvoiceId)).toBe(String(invoices.find((i) => i.number === 'INV-3')._id));
+  });
+
+  it('an item whose Xero row is later than its PDF row becomes a Xero invoice that keeps the PDF link (D9, KAN-315)', async () => {
+    await Item.create(item('e'));
+    await InvoiceNumber.create({
+      workspaceId: WS, boardId: 'b1', itemId: 'e', invoiceNumber: 'INV-30 (ISO+™)', type: 'PDF', pdfLink: 'https://s3/30.pdf', createdAt: new Date('2026-06-01T00:00:00Z'),
+    });
+    await InvoiceNumber.create({
+      workspaceId: WS, boardId: 'b1', itemId: 'e', invoiceNumber: 'INV-0600 (Xero)', type: 'Xero', createdAt: new Date('2026-07-10T00:00:00Z'),
+    });
+    const dry = await run();
+    expect(dry.totals.found).toEqual({ staleLegacy: 1, supersededByXero: 1, supersededPortalInvoices: 1 });
+
+    await run({
+      apply: true, planHash: dry.planHash, acks: { staleLegacy: 1, supersededByXero: 1, supersededPortalInvoices: 1 },
+    });
+
+    const xero = await Invoice.findOne({ source: 'xero', number: 'INV-0600' }).lean();
+    expect(xero).toMatchObject({ origin: 'backfill', backfill: { reason: 'xero-later' }, pdf: { pdfLink: 'https://s3/30.pdf' } });
+    expect(xero.lines.map((l) => l.itemId)).toEqual(['e']);
+    expect(await Invoice.countDocuments({ number: 'INV-30' })).toBe(0);
+    expect(String((await Item.findOne({ itemId: 'e' }).lean()).activeInvoiceId)).toBe(String(xero._id));
+
+    // A second run finds the Xero invoice already recorded and reports nothing new for item e.
+    const again = await run();
+    expect(again.totals.created).toEqual({});
+    expect(again.totals.found.supersededByXero).toBeUndefined();
   });
 
   it('a second run creates nothing and changes nothing', async () => {

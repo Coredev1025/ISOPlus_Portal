@@ -31,6 +31,27 @@ export const validDate = (value) => {
   return Number.isNaN(at.getTime()) ? undefined : at;
 };
 
+/**
+ * When a log row was written: its creation date, else its last update, else the time its id was
+ * made, else nothing. The one clock the marker backfill and the invoice backfill share, so they
+ * agree on which of an item's invoices is the latest.
+ */
+export const rowDate = (row) => validDate(row.createdAt) ?? validDate(row.updatedAt) ?? validDate(row.idDate) ?? null;
+
+/** Latest first; a tie goes to the higher number, so any input order gives the same row. */
+export const latestFirst = (a, b) => (rowDate(b)?.getTime() ?? 0) - (rowDate(a)?.getTime() ?? 0)
+  || String(b.invoiceNumber).localeCompare(String(a.invoiceNumber));
+
+/**
+ * KAN-315: for each item the latest invoice wins, PDF or Xero. A Xero row supersedes a PDF row
+ * only when it is strictly later; equal or missing dates keep the portal invoice (D8).
+ */
+export const xeroIsLater = (pdfRow, xeroRow) => {
+  const pdfAt = rowDate(pdfRow);
+  const xeroAt = rowDate(xeroRow);
+  return Boolean(pdfAt && xeroAt && xeroAt > pdfAt);
+};
+
 export const earliest = (dates) => dates.map(validDate).filter(Boolean).sort((a, b) => a - b)[0];
 
 /** A total a ledger row really carries: a finite number, not blank, not absent. */
@@ -81,6 +102,8 @@ export function buildContext(inputs) {
     ledgerInvoiceRows: (inputs.ledgerRows || []).filter((row) => LEDGER_INVOICE_TYPES.includes(row.type)),
     existing: inputs.existing || [],
     suppressed: new Set(),
+    // PDF rows left off the portal because the item's Xero row is later (KAN-315), for the Xero pass.
+    superseded: [],
   };
 }
 

@@ -595,10 +595,12 @@ npm run invoice-audit -- --workspace <id>                        # read only
 ```
 
 * It reads the item markers, the document ledger and the old log and prints what a real run
-  would create (by reason: `ledger`, `marker-only`, `log-only`, `xero-only`) and every
+  would create (by reason: `ledger`, `marker-only`, `log-only`, `xero-only`, `xero-later`) and every
   category that needs a person: `unplaceable` (with the reason: `board-unknown`,
   `participant-unknown`, `date-unknown`, `total-underivable` and why), `unplaceableLedgerRows`,
   `staleLegacy`, `doubleBilled`, `duplicateNumbers`, `xeroSpansInvoices`, `xeroConflicts`,
+  `supersededByXero` (each item whose later Xero invoice replaced a portal invoice) and
+  `supersededPortalInvoices` (a portal invoice every item of which moved to a Xero invoice),
   `pendingTokens`, `deletedItems`, `deletedDocuments`, `markerMissing` and the others in the
   report. Each category printed shows the exact `--ack` flag, and the dry run prints a
   **plan hash**.
@@ -679,9 +681,11 @@ It sets `invoicedBy` to the logged number **exactly as stored** (including its `
 `createdAt`, on every logged item that exists and has no marker. **It never overwrites a marker**
 (a pending claim included), and the write itself only takes an item that still has none, so a
 live claim that lands after the dry run is never overwritten. Where an item has both a `PDF` and
-a `Xero` row (203 on the copy) they are one billing (decision D8): the **PDF number is the marker**
-and the Xero number lives on the portal invoice (the earlier text here said the earliest row
-wins; that would have left the portal invoice without its item). Among several rows of one type
+a `Xero` row (206 on the copy) the **later row is the marker** (decision D9, KAN-315; D8 had said
+the PDF number always wins). A Xero row strictly later than the PDF row means the Xero invoice is
+the current one for that item, so the marker is the Xero number; a PDF row that is later, or an
+equal or unusable date, keeps the PDF number and D8 (the Xero number lives on the portal
+invoice). The invoice backfill makes the same choice per item, so marker and pointer agree. Among several rows of one type
 (an item that changed board) the **latest** row wins, because the invoice backfill points an item
 with no marker at the latest invoice that lists it, so marker and pointer agree. A row with a
 number but no usable creation date still marks the item (a missing marker would make it
@@ -778,4 +782,4 @@ Fill these in and delete this list.
   `pdf_link_differs`, `list_invoiced_legacy_only`, `list_number_differs`, `list_link_differs`)
   are warnings and stop the switch; the rest are informational.
 * With the read `on`, an item with a PDF row in the old log and no marker and no record still reads
-  as invoiced (the guard stays until 4c). Do the marker backfill first anyway.
+  as invoiced (the guard stays until 4c). Run the marker backfill (after the invoice backfill) before switching the readers on anyway.

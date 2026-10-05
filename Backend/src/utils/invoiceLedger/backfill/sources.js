@@ -1,5 +1,7 @@
 import { BACKFILL_REASON, INVOICE_SOURCE } from '../../../constants/invoiceLedger.js';
-import { isPending, parsed, suppressKey } from './context.js';
+import {
+  isPending, latestFirst, parsed, participantKey, rowDate, suppressKey, xeroIsLater,
+} from './context.js';
 import { draftsListing, place } from './registry.js';
 import { note } from './report.js';
 
@@ -58,6 +60,26 @@ const billedElsewhere = (item) => {
 };
 
 /**
+ * The item's latest Xero row when it is strictly later than this PDF row (KAN-315). The PDF row
+ * is only dropped when that Xero invoice will really take the item, so nothing is ever left on no
+ * invoice: not when the item carries a marker (D8 stands), not when the Xero number belongs to a
+ * deleted document. The latest row is chosen with the marker backfill's own comparator.
+ */
+function supersedingXeroRow(ctx, item, pdfRow) {
+  const latest = (ctx.logXeroByItem.get(item.itemId) || []).filter((r) => parsed(r.invoiceNumber)).sort(latestFirst)[0];
+  if (!latest || !xeroIsLater(pdfRow, latest) || billedElsewhere(item)) return null;
+  const xero = parsed(latest.invoiceNumber);
+  return ctx.suppressed.has(suppressKey(item.boardId, xero.source, xero.number)) ? null : latest;
+}
+
+/** Leave this PDF row off the portal when the item's later Xero invoice takes over; true when it did. */
+function supersede(ctx, item, row, number) {
+  const xeroRow = supersedingXeroRow(ctx, item, row);
+  if (xeroRow) ctx.superseded.push({ itemId: row.itemId, row, number, xeroRow });
+  return Boolean(xeroRow);
+}
+
+/**
  * Rule 3, log-only: PDF log rows that are the only record of an invoice. A row for an item
  * whose marker names a different number is stale (rule 7). An item that another invoice
  * already lists but has no marker keeps its logged invoice too: the log holds the item's
@@ -74,6 +96,7 @@ export function addLogRows(ctx, drafts, report) {
     }
     if (ctx.suppressed.has(suppressKey(item.boardId, number.source, number.number))) continue;
     if (listedBy(drafts, ctx.existing, row.itemId, number.source, number.number)) continue;
+    if (supersede(ctx, item, row, number)) continue;
     if (billedElsewhere(item)) {
       note(report, 'staleLegacy', { itemId: row.itemId, number: number.number, marker: item.invoicedBy });
       continue;
@@ -119,6 +142,11 @@ function addXeroRow(row, state) {
     note(report, 'deletedItems', { itemId: row.itemId, number: xero.number });
     return;
   }
+  const taken = ctx.superseded.filter((entry) => entry.itemId === row.itemId);
+  if (taken.length > 0 && !taken.some((entry) => entry.xeroRow === row)) {
+    note(report, 'staleLegacy', { itemId: row.itemId, number: xero.number, marker: null });
+    return;
+  }
   const portals = portalInvoicesFor(drafts, ctx.existing, row.itemId);
   portals.forEach((target) => {
     attach(target, xero.number, attachments, report);
@@ -130,8 +158,45 @@ function addXeroRow(row, state) {
     note(report, 'staleLegacy', { itemId: row.itemId, number: xero.number, marker: item.invoicedBy });
     return;
   }
-  place(drafts, sighting(item, xero, BACKFILL_REASON.XERO_ONLY, { dates: [row.createdAt], revisited: isRevisited(row) }));
+  const replaced = ctx.superseded.filter((entry) => entry.xeroRow === row);
+  place(drafts, sighting(item, xero, replaced.length > 0 ? BACKFILL_REASON.XERO_LATER : BACKFILL_REASON.XERO_ONLY, {
+    dates: [rowDate(row)], revisited: isRevisited(row), pdfLink: replaced[0]?.row.pdfLink,
+  }));
   label(xero.number, '(xero only)');
+  noteSuperseded(replaced, row, xero, item, state);
+}
+
+/** KAN-315: report each item the Xero invoice took over from a portal invoice (rule 5, latest wins). */
+function noteSuperseded(replaced, row, xero, item, { report, superseded }) {
+  for (const { row: pdfRow, number } of replaced) {
+    note(report, 'supersededByXero', {
+      itemId: row.itemId, portal: number.number, xero: xero.number, portalAt: rowDate(pdfRow), xeroAt: rowDate(row),
+    });
+    superseded.push({
+      itemId: row.itemId, boardId: item.boardId, participantKey: participantKey(item.participantName), portal: number, xero: xero.number,
+    });
+  }
+}
+
+/**
+ * A portal invoice every one of whose items went to a Xero invoice no longer exists as an invoice:
+ * report it, so a person knows an old number now lives only in the log and the document link.
+ */
+function reportEmptiedPortalInvoices(superseded, drafts, existing, report) {
+  const groups = new Map();
+  for (const entry of superseded) {
+    const key = `${entry.boardId}|${entry.participantKey}|${entry.portal.number}`;
+    const before = groups.get(key);
+    groups.set(key, { ...entry, xeros: new Set([...(before?.xeros || []), entry.xero]), itemIds: [...(before?.itemIds || []), entry.itemId] });
+  }
+  for (const group of [...groups.values()].sort((a, b) => a.portal.number.localeCompare(b.portal.number))) {
+    const same = (inv) => inv.source === INVOICE_SOURCE.PORTAL && inv.number === group.portal.number
+      && inv.boardId === group.boardId && (inv.participantKey === undefined || inv.participantKey === group.participantKey);
+    const stillThere = drafts.some(same) || existing.some(same);
+    if (!stillThere) note(report, 'supersededPortalInvoices', {
+      number: group.portal.number, boardId: group.boardId, supersededBy: [...group.xeros].sort(), itemIds: group.itemIds.sort(),
+    });
+  }
 }
 
 export function addXeroRows(ctx, drafts, report) {
@@ -140,10 +205,12 @@ export function addXeroRows(ctx, drafts, report) {
   const label = (xeroNumber, name) => spans.set(xeroNumber, new Set([...(spans.get(xeroNumber) || []), name]));
   const rows = ctx.logRows.filter((r) => r.type === 'Xero')
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt) || String(a.invoiceNumber).localeCompare(String(b.invoiceNumber)));
+  const superseded = [];
   const state = {
-    ctx, drafts, report, attachments, label,
+    ctx, drafts, report, attachments, label, superseded,
   };
   rows.forEach((row) => addXeroRow(row, state));
+  reportEmptiedPortalInvoices(superseded, drafts, ctx.existing, report);
   for (const [xeroNumber, names] of spans) {
     if (names.size > 1) note(report, 'xeroSpansInvoices', { xeroNumber, invoices: [...names].sort(labelOrder) });
   }

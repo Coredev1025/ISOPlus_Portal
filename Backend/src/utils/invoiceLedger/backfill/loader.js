@@ -37,6 +37,7 @@ const logRowOf = (row) => ({
   pdfLink: row.pdfLink,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
+  idDate: row._id?.getTimestamp?.(),
 });
 
 const ledgerRowOf = (row) => ({

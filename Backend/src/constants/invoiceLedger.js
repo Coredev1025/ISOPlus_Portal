@@ -135,6 +135,8 @@ export const BACKFILL_REASON = {
   MARKER_ONLY: 'marker-only',
   LOG_ONLY: 'log-only',
   XERO_ONLY: 'xero-only',
+  // An item with both a PDF and a Xero row whose Xero row is the later one (KAN-315).
+  XERO_LATER: 'xero-later',
 };
 
 /** The `pdflinks.type` values that are invoices: scheduled NDIS and Age Care, and the older `Invoice`. */
