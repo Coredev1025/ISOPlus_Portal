@@ -125,11 +125,12 @@ Observed in the environment's events the same day, outside this ticket: health m
 local, and on 2 October. It recovers each time, so it is bursts of rejected requests rather than an outage.
 Worth an owner finding out what is sending them.
 
-### A restart does not prove a secret permission
+### Test a secret permission with a deployment, not a restart
 
 Elastic Beanstalk reads a secret when it builds the environment's settings (deployment, environment update,
-new instance). A plain restart of the app server does not, so a restart after a policy change proves
-nothing. Test a permission change with a re-deploy and then a real sign-in.
+new instance). Whether a plain restart of the app server also re-reads it is not proven (a restart on dev
+coincided with an error event). Test a permission change with a re-deploy or an environment update and then
+a real sign-in, as was done on dev and production on 2026-10-06.
 
 ### Names must differ from dev's
 
@@ -193,12 +194,17 @@ is run immediately after the release and gates it.
 Rollback of this change removes only what it added (`aws elasticbeanstalk update-environment
 --options-to-remove` for the two `environmentsecrets` options and the nine plain ones).
 
+Policy check, 2026-10-06 (`aws iam simulate-principal-policy`, read-only): production's role is allowed on
+both `_PROD` secrets and implicitly denied on dev's; dev's role is allowed on dev's secret and denied on both
+production secrets. The environment update that followed also finished Ready and Green, so Elastic Beanstalk
+read both secrets in practice.
+
 ## Checklist
 
 * [x] Stage 1: `GOOGLE_*` properties set (2026-10-06), group created
 * [ ] Stage 1: a support admin has signed in (after the release)
 * [x] Stage 1: the client secret (ends `nRj_`) and the service account JSON are in Secrets Manager
-* [ ] Stage 1: the local copies of both files are deleted
+* [x] Stage 1: the local copies of both files are deleted (2026-10-06)
 * [x] Stage 1: `AUTOMATION_ENABLED=false`, `FRONTEND_URL` and `GOOGLE_OAUTH_CALLBACK_URL` set
 * [x] Stage 1: the three `BOARD_SYNC_*` written out
 * [ ] Stage 2: `EMAIL_BACKEND=ses`

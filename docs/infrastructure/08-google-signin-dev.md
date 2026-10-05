@@ -83,11 +83,18 @@ Findings for the production build:
 * **Dev's role could read every secret in the account, and was narrowed on 2026-10-05.** Its inline policy
   `ElasticBeanstalkSecretsManagerAccess` allowed `secretsmanager:GetSecretValue` on `Resource: "*"`. It now
   names dev's one secret (`GOOGLE_SERVICE_ACCOUNT_JSON`, by ARN). Only `Resource` changed. Rollback is putting
-  `"*"` back. Status: saved; the proof is a re-deploy of dev followed by a Google sign-in (see below).
-* **A restart does not re-read secrets.** Restarting the app server on dev with a changed policy kept
-  everything working, because the process restarts with the settings Elastic Beanstalk already built.
-  Only a deployment or an environment update fetches the secret again. A permission change is therefore
-  untested until one of those runs, and a mistake would show up at the next deploy, not when it is made.
+  `"*"` back. Verified 2026-10-06 with the IAM policy simulator
+  (`aws iam simulate-principal-policy`, read-only): dev's role is allowed on dev's secret and implicitly
+  denied on both production secrets. A dev re-deploy then confirmed it in practice (below).
+* **Whether a restart re-reads secrets is unproven.** Restarting the app server on dev during the policy test left
+  everything working, but an ERROR event ("Unsuccessful command execution on instance... Aborting the
+  operation") was logged at about the same time, so the restart may have tried and failed to read the secret
+  and kept the old settings. Treat a restart as no proof either way; a deployment or environment update is the
+  test. Re-deployed dev on 2026-10-06 (same version): Ready and Green, healthcheck 200, and
+  `/api/auth/google/redirect` 302 to Google, with the narrowed policy in force. A real Google sign-in then
+  succeeded the same day with a member of the dev group (landed on the dashboard with the Application logs
+  and System Health tabs), so the full chain works on dev: secret read, client, delegation, group check and
+  session.
 * Keys never expire. The date created is the only record of age, so write it down at creation.
 * A Google Cloud warning on the Keys page recommends Workload Identity Federation over downloaded keys.
   That is not possible for a domain-wide delegation lookup from Elastic Beanstalk today without a change to
