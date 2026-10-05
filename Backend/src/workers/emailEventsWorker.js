@@ -58,6 +58,12 @@ export async function handleEmailEventMessage(message) {
     sesMessageId: parsed.sesMessageId,
     recorded,
   });
+
+  // sqs-consumer deletes a message only when its handler returns it. Resolving
+  // with nothing leaves the message on the queue, where it is redelivered and
+  // dead-lettered after five receives even though it was stored (KAN-329).
+  // Failures throw above, so they are never acknowledged.
+  return message;
 }
 
 /**
