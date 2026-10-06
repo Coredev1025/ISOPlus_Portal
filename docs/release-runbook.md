@@ -452,6 +452,23 @@ Do these before calling it done, and write down the result of each.
     429, so some boards can keep an old hook (KAN-339).
   - Webhooks are switched off at the start of a board's sync and back on at the
     end, by design.
+  - **Decision (owner, 2026-10-06): production must set `BOARD_SYNC_GAP_MS` to
+    `60000`** (currently unset, which means 0). During the first sweep ISO+ answered
+    429 on the webhook calls (not retried, KAN-339), and boards with sync on and no
+    webhook rose from 13 to 29 in 30 minutes. The gap is the pause between boards.
+    - The sweep syncs the 154 boards with sync on, one at a time. With a 60 s gap it
+      takes about 2.6 hours instead of about 90 minutes: the 02:00 run would end
+      around 04:35. The code caps the setting at one hour.
+    - Set it when no sweep is running, and together with any other property change,
+      so there is a single restart.
+    - Read it back with `aws elasticbeanstalk describe-configuration-settings`, and
+      check the environment is Ready, Green and Ok and the health endpoint returns
+      200.
+    - Verify after the next sweep: scheduled sync records start about 60 s apart,
+      and the number of boards with sync on but no webhook does not increase.
+    - Roll back by setting it to `0`.
+    - The Jira task for this is being created by the owner's assistant and will be
+      listed in KAN-320's task list.
 
 ## 5. Rolling back
 
