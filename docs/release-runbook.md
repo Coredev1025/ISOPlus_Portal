@@ -467,8 +467,7 @@ Do these before calling it done, and write down the result of each.
     - Verify after the next sweep: scheduled sync records start about 60 s apart,
       and the number of boards with sync on but no webhook does not increase.
     - Roll back by setting it to `0`.
-    - The Jira task for this is being created by the owner's assistant and will be
-      listed in KAN-320's task list.
+    - The release task for this setting is KAN-340.
 
 ## 5. Rolling back
 
