@@ -280,6 +280,29 @@ You should get a recovery email too, which confirms `ok_actions` works.
 
 Do not run this until UAT has been stable through at least one full invoicing cycle.
 
+> **Decision 2026-10-06: UAT is skipped.** No UAT environment exists, and the owners chose to apply straight to
+> production. The rule above was written for a UAT that was never built; what stands in for it is below. Read
+> this before applying, because it removes a safety step.
+>
+> * **Dev is the reference.** Dev was built by hand and works. Every resource this Terraform creates was
+>   compared with its dev counterpart and matches (see [`13-terraform-checked-against-dev.md`](13-terraform-checked-against-dev.md)).
+> * **Read the plan.** `terraform plan` for production shows 29 resources to add, 0 to change, 0 to destroy. Re-run it
+>   immediately before applying and confirm it still says that.
+> * **Scheduler rules stay DISABLED** at apply (`scheduler_rules_enabled = false`). Enabling them is its own later
+>   change, after the tick endpoint is deployed.
+> * **Test with the SES simulator addresses only** (success, bounce, complaint), never a real client address.
+>   Production has no recipient allowlist, and the suppression list is shared across the account.
+> * **Prove both alarms** (section 7.5) once applied, since there was no UAT to prove them.
+> * **Nothing existing is touched:** the plan creates a new identity on `mail.isoplus.online`, and does not change
+>   `isoplus.online`, any bucket, or any existing IAM user or key.
+> * If anything in the plan differs from the above, stop and do not apply.
+
+> **Production sends from `mail.isoplus.online`, not `isoplus.online`.** The parent domain is already a verified SES
+> identity used by ISO+, the main platform. Use `sending_domain = "mail.isoplus.online"` and
+> `mail_from_subdomain = "bounce"`. ISO+ is expected to move to `mail.isoplus.online` later; read
+> [`13-terraform-checked-against-dev.md`](13-terraform-checked-against-dev.md) first, because ISO+ sends that do not
+> name their own configuration set would flood this product's event queue.
+
 ### What differs
 
 | Setting | UAT | Production | Why |
