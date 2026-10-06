@@ -27,7 +27,7 @@ Budget an hour for the first apply. Treat UAT as the proving ground, which is wh
 
 | Requirement | Notes |
 |---|---|
-| Terraform >= 1.6 | `winget install HashiCorp.Terraform` |
+| Terraform >= 1.10 | `winget install HashiCorp.Terraform` |
 | AWS CLI v2, authenticated | `aws sts get-caller-identity` should return account `<AWS_ACCOUNT_ID>` |
 | Permissions | SES, SNS, SQS, IAM, CloudWatch, EventBridge, Secrets Manager |
 | DNS access | For the sending domain. Records are created by hand unless the zone is in Route 53 |
@@ -45,23 +45,39 @@ aws sts get-caller-identity
 
 Terraform state contains secrets. The scheduler API keys are in it, and the app secret key too if `create_app_access_key` is true. Do not keep state on a laptop and do not commit it.
 
-Create the backend once, by hand:
+State lives in an S3 bucket with S3-native locking (`use_lockfile = true`, which needs Terraform 1.10 or later). There is **no DynamoDB table**: the lock is a small `.tflock` object next to the state file. Decided 2026-10-06.
+
+Create the bucket once, by hand, before the first `terraform init`. Name it `isoplus-tfstate-<ENV>-<ACCOUNT_ID>-<REGION>`, with `prod` as `<ENV>` for production (for example `isoplus-tfstate-prod-<ACCOUNT_ID>-<REGION>`).
 
 ```bash
-aws s3 mb s3://isoplus-tfstate --region ap-southeast-2
+aws s3 mb s3://isoplus-tfstate-<ENV>-<ACCOUNT_ID>-<REGION> --region <REGION>
 
-aws s3api put-bucket-versioning --bucket isoplus-tfstate --versioning-configuration Status=Enabled
+aws s3api put-bucket-versioning --bucket isoplus-tfstate-<ENV>-<ACCOUNT_ID>-<REGION> --versioning-configuration Status=Enabled
 
-aws s3api put-bucket-encryption --bucket isoplus-tfstate --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+aws s3api put-public-access-block --bucket isoplus-tfstate-<ENV>-<ACCOUNT_ID>-<REGION> --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
 
-aws s3api put-public-access-block --bucket isoplus-tfstate --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
-
-aws dynamodb create-table --table-name isoplus-tfstate-lock --attribute-definitions AttributeName=LockID,AttributeType=S --key-schema AttributeName=LockID,KeyType=HASH --billing-mode PAY_PER_REQUEST --region ap-southeast-2
+aws s3api put-bucket-encryption --bucket isoplus-tfstate-<ENV>-<ACCOUNT_ID>-<REGION> --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
 ```
 
-Versioning matters. It is the only way back from a corrupted state file.
+Versioning matters. It is the only way back from a corrupted state file. Public access is blocked and default encryption is on, because state holds secrets.
 
-Then uncomment the `backend "s3"` block in `versions.tf` and set the `key` per environment.
+### 3.1 Supply the backend settings
+
+The `backend "s3"` block in `versions.tf` stays commented out. Put the real values in a git-ignored file next to it, `infrastructure/terraform/backend_override.tf`:
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket       = "isoplus-tfstate-<ENV>-<ACCOUNT_ID>-<REGION>"
+    key          = "email/<ENV>/terraform.tfstate"
+    region       = "<REGION>"
+    use_lockfile = true
+    encrypt      = true
+  }
+}
+```
+
+`*_override.tf` is listed in `infrastructure/terraform/.gitignore`, so this file cannot be committed by accident. Terraform treats any `*_override.tf` file specially (it merges it over the main configuration), which is why the file holds only the `terraform` block. Then run `terraform init`; it uses the S3 backend and `use_lockfile`. Set `key` per environment.
 
 ---
 
@@ -79,7 +95,7 @@ terraform/
   outputs.tf               values needed downstream, post-apply checklist
   uat.tfvars.example       copy to uat.tfvars
   prod.tfvars.example      copy to prod.tfvars
-  .gitignore               keeps tfvars and state out of git
+  .gitignore               keeps tfvars, state and *_override.tf out of git
 ```
 
 ---
@@ -99,7 +115,7 @@ Edit `uat.tfvars`. The values that matter:
 |---|---|
 | `sending_domain` | `uat.isoplus.online`. Must not collide with dev or prod |
 | `recipient_allowlist` | Keep restrictive. Include `*@simulator.amazonses.com` |
-| `alert_emails` | A list of real inboxes. Each address must click its own confirmation link |
+| `alert_emails` | A list of real inboxes. Each recipient gets their own SNS email subscription and must click its confirmation link, or that person gets no alarms |
 | `scheduler_rules_enabled` | `false`. Always false on first apply |
 | `scheduler_rules[*].api_key` | Generate with `openssl rand -base64 32` |
 
@@ -286,8 +302,9 @@ Do not run this until UAT has been stable through at least one full invoicing cy
 >
 > * **Dev is the reference.** Dev was built by hand and works. Every resource this Terraform creates was
 >   compared with its dev counterpart and matches (see [`13-terraform-checked-against-dev.md`](13-terraform-checked-against-dev.md)).
-> * **Read the plan.** `terraform plan` for production shows 29 resources to add, 0 to change, 0 to destroy. Re-run it
->   immediately before applying and confirm it still says that.
+> * **Read the plan.** `terraform plan` for production shows 30 resources to add, 0 to change, 0 to destroy (with two `alert_emails`; each
+>   recipient adds one SNS subscription, so the count follows the list). The plan must read `30 to add, 0 to change, 0 to destroy`.
+>   Re-run it immediately before applying and confirm it still says that.
 > * **Scheduler rules stay DISABLED** at apply (`scheduler_rules_enabled = false`). Enabling them is its own later
 >   change, after the tick endpoint is deployed.
 > * **Test with the SES simulator addresses only** (success, bounce, complaint), never a real client address.
@@ -297,9 +314,11 @@ Do not run this until UAT has been stable through at least one full invoicing cy
 >   `isoplus.online`, any bucket, or any existing IAM user or key.
 > * If anything in the plan differs from the above, stop and do not apply.
 
-> **Production sends from `mail.isoplus.online`, not `isoplus.online`.** The parent domain is already a verified SES
-> identity used by ISO+, the main platform. Use `sending_domain = "mail.isoplus.online"` and
-> `mail_from_subdomain = "bounce"`. ISO+ is expected to move to `mail.isoplus.online` later; read
+> **Production sends from the subdomain `mail.isoplus.online`, not `isoplus.online`.** The parent domain is already a
+> verified SES identity used by ISO+, the main platform, so creating it again would conflict. Use `sending_domain = "mail.isoplus.online"` and
+> `mail_from_subdomain = "bounce"`. To attach the policy to the user the application already authenticates as (rather
+> than creating a new one), set `existing_app_user_name` (production: `existing_app_user_name = "isoplus-app"`); no user
+> or access key is created. ISO+ is expected to move to `mail.isoplus.online` later; read
 > [`13-terraform-checked-against-dev.md`](13-terraform-checked-against-dev.md) first, because ISO+ sends that do not
 > name their own configuration set would flood this product's event queue.
 

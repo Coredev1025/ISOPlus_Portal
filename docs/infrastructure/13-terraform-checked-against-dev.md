@@ -142,7 +142,7 @@ exposed a **bug in the event consumer**, now fixed by PR #992 (KAN-329) and veri
   cycle. No UAT environment exists, and **the owners decided on 2026-10-06 to skip it** and apply straight to
   production. The mitigations (this comparison with dev, a re-run plan, scheduler rules left disabled, simulator
   addresses only, proving the alarms) are in section 8 of [`02-terraform-runbook.md`](02-terraform-runbook.md).
-* Remote state (S3 bucket and a lock table) does not exist yet; the runbook's section 3 creates it by hand.
+* Remote state is an S3 bucket with S3-native locking (`use_lockfile`, no DynamoDB table), created by hand; see section 3 of the runbook.
 
 ## Not compared
 

@@ -59,10 +59,10 @@ resource "aws_cloudwatch_event_rule" "scheduler" {
 resource "aws_cloudwatch_event_target" "scheduler" {
   for_each = local.scheduler_rule_names
 
-  rule     = aws_cloudwatch_event_rule.scheduler[each.key].name
+  rule      = aws_cloudwatch_event_rule.scheduler[each.key].name
   target_id = "${each.key}-tick"
-  arn      = aws_cloudwatch_event_api_destination.scheduler[each.key].arn
-  role_arn = aws_iam_role.eventbridge_tick[0].arn
+  arn       = aws_cloudwatch_event_api_destination.scheduler[each.key].arn
+  role_arn  = aws_iam_role.eventbridge_tick[0].arn
 
   # No input block. The endpoint needs no body, it reads what is due from the
   # database. Keeping the payload empty means the schedule carries no business

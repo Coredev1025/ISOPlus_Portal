@@ -33,8 +33,8 @@ data "aws_iam_policy_document" "app" {
     for_each = length(var.app_s3_buckets) > 0 ? [1] : []
 
     content {
-      sid    = "AppBuckets"
-      effect = "Allow"
+      sid     = "AppBuckets"
+      effect  = "Allow"
       actions = ["s3:*"]
       resources = flatten([
         for b in var.app_s3_buckets : [

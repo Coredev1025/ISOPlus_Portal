@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.6.0"
+  required_version = ">= 1.10.0"
 
   required_providers {
     aws = {
@@ -8,17 +8,20 @@ terraform {
     }
   }
 
-  # Remote state. Create the bucket and lock table once, by hand, before the
-  # first init. See section 3 of 02-terraform-runbook.md.
+  # Remote state lives in an S3 bucket, with S3-native locking
+  # (use_lockfile = true, Terraform 1.10 or later). There is no DynamoDB
+  # table. Create the bucket once, by hand, before the first init. See
+  # section 3 of 02-terraform-runbook.md.
   #
-  # Uncomment and fill in per environment, or pass with -backend-config.
+  # The real values are supplied by a git-ignored backend_override.tf, so this
+  # block stays commented out. Shape of that file:
   #
   # backend "s3" {
-  #   bucket         = "isoplus-tfstate"
-  #   key            = "email/uat/terraform.tfstate"
-  #   region         = "ap-southeast-2"
-  #   dynamodb_table = "isoplus-tfstate-lock"
-  #   encrypt        = true
+  #   bucket       = "isoplus-tfstate-<ENV>-<ACCOUNT_ID>-<REGION>"
+  #   key          = "email/<ENV>/terraform.tfstate"
+  #   region       = "<REGION>"
+  #   use_lockfile = true
+  #   encrypt      = true
   # }
 }
 

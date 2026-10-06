@@ -8,5 +8,9 @@
 .terraform/
 .terraform.lock.hcl
 
+# Local-only overrides, such as the real backend block (backend_override.tf).
+*_override.tf
+override.tf
+
 crash.log
 *.plan

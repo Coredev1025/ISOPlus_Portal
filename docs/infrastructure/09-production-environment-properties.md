@@ -234,7 +234,7 @@ A read-only audit of production, from the AWS account and public endpoints. Noth
 | Redis, S3 buckets | Available (daily snapshot kept one day), both production buckets reachable |
 | MongoDB backup | Ran on 5 October (about 49 MB), no errors in three days |
 | **Stage 2 resources** | **None exist yet:** SES identity and configuration set, both SNS topics, both queues, the alarms, the scheduler rules and their role. The same checks do find dev's counterparts |
-| Terraform | `validate` passes; the production plan is 29 to add, 0 to change, 0 to destroy (30 with two alert recipients) |
+| Terraform | `validate` passes; the production plan is 30 to add, 0 to change, 0 to destroy (with two alert recipients; 29 with one) |
 
 Stage 2 monitors, compared with dev: the two queue alarms are identical in design (same metrics, periods,
 missing-data handling, alarm and recovery notifications), with the stalled threshold tighter in production (600 s
