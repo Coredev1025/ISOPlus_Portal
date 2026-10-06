@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../../../../../msw/server';
@@ -358,5 +358,135 @@ describe('Board detail page', () => {
     await waitFor(() => {
       expect(router.replace).toHaveBeenCalledWith('/workspace/access-denied');
     });
+  });
+});
+
+/**
+ * KAN-22. Same problem as the workspace page: the dashboard caches an
+ * `isoplus_user` as "restricted_member" unless a search enriched the role, so
+ * the board page asks for the real role of this workspace and writes it into
+ * the shared context before anything reads it.
+ */
+describe('Board detail page: refreshing the member role', () => {
+  /**
+   * Every role lookup, in order: `/api/workspaces?includeDetails=true`. The
+   * page and its header may read `/api/workspaces` without that flag, which is
+   * not what is under test here.
+   */
+  let roleRequests: URL[] = [];
+
+  function stubRoleLookup(
+    respond: (url: URL) => Response | Promise<Response>,
+  ) {
+    server.use(
+      http.get('*/api/workspaces', ({ request }) => {
+        const url = new URL(request.url);
+        if (url.searchParams.get('includeDetails') === 'true') {
+          roleRequests.push(url);
+        }
+        return respond(url);
+      }),
+    );
+  }
+
+  function WorkspaceRoleProbe() {
+    const { workspaces } = useAppContext();
+    const role = workspaces.find((w) => w.id.toString() === 'ws-1')?.user_role;
+    return <div data-testid="ws-role">{role ?? 'none'}</div>;
+  }
+
+  function renderWithRoleProbe() {
+    return render(
+      <ContextProvider>
+        <WorkspaceRoleProbe />
+        <BoardDetail />
+      </ContextProvider>,
+    );
+  }
+
+  beforeEach(() => {
+    roleRequests = [];
+    localStorage.clear();
+    seedContextStorage(ISOPLUS_USER, [
+      { id: 'ws-1', name: 'Hillsgrade Care', user_role: 'restricted_member' },
+    ]);
+    stubChromeRequests(ISOPLUS_USER);
+    stubBoard();
+  });
+
+  it('replaces the default restricted_member role with the real one for this workspace', async () => {
+    stubRoleLookup(() =>
+      HttpResponse.json({
+        workspace: [{ id: 'ws-1', name: 'Hillsgrade Care', user_role: 'admin' }],
+      }),
+    );
+
+    renderWithRoleProbe();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ws-role')).toHaveTextContent('admin');
+    });
+    const asked = roleRequests[0].searchParams;
+    expect(asked.get('includeDetails')).toBe('true');
+    expect(asked.get('q')).toBe('ws-1');
+    expect(asked.get('limit')).toBe('10');
+  });
+
+  it('takes the role of this exact workspace id, not a workspace whose id merely contains it', async () => {
+    stubRoleLookup(() =>
+      HttpResponse.json({
+        workspace: [
+          { id: 'ws-10', name: 'Another Care', user_role: 'owner' },
+          { id: 'ws-1', name: 'Hillsgrade Care', user_role: 'full_member' },
+        ],
+      }),
+    );
+
+    renderWithRoleProbe();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ws-role')).toHaveTextContent('full_member');
+    });
+  });
+
+  it('keeps the cached role and still opens the board when the lookup fails', async () => {
+    stubRoleLookup(() =>
+      HttpResponse.json({ message: 'ISO+ is unavailable' }, { status: 500 }),
+    );
+
+    renderWithRoleProbe();
+
+    await waitFor(() => expect(roleRequests).not.toHaveLength(0));
+    expect(
+      await screen.findByRole('heading', { name: 'SaH Care Management' }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('ws-role')).toHaveTextContent('restricted_member');
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  it('never lets the lookup change the role of portal staff', async () => {
+    // The context starts as an isoplus_user until it hydrates from storage, so
+    // staff also send one lookup on mount. Its answer is discarded once the
+    // real role (support_admin) is known; this pins that the discard happens.
+    localStorage.clear();
+    seedContextStorage(SUPPORT_ADMIN, [
+      { id: 'ws-1', name: 'Hillsgrade Care', user_role: 'owner' },
+    ]);
+    stubChromeRequests(SUPPORT_ADMIN);
+    stubRoleLookup(() =>
+      HttpResponse.json({
+        workspace: [
+          { id: 'ws-1', name: 'Hillsgrade Care', user_role: 'restricted_member' },
+        ],
+      }),
+    );
+
+    renderWithRoleProbe();
+
+    await waitFor(() => expect(boardRequestUrls.length).toBeGreaterThan(0));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(screen.getByTestId('ws-role')).toHaveTextContent('owner');
   });
 });
