@@ -61,7 +61,7 @@ output "alerts_topic_arn" {
 
 output "app_user_name" {
   description = "IAM user the application authenticates as."
-  value       = aws_iam_user.app.name
+  value       = local.app_user_name
 }
 
 output "app_access_key_id" {
@@ -91,7 +91,9 @@ output "post_apply_checklist" {
   value = compact([
     var.manage_dns ? null : "Create the DNS records listed in dns_records_required, then wait for verification.",
     "Confirm the SNS email subscription. Check the inbox for ${var.alert_email} and click the link.",
-    var.create_app_access_key ? "Move the access key into the application secret store, then consider removing it from state." : "Create an access key for ${aws_iam_user.app.name} in the console and store it in the application secret store.",
+    var.create_app_access_key ? "Move the access key into the application secret store, then consider removing it from state." : null,
+    var.create_app_access_key || var.existing_app_user_name != "" ? null : "Create an access key for ${local.app_user_name} in the console and store it in the application secret store.",
+    var.existing_app_user_name != "" ? "No new access key is needed: ${local.app_user_name} already has the application's key. Check it can now send with SES and read the events queue." : null,
     var.scheduler_rules_enabled ? null : "Scheduler rules are DISABLED. Enable once the endpoint is deployed and returning 2xx.",
     var.environment == "prod" ? "Confirm production sending access is granted on the account, and review the recipient allowlist is empty." : null,
   ])

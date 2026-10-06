@@ -77,6 +77,21 @@ variable "app_s3_buckets" {
   default     = []
 }
 
+variable "existing_app_user_name" {
+  description = <<-EOT
+    Name of an IAM user that already exists and that the application already
+    authenticates as. When set, Terraform looks the user up and attaches the
+    policy to it, and creates no user and no access key of its own. Leave empty
+    to have Terraform create "<name_prefix>-app".
+
+    Production sets this to the existing application user, because the
+    application's access key belongs to that user. A new user would receive the
+    SES and queue permissions but nothing would ever use it.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "create_app_access_key" {
   description = <<-EOT
     Whether Terraform should create an access key for the application user.
@@ -85,6 +100,11 @@ variable "create_app_access_key" {
   EOT
   type        = bool
   default     = false
+
+  validation {
+    condition     = !var.create_app_access_key || var.existing_app_user_name == ""
+    error_message = "create_app_access_key creates a key for the user Terraform creates. It cannot be combined with existing_app_user_name, which uses a user that already has its own keys."
+  }
 }
 
 # ---------------------------------------------------------------------------

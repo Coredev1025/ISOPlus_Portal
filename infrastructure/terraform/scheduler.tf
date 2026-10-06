@@ -8,18 +8,27 @@
 # independently and a leak of one does not expose the other.
 # ---------------------------------------------------------------------------
 
+# The variable carries the API keys, so Terraform treats the whole map as
+# sensitive, and a sensitive value cannot drive for_each or count. The rule
+# names ("invoice", "statement") are not secret, so they are unmarked here.
+# Only the key itself stays sensitive; the schedule and description are
+# unmarked below so a plan shows them.
+locals {
+  scheduler_rule_names = var.enable_scheduler ? nonsensitive(toset(keys(var.scheduler_rules))) : toset([])
+}
+
 resource "aws_cloudwatch_event_connection" "scheduler" {
-  for_each = var.enable_scheduler ? var.scheduler_rules : {}
+  for_each = local.scheduler_rule_names
 
   name               = "${var.name_prefix}-scheduler-${each.key}"
-  description        = each.value.description
+  description        = nonsensitive(var.scheduler_rules[each.key].description)
   authorization_type = "API_KEY"
 
   auth_parameters {
     api_key {
       # The endpoint expects the bare key with no Bearer prefix.
       key   = "Authorization"
-      value = each.value.api_key
+      value = var.scheduler_rules[each.key].api_key
     }
   }
 
@@ -28,10 +37,10 @@ resource "aws_cloudwatch_event_connection" "scheduler" {
 }
 
 resource "aws_cloudwatch_event_api_destination" "scheduler" {
-  for_each = var.enable_scheduler ? var.scheduler_rules : {}
+  for_each = local.scheduler_rule_names
 
   name                             = "${var.name_prefix}-tick-${each.key}"
-  description                      = each.value.description
+  description                      = nonsensitive(var.scheduler_rules[each.key].description)
   invocation_endpoint              = var.scheduler_endpoint
   http_method                      = "POST"
   invocation_rate_limit_per_second = 10
@@ -39,16 +48,16 @@ resource "aws_cloudwatch_event_api_destination" "scheduler" {
 }
 
 resource "aws_cloudwatch_event_rule" "scheduler" {
-  for_each = var.enable_scheduler ? var.scheduler_rules : {}
+  for_each = local.scheduler_rule_names
 
   name                = "${var.name_prefix}-scheduler-${each.key}"
-  description         = each.value.description
-  schedule_expression = each.value.schedule_expression
+  description         = nonsensitive(var.scheduler_rules[each.key].description)
+  schedule_expression = nonsensitive(var.scheduler_rules[each.key].schedule_expression)
   state               = var.scheduler_rules_enabled ? "ENABLED" : "DISABLED"
 }
 
 resource "aws_cloudwatch_event_target" "scheduler" {
-  for_each = var.enable_scheduler ? var.scheduler_rules : {}
+  for_each = local.scheduler_rule_names
 
   rule     = aws_cloudwatch_event_rule.scheduler[each.key].name
   target_id = "${each.key}-tick"
@@ -77,7 +86,7 @@ data "aws_iam_policy_document" "eventbridge_assume" {
 }
 
 resource "aws_iam_role" "eventbridge_tick" {
-  count = var.enable_scheduler && length(var.scheduler_rules) > 0 ? 1 : 0
+  count = length(local.scheduler_rule_names) > 0 ? 1 : 0
 
   name               = "${var.name_prefix}-eventbridge-tick"
   assume_role_policy = data.aws_iam_policy_document.eventbridge_assume.json
@@ -92,7 +101,7 @@ data "aws_iam_policy_document" "eventbridge_tick" {
 }
 
 resource "aws_iam_role_policy" "eventbridge_tick" {
-  count = var.enable_scheduler && length(var.scheduler_rules) > 0 ? 1 : 0
+  count = length(local.scheduler_rule_names) > 0 ? 1 : 0
 
   name   = "invoke-api-destination"
   role   = aws_iam_role.eventbridge_tick[0].id
