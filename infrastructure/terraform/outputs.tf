@@ -90,7 +90,7 @@ output "post_apply_checklist" {
   description = "Things Terraform cannot do for you."
   value = compact([
     var.manage_dns ? null : "Create the DNS records listed in dns_records_required, then wait for verification.",
-    "Confirm the SNS email subscription. Check the inbox for ${var.alert_email} and click the link.",
+    "Confirm the SNS email subscription for EACH recipient (${join(", ", var.alert_emails)}). Every one must click the link, or that person gets no alarms.",
     var.create_app_access_key ? "Move the access key into the application secret store, then consider removing it from state." : null,
     var.create_app_access_key || var.existing_app_user_name != "" ? null : "Create an access key for ${local.app_user_name} in the console and store it in the application secret store.",
     var.existing_app_user_name != "" ? "No new access key is needed: ${local.app_user_name} already has the application's key. Check it can now send with SES and read the events queue." : null,

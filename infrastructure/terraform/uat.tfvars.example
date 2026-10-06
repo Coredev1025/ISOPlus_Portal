@@ -52,7 +52,7 @@ create_app_access_key = false
 # Alerting
 # ---------------------------------------------------------------------------
 
-alert_email               = "alerts-uat@example.com"
+alert_emails              = ["alerts-uat@example.com"]
 subscribe_email_to_events = true # useful while proving the pipeline, turn off later
 
 # ---------------------------------------------------------------------------

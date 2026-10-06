@@ -142,18 +142,31 @@ variable "max_receive_count" {
 # Alerting
 # ---------------------------------------------------------------------------
 
-variable "alert_email" {
+variable "alert_emails" {
   description = <<-EOT
-    Address subscribed to the alerts topic. The subscription is created in a
-    pending state and a human must click the confirmation link before any
-    alarm notification is delivered.
+    Addresses subscribed to the alerts topic, one email subscription each. Each
+    subscription is created in a pending state and a human at that address must
+    click the confirmation link before any alarm notification is delivered.
+
+    Prefer a shared group address to individual people (KAN-332): an alarm that
+    only reaches individuals goes unseen when they are away or leave.
   EOT
-  type        = string
+  type        = list(string)
+
+  validation {
+    condition     = length(var.alert_emails) > 0
+    error_message = "alert_emails needs at least one address, or no alarm notifies anyone."
+  }
+
+  validation {
+    condition     = alltrue([for e in var.alert_emails : can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", e))])
+    error_message = "Every entry in alert_emails must look like an email address."
+  }
 }
 
 variable "subscribe_email_to_events" {
   description = <<-EOT
-    Also send raw SES events to alert_email. Useful in UAT for eyeballing the
+    Also send raw SES events to every address in alert_emails. Useful in UAT for eyeballing the
     pipeline, noisy and unnecessary in production.
   EOT
   type        = bool

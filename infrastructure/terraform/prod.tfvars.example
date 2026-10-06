@@ -55,11 +55,12 @@ create_app_access_key = false
 # ---------------------------------------------------------------------------
 # Alerting
 #
-# Use a distribution list, not one person. Alarms that only reach someone on
-# annual leave are not monitoring.
+# A shared group address is best (KAN-332). Until one exists, list every person who
+# must receive alarms, at least two so one person on leave is not the whole of
+# monitoring. Each address gets its own subscription and must confirm it.
 # ---------------------------------------------------------------------------
 
-alert_email               = "alerts@example.com"
+alert_emails              = ["person-one@example.com", "person-two@example.com"]
 subscribe_email_to_events = false # would be thousands of emails a day
 
 # Tighter than UAT. Production invoicing is time sensitive.
