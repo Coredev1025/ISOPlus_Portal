@@ -243,18 +243,46 @@ the account's rates on 6 October (bounce about 0.04 percent, complaint 0) are fa
 will not fire when created. Not covered by any alarm in dev or production: the scheduler stopping, the backup
 job failing, and the environment's health (KAN-331).
 
+## Applied to production on 2026-10-07 (ledger, stage 2 and the board sync gap)
+
+Set by hand in the Elastic Beanstalk console on `isoplus-be-prod-blue`, each as one update with one restart
+(the environment was Ok again within about 90 seconds each time). Values of keys are not recorded here.
+
+| When (Sydney) | Property | Value | Why |
+|---|---|---|---|
+| 00:22 | `BOARD_SYNC_GAP_MS` | `60000` | One board started per minute in a sweep (was `0`). KAN-340 |
+| 00:58 | `INVOICE_LEDGER_WRITE` | `on` | Dual write to the invoice ledger, before the backfills. A new property, unset before |
+| 01:27 | `AUTOMATION_ENABLED` | `true` | Stage 2 (was `false`) |
+| 01:27 | `EMAIL_FROM` | `noreply@mail.isoplus.online` | Verified SES identity; also switches the email backend on |
+| 01:27 | `EMAIL_BACKEND` | `ses` | Named explicitly, exactly `ses` |
+| 01:27 | `SES_EVENTS_QUEUE_URL` | URL of `isoplus-prod-ses-events` | Starts the delivery event consumer |
+| 01:27 | `SCHEDULER_API_KEY_INVOICE`, `SCHEDULER_API_KEY_STATEMENT` | one key each | Must equal the key in each EventBridge connection. The tick endpoint answered 401 without a key afterwards (500 means no key is set) |
+
+Not properties, but changed the same night in the console, so Terraform and the real state differ (KAN-347):
+
+* The two scheduler rules (`isoplus-prod-scheduler-invoice`, `isoplus-prod-scheduler-statement`) were enabled for
+  tests and **disabled again**; `scheduler_rules_enabled` in the production variables must match that.
+* Their targets had a fixed `bypassEmail` input and a `Content-Type: application/json` header for the tests; both
+  were **removed again** (the input is back to "Matched event").
+* Saving the environment configuration in the console rewrote `ServiceRole` from its short name to the full ARN of
+  the same service-linked role. Same role, but `terraform plan` may show it.
+
+The application's IAM user (`isoplus-app`) has `isoplus-prod-app-policy` attached (SES send on the production identity
+and configuration set, no recipient condition; SQS read and delete on the events queue only). Production deliberately
+has no recipient allowlist, so test runs must use the `bypassEmail` override (see the release runbook).
+
 ## Checklist
 
 * [x] Stage 1: `GOOGLE_*` properties set (2026-10-06), group created
 * [x] Role policy tightened to exact ARNs (2026-10-06)
-* [ ] Stage 1: a support admin has signed in (after the release)
+* [x] Stage 1: a support admin has signed in (after the release, 2026-10-06)
 * [x] Stage 1: the client secret (ends `nRj_`) and the service account JSON are in Secrets Manager
 * [x] Stage 1: the local copies of both files are deleted (2026-10-06)
 * [x] Stage 1: `AUTOMATION_ENABLED=false`, `FRONTEND_URL` and `GOOGLE_OAUTH_CALLBACK_URL` set
 * [x] Stage 1: the three `BOARD_SYNC_*` written out
-* [ ] Stage 2: `EMAIL_BACKEND=ses`
-* [ ] Stage 2: SES identity verified, `EMAIL_FROM` set
-* [ ] Stage 2: events queue exists, `SES_EVENTS_QUEUE_URL` set
-* [ ] Stage 2: both scheduler keys set and the same keys in the EventBridge rules
-* [ ] Application AWS user has the SES and SQS permissions
+* [x] Stage 2: `EMAIL_BACKEND=ses` (2026-10-07)
+* [x] Stage 2: SES identity verified, `EMAIL_FROM` set (2026-10-07)
+* [x] Stage 2: events queue exists, `SES_EVENTS_QUEUE_URL` set (2026-10-07)
+* [x] Stage 2: both scheduler keys set and the same keys in the EventBridge rules (invoice and statement runs claimed by EventBridge, 2026-10-07)
+* [x] Application AWS user has the SES and SQS permissions (`isoplus-prod-app-policy`)
 * [ ] `XERO_SCOPES`, `ISOPLUS_OFFLINE`, `LOCAL_FILE_ROOT` and `SESSION_COOKIE_SAMESITE` still absent
