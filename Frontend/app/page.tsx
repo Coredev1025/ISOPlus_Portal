@@ -3,8 +3,6 @@
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import Link from "next/link";
 import Image from "next/image";
 import { useState, useEffect, useCallback } from "react";
@@ -24,15 +22,12 @@ const exchangedTickets = new Set<string>();
 export default function LoginPage() {
   const router = useRouter();
   const { setUser, setWorkspaces } = useAppContext();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [isSupportLogin, setIsSupportLogin] = useState(false);
   // Must match the server-rendered value (no `window` access) to avoid a
   // hydration mismatch; the effect below flips this to true immediately on
   // mount when an OAuth ticket is present in the URL.
   const [isLoading, setIsLoading] = useState(false);
-  
+
   useEffect(() => {
     let cancelled = false;
 
@@ -64,7 +59,6 @@ export default function LoginPage() {
           showSuccessToast("Login successful");
           cleanUrl();
           router.push("/dashboard");
-          // Keep button loading until navigation completes
           return;
         }
       } catch (err: any) {
@@ -111,12 +105,19 @@ export default function LoginPage() {
     if (loginError === "error") {
       const reasonDescriptions: Record<string, string> = {
         state_expired:
-          "Sign-in timed out. Please click Sign in with ISO+™ again (do not refresh the callback page).",
+          "Sign-in timed out. Please click Sign in again (do not refresh the callback page).",
         state_missing: "Sign-in security check failed. Please try again.",
         state_invalid:
           "Sign-in security check failed. Please start login again from this Portal.",
-        missing_code: "ISO+ did not return an authorization code. Please try again.",
-        token_exchange: "Could not complete sign-in with ISO+. Please try again.",
+        missing_code: "Google did not return an authorization code. Please try again.",
+        token_exchange: "Could not complete sign-in with Google. Please try again.",
+        unverified_email: "Your Google account email is not verified. Please verify it and try again.",
+        group_denied:
+          "Your account is not assigned to the required Workspace access group.",
+        verify_failed:
+          "We could not verify your Workspace access right now. Please try again in a few minutes.",
+        not_configured: "Support admin Google sign-in is not configured on this environment.",
+        server_error: "Something went wrong during sign-in. Please try again.",
         profile_fetch: "Could not load your ISO+ profile. Please try again.",
       };
       const description =
@@ -128,7 +129,7 @@ export default function LoginPage() {
         "OAuth login failed: redirected with login=error",
         { stage: "oauth_callback_redirect", reason: loginReason || "unknown" }
       );
-      showErrorToast("OAuth login failed", { description });
+      showErrorToast("Sign-in failed", { description });
       cleanUrl();
     }
 
@@ -177,33 +178,26 @@ export default function LoginPage() {
     };
   }, [router, setUser, setWorkspaces]);
 
-  const handleAdminLogin = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
+  const handleGoogleSupportLogin = useCallback(() => {
     setIsLoading(true);
-    try {
-      const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/login`,
-        { email, password }
-      );
-
-      if (response.status === 200) {
-        setUser(response.data.user);
-        showSuccessToast("Login successful");
-        router.push('/dashboard');
-      } else {
-        setError("Credential is not correct!");
-        showErrorToast("Login failed", { description: "Invalid credentials" });
-      }
-    } catch (err: any) {
-      if (err.name !== "CanceledError" && err.name !== "AbortError") {
-        console.error("Token verification failed:", err);
-        showErrorToast("Login failed", { description: err.response?.data?.message || "An error occurred during login" });
-      }
-    } finally {
+    setError("");
+    const backendBase = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+    if (!backendBase) {
       setIsLoading(false);
+      showErrorToast("Google sign-in unavailable", {
+        description: "NEXT_PUBLIC_BACKEND_URL is not configured.",
+      });
+      return;
     }
-  }, [email, password, router, setUser]);
+    captureAuthStep(
+      "google_support_oauth_redirect",
+      "redirect_navigate",
+      "Client navigating to Google support OAuth start (top-level, sets PKCE session cookie)"
+    );
+    // Top-level navigation to the API host — not XHR — so connect.sid is set on
+    // the same host Google will call back to (required for PKCE session binding).
+    window.location.href = `${backendBase}/api/auth/google/redirect`;
+  }, []);
 
   const handleISOPlusLogin = useCallback(async () => {
     setIsLoading(true);
@@ -265,140 +259,79 @@ export default function LoginPage() {
         aria-hidden
       />
       <Card className="relative w-full max-w-md border border-border/80 bg-card/90 p-8 shadow-xl backdrop-blur-sm sm:p-10">
-        {isSupportLogin ? (
-          // Support Agent Login
-          <div className="space-y-6">
-            <div className="space-y-1 text-center">
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-                Support agent sign-in
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Use your ISO+™ Portal administrator credentials
-              </p>
+        <div className="space-y-6">
+          <div className="text-center space-y-4">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+              ISO+™ Portal
+            </h1>
+            <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+              Sign in with your ISO+™ account
+            </p>
+            <div className="flex items-center justify-center pt-2">
+              <Image
+                src="/assets/logo_rgb_black.png"
+                alt="ISO+ Logo"
+                width={140}
+                height={140}
+                className="mx-auto dark:hidden"
+                priority
+              />
+              <Image
+                src="/assets/logo_rgb_white.png"
+                alt="ISO+ Logo"
+                width={140}
+                height={140}
+                className="mx-auto hidden dark:block"
+                priority
+              />
             </div>
-            {error && (
-              <div
-                role="alert"
-                className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive"
-              >
-                {error}
-              </div>
-            )}
-            <form onSubmit={handleAdminLogin} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="Enter your email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  disabled={isLoading}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  disabled={isLoading}
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                Login as Support Agent
-                {isLoading && <span className="ml-2"><Spinner /></span>}
-              </Button>
-            </form>
-            <Button
-              variant="ghost"
-              className="w-full text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-              onClick={() => setIsSupportLogin(false)}
-              disabled={isLoading}
-            >
-              Back to ISO+™ sign-in
-            </Button>
           </div>
-        ) : (
-          // ISO+ Login
-          <div className="space-y-6">
-            <div className="text-center space-y-4">
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-                ISO+™ Portal
-              </h1>
-              <p className="text-sm text-muted-foreground max-w-xs mx-auto">
-                Sign in with your ISO+™ account
-              </p>
-              <div className="flex items-center justify-center pt-2">
-                <Image
-                  src="/assets/logo_rgb_black.png"
-                  alt="ISO+ Logo"
-                  width={140}
-                  height={140}
-                  className="mx-auto dark:hidden"
-                  priority
-                />
-                <Image
-                  src="/assets/logo_rgb_white.png"
-                  alt="ISO+ Logo"
-                  width={140}
-                  height={140}
-                  className="mx-auto hidden dark:block"
-                  priority
-                />
-              </div>
-            </div>
-            {error && (
-              <div
-                role="alert"
-                className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive"
-              >
-                {error}
-              </div>
-            )}
-            <Button
-              onClick={handleISOPlusLogin}
-              className="w-full gap-2 font-semibold shadow-md shadow-primary/10"
-              size="lg"
-              disabled={isLoading}
+          {error && (
+            <div
+              role="alert"
+              className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive"
             >
-              {isLoading ? "Signing in…" : "Sign in with ISO+™"}
-              {isLoading && <Spinner />}
-            </Button>
-            <div className="text-center text-sm text-muted-foreground leading-relaxed">
-              By continuing, you agree to our{" "}
-              <Link
-                href="https://www.isoconsultingservices.com.au/iso-terms-of-service/"
-                className="text-primary hover:underline"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Terms of Service
-              </Link>
-              {" "}and{" "}
-              <Link
-                href="https://www.isoconsultingservices.com.au/iso-privacy-policy/"
-                className="text-primary hover:underline"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Privacy Policy
-              </Link>
+              {error}
             </div>
-            <Button
-              variant="ghost"
-              className="w-full text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-              onClick={() => setIsSupportLogin(true)}
-              disabled={isLoading}
+          )}
+          <Button
+            onClick={handleISOPlusLogin}
+            className="w-full gap-2 font-semibold shadow-md shadow-primary/10"
+            size="lg"
+            disabled={isLoading}
+          >
+            {isLoading ? "Signing in…" : "Sign in with ISO+™"}
+            {isLoading && <Spinner />}
+          </Button>
+          <div className="text-center text-sm text-muted-foreground leading-relaxed">
+            By continuing, you agree to our{" "}
+            <Link
+              href="https://www.isoconsultingservices.com.au/iso-terms-of-service/"
+              className="text-primary hover:underline"
+              target="_blank"
+              rel="noopener noreferrer"
             >
-              Support agent sign-in
-            </Button>
+              Terms of Service
+            </Link>
+            {" "}and{" "}
+            <Link
+              href="https://www.isoconsultingservices.com.au/iso-privacy-policy/"
+              className="text-primary hover:underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Privacy Policy
+            </Link>
           </div>
-        )}
+          <Button
+            variant="ghost"
+            className="w-full text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={handleGoogleSupportLogin}
+            disabled={isLoading}
+          >
+            Support agent sign-in
+          </Button>
+        </div>
       </Card>
     </div>
   );

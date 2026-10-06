@@ -142,6 +142,14 @@ export const REF_ATTRIBUTE_NAMES = {
     PROFILE_POST_CODE: 'Post Code',
     PROFILE_BILLING_CONTACT: 'Billing Contact',
     PROFILE_BILLING_ADDRESS: 'Billing Address',
+    // Presence of this attribute is what decides Case A/AA vs Case B of the
+    // recipient/address resolution rule (KAN-272).
+    // Touchpoints: utils/invoiceRecipientHelpers.js (resolveInvoiceRecipient /
+    // readProfileRecipientAttributes), services/email/recipients.js
+    // (selectProfileAddress), utils/ndisInvoiceGeneratorOutput.js
+    // (buildNdisInvoicePdfClientDetails), utils/xeroNdisRouteHandlers.js
+    // (getParticipantTaxBillingDetails).
+    PROFILE_BILLING_EMAIL: 'Billing Email',
 
     // Client/Contractor attributes
     CLIENT: 'Client',

@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 
 export type AuthSentryMethod =
   | "isoplus_oauth_redirect"
+  | "google_support_oauth_redirect"
   | "oauth_ticket_exchange";
 
 function isSentryEnabled(): boolean {

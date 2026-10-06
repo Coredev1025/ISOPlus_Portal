@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { DEFAULT_DOCUMENT_NEXT_NUMBER } from '../constants/documentNumbering.js';
 
 const businessSchema = new mongoose.Schema({
   workspaceId: {
@@ -53,6 +54,9 @@ const businessSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  xeroTenantId: {
+    type: String
+  },
   xeroTokens: {
     accessToken: String,
     refreshToken: String,
@@ -68,6 +72,35 @@ const businessSchema = new mongoose.Schema({
     countryCode: String,
     isDemoCompany: Boolean,
     organisationStatus: String
+  },
+  xeroLineItemMapping: {
+    quote: {
+      accountCode: { type: String },
+      taxType: { type: String },
+      taxRatePercent: { type: Number, default: null }
+    },
+    purchaseOrder: {
+      accountCode: { type: String },
+      taxType: { type: String },
+      taxRatePercent: { type: Number, default: null }
+    },
+    invoice: {
+      accountCode: { type: String },
+      taxType: { type: String },
+      taxRatePercent: { type: Number, default: null }
+    },
+    quoteOverrides: {
+      quoteService: {
+        accountCode: { type: String },
+        taxType: { type: String },
+        taxRatePercent: { type: Number, default: null }
+      },
+      material: {
+        accountCode: { type: String },
+        taxType: { type: String },
+        taxRatePercent: { type: Number, default: null }
+      }
+    }
   },
   bankDetails: {
     accountName: {
@@ -93,6 +126,16 @@ const businessSchema = new mongoose.Schema({
     type: String,
     default: 'Australia/Sydney'
   },
+  // KAN-292: true once the user has chosen the first number of each document
+  // type. Deliberately NO default: Mongoose fills a missing path with its default
+  // on load and writes it back on a later save(), so a default here would let a
+  // stale save of a copy loaded earlier reset a flag that was set in between.
+  // Absent means "not set", the same as false. A business that predates the field
+  // counts as set when any counter has moved (utils/documentNumberingInitial.js),
+  // and migrations/*-backfill-document-numbering-initialized.js stores it.
+  documentNumberingInitialized: {
+    type: Boolean
+  },
   documentNumbering: {
     invoice: {
       prefix: {
@@ -101,7 +144,7 @@ const businessSchema = new mongoose.Schema({
       },
       nextNumber: {
         type: Number,
-        default: 1000
+        default: DEFAULT_DOCUMENT_NEXT_NUMBER
       }
     },
     purchaseOrder: {
@@ -111,7 +154,7 @@ const businessSchema = new mongoose.Schema({
       },
       nextNumber: {
         type: Number,
-        default: 1000
+        default: DEFAULT_DOCUMENT_NEXT_NUMBER
       }
     },
     quote: {
@@ -121,8 +164,43 @@ const businessSchema = new mongoose.Schema({
       },
       nextNumber: {
         type: Number,
-        default: 1000
+        default: DEFAULT_DOCUMENT_NEXT_NUMBER
       }
+    },
+    // Monthly budget statements claim this series (STM-). Hidden from Finance /
+    // Business Settings UIs. Clients omit it on PUT, and a profile save never
+    // writes a nextNumber for an existing business (KAN-290). SOA uses
+    // statementOfAccount below.
+    statement: {
+      prefix: {
+        type: String,
+        default: 'STM-'
+      },
+      nextNumber: {
+        type: Number,
+        default: DEFAULT_DOCUMENT_NEXT_NUMBER
+      }
+    },
+    // The statement of account runs its own series. It shared the budget
+    // statement's until a client asked why two documents numbered one apart
+    // were different things: a statement number should identify one series,
+    // and two document types drawing from one made STM-84 and STM-85
+    // indistinguishable in a list and in an inbox.
+    statementOfAccount: {
+      prefix: {
+        type: String,
+        default: 'SOA-'
+      },
+      nextNumber: {
+        type: Number,
+        default: DEFAULT_DOCUMENT_NEXT_NUMBER
+      }
+    }
+  },
+  featureToggles: {
+    invoiceStatementAutomation: {
+      type: Boolean,
+      default: false
     }
   }
 });

@@ -10,7 +10,8 @@ import { useEffect, useState } from "react";
 import { useAppContext } from "@/app/context/index";
 import { Badge } from "@/components/ui/badge";
 import axios from "@/app/utils/axiosConfig";
-import { isCareManagementLabel, isLowCatCareManagementLabel, isOwnerOrSupport } from "@/lib/access";
+import { isCareManagementLabel, isLowCatCareManagementLabel, isOwnerOrSupport, canAccessBoard } from "@/lib/access";
+
 
 interface Board {
   id: string;
@@ -39,18 +40,14 @@ export default function BoardDetail() {
   const workspace = workspaces.find(w => w.id.toString() === id);
   const [loadingBoards, setLoadingBoards] = useState(false);
   const isOwnerOrSupportUser = isOwnerOrSupport(user);
-  const isWorkspaceOwner = user.role === "isoplus_user" && workspace?.user_role === "owner";
-  const isWorkspaceAdmin = user.role === "isoplus_user" && workspace?.user_role === "admin";
-  const isWorkspaceRestricted = user.role === "isoplus_user" && workspace?.user_role === "restricted_member";
-  const isWorkspaceFullMember = user.role === "isoplus_user" && workspace?.user_role === "full_member";
-  const canAccessThisWorkspace = isOwnerOrSupportUser || isWorkspaceOwner || isWorkspaceAdmin || isWorkspaceRestricted || isWorkspaceFullMember;
+  const canAccessThisBoard = canAccessBoard(user, workspace);
 
   useEffect(() => {
     if (workspace === undefined) return;
-    if (!canAccessThisWorkspace) {
+    if (!canAccessThisBoard) {
       router.replace("/workspace/access-denied");
     }
-  }, [workspace, canAccessThisWorkspace, router]);
+  }, [workspace, canAccessThisBoard, router]);
 
   // See workspace/[id]/page.tsx: the cached role from the dashboard list
   // defaults isoplus_user members to "restricted_member" unless a search
@@ -143,7 +140,7 @@ export default function BoardDetail() {
     board.label === 'Care Management - NDIS - Verification';
   const canAccessInvoiceGenerator =
     (isCareManagementBoard || isLowCatBoard || isNdisCertificationOrVerificationBoard) &&
-    (isOwnerOrSupportUser || isWorkspaceOwner || isWorkspaceAdmin);
+    canAccessThisBoard;
 
   return (
     <div className="min-h-screen bg-background">

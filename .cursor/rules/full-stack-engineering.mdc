@@ -1,99 +1,58 @@
 ---
-description: Senior full-stack engineering standards for Next.js, Node.js, and Express
+description: Senior full-stack engineering standards for Next.js, Node.js, and Express — points at the repo's own instruction files
 alwaysApply: true
 ---
 
-You are a senior full-stack engineer specializing in Next.js, Node.js, and Express.
+You are a senior full-stack engineer working in the ISO+ Portal monorepo
+(Next.js frontend, Node/Express backend).
 
-## Change Control (CRITICAL)
+## Read these first — they are authoritative
 
-- DO NOT refactor, restructure, or rewrite existing code unless explicitly requested.
-- DO NOT introduce breaking changes under any circumstances.
-- Before making any non-trivial change:
-  1. Explain the issue clearly
-  2. Provide the proposed solution
-  3. Show the exact diff or updated code
-  4. WAIT for user approval before applying changes
-- If a request implies refactoring, ASK for confirmation first.
-- Prefer minimal, surgical edits over large modifications.
+Before proposing or making any change, read, in this order:
 
-## Communication Rules
+1. **`AGENTS.md`** — a symlink to `CLAUDE.md`. The single source of truth for
+   conventions: repository layout, commands, branching, tickets, commit format,
+   the complexity gate, and the local dev stack.
+2. **`docs/full-stack-engineering.md`** — how to work: the test-first rule,
+   end-to-end testing, change control, security and code quality.
+3. Any `CLAUDE.md` nearer the files you are editing — the nearest one wins.
 
-- Always explain your reasoning before suggesting changes
-- Highlight trade-offs, risks, and alternatives
-- Keep responses concise but technically complete
-- If uncertain, state assumptions clearly
+These files are the standard. This rule deliberately does **not** restate them,
+because two copies of a convention become two different conventions. If
+something here appears to contradict `CLAUDE.md`, `CLAUDE.md` is correct.
 
-## Security Best Practices (MANDATORY)
+## The three that are violated most often
 
-- Always validate and sanitize user input
-- Prevent:
-  - SQL injection
-  - XSS
-  - CSRF
-  - Command injection
-- Never expose secrets, tokens, or credentials
-- Use environment variables for sensitive data
-- Apply proper authentication and authorization checks
-- Use secure HTTP headers when applicable
-- Avoid unsafe APIs and deprecated libraries
+Stated here only because they change what you do on the very first step:
 
-## Code Quality Standards
+- **Write the failing test first.** Before implementation code, write a test,
+  run it, and confirm it fails for the expected reason. Then implement. Bug
+  fixes included — the failing test is the reproduction. Never weaken an
+  assertion to get green.
+- **A user-visible change needs an end-to-end test.** Playwright, in
+  `Frontend/e2e/`. A feature that unit-tests perfectly and is unreachable in the
+  UI is not done.
+- **Evidence over assertion.** Claims that something works need the command and
+  its real output. Not "tested locally". Not a test you never watched fail.
 
-- Write clean, readable, and maintainable code
-- Follow SOLID principles
-- Prefer composition over inheritance
-- Keep functions small and single-purpose
-- Use meaningful variable and function names
-- Add comments only when necessary to explain "why"
+## Change control
 
-## Design Patterns
+Do not refactor, restructure or rewrite code you were not asked to change.
+Prefer minimal, surgical edits. For non-trivial changes, explain the problem,
+show the diff, and wait for approval before applying anything hard to reverse.
 
-- Use appropriate patterns where beneficial:
-  - Factory
-  - Singleton (only when safe)
-  - Middleware (Express/Next.js)
-  - Dependency Injection
-- Avoid overengineering and unnecessary abstractions
+## Prohibited
 
-## Next.js Best Practices
+- **No AI attribution anywhere in commit messages or PR bodies.** Do not add a
+  `Co-Authored-By` trailer. Do not add a "Generated with" or "Created by" line.
+  Do not name any AI tool or model. Commits and PRs read as though a person
+  wrote them, because a person is accountable for them.
+- **Do not invent a branch name or a ticket number.** Both are required and both
+  come from the user — ask for them.
+- **Do not commit secrets**, tokens, credentials or `.env` files.
 
-- Prefer Server Components over Client Components when possible
-- Use Server Actions appropriately
-- Avoid unnecessary client-side state
-- Optimize data fetching (SSR, ISR, caching)
-- Keep components modular and reusable
+## Required
 
-## Node.js / Express Best Practices
-
-- Use middleware for cross-cutting concerns
-- Proper error handling (centralized error middleware)
-- Avoid blocking operations (use async/await)
-- Validate request payloads (e.g. using schema validation)
-- Structure code into controllers, services, and routes
-
-## Stability & Safety
-
-- Do not remove or modify working logic unless required
-- Preserve backward compatibility
-- If modifying existing logic:
-  - Explain impact clearly
-  - Identify edge cases
-
-## Output Expectations
-
-When suggesting changes:
-
-- Show BEFORE and AFTER code snippets
-- Clearly mark differences
-- Do not apply changes silently
-
-## Priority Order
-
-1. Safety (no breaking changes)
-2. Clarity (explain first)
-3. Minimal change
-4. Performance improvements (only if safe)
-5. Code style
-6. All files' cognitive complexity must be less than 15.
-7. Update the code and check Github Vulnerability issues and must fix them.
+- Every new environment variable is added to the matching `.env.example` with a
+  comment saying what breaks without it. An undocumented variable is one nobody
+  sets: `BACKEND_URL` went undocumented and silently degraded two features.

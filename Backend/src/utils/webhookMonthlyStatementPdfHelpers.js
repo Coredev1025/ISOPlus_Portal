@@ -1,5 +1,11 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  GENERATED_DOCUMENT_PUBLIC_READ,
+  GENERATED_PDF_URL_EXPIRY_SECONDS,
+  OUTPUT_TYPE,
+} from '../constants/storage.js';
+import { buildOutputKey } from './s3OutputKey.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -269,7 +275,10 @@ function areAllBudgetCategoriesZero(chartBudgetCats) {
   });
 }
 
-const TRANSPARENT_PNG_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+// A 1x1 RGBA pixel with alpha 0. The previous value here decoded to red at
+// 50% alpha, which pdfme aspect-fit into a large pink square on every
+// statement rendered without a chart image.
+const TRANSPARENT_PNG_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
 
 async function resolveSummaryTableImage(chartImage, statementData, deps, req) {
   const { path, fs, info, warn } = deps;
@@ -578,14 +587,19 @@ async function uploadMonthlyStatementPdf({
 }) {
   const participantSlug = participantName.replace(/[^a-zA-Z0-9]/g, '-');
   const monthYear = `${statementData.month || 'Month'}_${yearValue || 'Year'}`.replace(/\s+/g, '_');
-  const filename = `output/${workspaceId}/${boardId}/monthly-statements/${participantSlug}_${monthYear}_Statement.pdf`;
-  const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
+  const filename = buildOutputKey({
+    workspaceId,
+    boardId,
+    type: OUTPUT_TYPE.MONTHLY_STATEMENT,
+    name: `${participantSlug}_${monthYear}_Statement.pdf`,
+  });
+  const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
 
   if (uploadResult['$metadata'].httpStatusCode !== 200) {
     throw new Error('Upload of PDF failed, please provide correct information.');
   }
 
-  const fileUrl = await getS3FileUrl(filename, 3600, true);
+  const fileUrl = await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
   info('Webhook-Service', 'Monthly statement PDF generated successfully', {
     participant: participantName,
     month: statementData.month,
@@ -601,8 +615,11 @@ async function uploadMonthlyStatementPdf({
   };
 }
 
-async function generateMonthlyStatementPdf(req, res, ctx) {
-  const { workspaceId, boardId, statementData, businessDetails, chartImage, clientTimezone, requestStartDate, requestEndDate, deps } = ctx;
+export async function renderMonthlyStatementPdf({
+  workspaceId, boardId, statementData, businessDetails, chartImage,
+  timezone: clientTimezone, startDate: requestStartDate, endDate: requestEndDate,
+  deps, req = null, skipWhenEmpty = false,
+}) {
   const {
     path, fs, getValidatedBusiness, enableRepeatHeadOnTables, ensureMonthlyStatementHeaderFromPage2,
     getLogoData, resolveTemplateImageUrls, getTemplateImageContentByName, applyTemplateTextDefaults,
@@ -632,6 +649,28 @@ async function generateMonthlyStatementPdf(req, res, ctx) {
   info('Webhook-Service', 'Monthly statement PDF: fetched ISO+ data', {
     budgetCount: budgetItems.length, serviceCount: services.length, queryParticipant,
   }, req ?? null);
+
+  // Nothing to report: every figure on the rendered page would be $0.00.
+  //
+  // The test is money, not row count. A participant can carry a shift row that
+  // has no amount on it — a cancelled or unpriced service — and with no budget
+  // records behind it the whole document still reads $0.00, which is exactly
+  // the "invalid statement" a client reported receiving beside a correct
+  // statement of account. Counting `services.length` let that through.
+  //
+  // Only the scheduled path opts in: a person who clicked Generate asked for
+  // this document and gets it whatever it says, where an automated run that
+  // emails an all-zero statement is just noise arriving at a client. Returning
+  // before the render also means no PDF is uploaded and no statement number is
+  // claimed for a document nobody will see.
+  const carriesMoney = budgetItems.length > 0
+    || services.some((service) => Number(service?.totalAmount || 0) !== 0);
+  if (skipWhenEmpty && !carriesMoney) {
+    info('Webhook-Service', 'Nothing to report; monthly statement not issued', {
+      workspaceId, boardId, queryParticipant, serviceCount: services.length,
+    }, req ?? null);
+    return null;
+  }
 
   const budgetAggregates = calculateBudgetAggregates(budgetItems);
   enrichBudgetAggregatesFromCategories(budgetAggregates, statementData, deps);
@@ -673,7 +712,7 @@ async function generateMonthlyStatementPdf(req, res, ctx) {
     plugins: { text, image, line, table, multiVariableText },
   });
 
-  const upload = await uploadMonthlyStatementPdf({
+  return uploadMonthlyStatementPdf({
     pdfBytes,
     workspaceId,
     boardId,
@@ -687,7 +726,21 @@ async function generateMonthlyStatementPdf(req, res, ctx) {
     info,
     req,
   });
+}
 
+async function generateMonthlyStatementPdf(req, res, ctx) {
+  const upload = await renderMonthlyStatementPdf({
+    workspaceId: ctx.workspaceId,
+    boardId: ctx.boardId,
+    statementData: ctx.statementData,
+    businessDetails: ctx.businessDetails,
+    chartImage: ctx.chartImage,
+    timezone: ctx.clientTimezone,
+    startDate: ctx.requestStartDate,
+    endDate: ctx.requestEndDate,
+    deps: ctx.deps,
+    req,
+  });
   return res.status(200).json({
     message: 'Monthly statement PDF generated successfully',
     fileUrl: upload.fileUrl,

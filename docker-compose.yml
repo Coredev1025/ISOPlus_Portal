@@ -1,0 +1,133 @@
+name: isoplus-portal
+
+# Application containers for ISO+ Portal local development.
+#
+#   npm run dev:up                   start infra + these, health-gated
+#   npm run dev:build                same, rebuilding images
+#   npm run dev:down                 stop these (-- --all also stops infra)
+#   docker compose logs -f backend   tail the API
+#
+# The stateful services (mongo, redis) are NOT here — they live in
+# docker-compose.infra.yml as a single shared stack, so that every git worktree
+# can run its own backend/frontend against one set of datastores. This file is
+# started once per worktree.
+#
+# Two properties make concurrent worktree stacks possible, and both are load
+# bearing — do not "tidy" them away:
+#
+#   1. No `container_name:`. Compose derives <project>-backend-1 instead, so two
+#      worktrees do not fight over the same container name. Any command that
+#      needs a specific container must go through `docker compose ps` /
+#      `docker compose exec`, never `docker inspect isoplus-backend`.
+#   2. The project name above is a DEFAULT. COMPOSE_PROJECT_NAME, set in each
+#      worktree's .env, takes precedence over it.
+#
+# Host ports and the target database are overridable via a .env file in this
+# directory — see .env.docker.example. `npm run worktree -- new` writes one
+# automatically for new worktrees.
+#
+# There is no `depends_on` for mongo/redis: they belong to a different compose
+# project and are therefore not addressable here. `npm run dev:up` gates on
+# their health before starting these services.
+#
+# See docs/local-development.md and docs/worktrees.md.
+
+services:
+  backend:
+    build:
+      context: ./Backend
+      target: dev
+    restart: unless-stopped
+    env_file:
+      - path: ./Backend/.env
+        required: false
+    # These override anything in Backend/.env: inside the compose network the
+    # datastores are reachable by service name, not localhost.
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      MONGODB_URI: mongodb://mongo:27017/${MONGO_DB:-business-dashboard}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_CLUSTER: "false"
+      REDIS_TLS: "false"
+      FRONTEND_URL: http://localhost:${FRONTEND_PORT:-3100}
+      ALLOWED_ORIGINS: http://localhost:${FRONTEND_PORT:-3100}
+      # Docker Desktop (macOS/Windows) does not forward inotify events across
+      # the bind mount, so nodemon never sees host edits. Set WATCH_POLLING=true
+      # in .env there. Costs CPU, hence off by default on Linux.
+      CHOKIDAR_USEPOLLING: ${WATCH_POLLING:-false}
+      CHOKIDAR_INTERVAL: ${WATCH_INTERVAL:-1000}
+    ports:
+      - "${BACKEND_PORT:-4001}:3001"
+    # Same as `npm run dev`, but ignoring the dirs the app itself writes into
+    # (winston's rotate-file audit .json would otherwise restart nodemon).
+    command: ["npx", "nodemon", "--ignore", "logs/", "--ignore", "uploads/", "src/index.js"]
+    volumes:
+      - ./Backend:/app
+      - backend-node-modules:/app/node_modules
+    networks:
+      - isoplus
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3001/api/healthcheck').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./Frontend
+      target: dev
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    env_file:
+      - path: ./Frontend/.env.local
+        required: false
+    # NEXT_PUBLIC_* is read by the browser, so this must be a host-reachable
+    # URL — not the internal http://backend:3001.
+    environment:
+      NODE_ENV: development
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_BACKEND_URL: http://localhost:${BACKEND_PORT:-4001}
+      # See the backend service — same bind-mount inotify limitation.
+      WATCHPACK_POLLING: ${WATCH_POLLING:-false}
+      CHOKIDAR_USEPOLLING: ${WATCH_POLLING:-false}
+    ports:
+      - "${FRONTEND_PORT:-3100}:3000"
+    volumes:
+      - ./Frontend:/app
+      - frontend-node-modules:/app/node_modules
+      - frontend-next:/app/.next
+    networks:
+      - isoplus
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+# Created by docker-compose.infra.yml. `external: true` means this file will
+# refuse to start until infra is up, which is the intended failure mode.
+networks:
+  isoplus:
+    name: isoplus-net
+    external: true
+
+# Per-project (and therefore per-worktree) — branches may have different
+# dependency trees, so they must not share a node_modules volume.
+volumes:
+  backend-node-modules:
+  frontend-node-modules:
+  frontend-next:

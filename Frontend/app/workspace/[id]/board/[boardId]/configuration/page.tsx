@@ -29,7 +29,8 @@ import { useAppContext } from "@/app/context";
 import axios from "@/app/utils/axiosConfig";
 import { showSaveSuccessToast, showSaveErrorToast, showFetchSuccessToast, showFetchErrorToast, showUpdateSuccessToast, showUpdateErrorToast } from "@/lib/toast-utils";
 import { Checkbox } from "@/components/ui/checkbox";
-import { isOwnerOrSupport } from "@/lib/access";
+import { isOwnerOrSupport, isContextUserHydrated } from "@/lib/access";
+import { BoardSyncStatusPanel } from "@/lib/board-sync-status-panel";
 
 // Define the attribute type as a literal union type
 type AttributeType = "Text" | "Long Text";
@@ -132,15 +133,19 @@ export default function ConfigurationPage() {
   }, [id, setCurrentWorkspaceId]);
 
   const hasAccess = isOwnerOrSupport(user);
+  const userReady = isContextUserHydrated(user);
 
   useEffect(() => {
+    // Context defaults role to isoplus_user before localStorage hydrates — waiting
+    // avoids sending portal staff to access-denied on a hard refresh.
+    if (!userReady) return;
     if (!hasAccess) {
       router.replace("/workspace/access-denied");
     }
-  }, [hasAccess, router]);
+  }, [userReady, hasAccess, router]);
 
   useEffect(() => {
-    if (!hasAccess || !id || !boardId) return;
+    if (!userReady || !hasAccess || !id || !boardId) return;
     const abortController = new AbortController();
 
     const fetchAttributes = async () => {
@@ -179,10 +184,10 @@ export default function ConfigurationPage() {
     return () => {
       abortController.abort();
     };
-  }, [hasAccess, id, boardId]);
+  }, [userReady, hasAccess, id, boardId]);
 
   useEffect(() => {
-    if (!hasAccess || !boardId) return;
+    if (!userReady || !hasAccess || !boardId) return;
     const abortController = new AbortController();
 
     const fetchBoards = async () => {
@@ -218,11 +223,11 @@ export default function ConfigurationPage() {
     return () => {
       abortController.abort();
     };
-  }, [hasAccess, boardId]);
+  }, [userReady, hasAccess, boardId]);
 
   const workspace = workspaces.find(workspace => workspace.id.toString() === id);
 
-  if (!hasAccess) {
+  if (!userReady || !hasAccess) {
     return null;
   }
 
@@ -425,6 +430,7 @@ export default function ConfigurationPage() {
                     </p>
                   )}
                 </div>
+                {syncData && <BoardSyncStatusPanel boardId={boardId} />}
               </div>
 
               <div className="border-t" />

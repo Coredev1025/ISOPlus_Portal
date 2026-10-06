@@ -160,6 +160,21 @@ export function formatLabelValue(value) {
   return String(value);
 }
 
+/**
+ * Is this service record's timesheet approved?
+ *
+ * The gate behind both NDIS and SaH/SaH (Low-cat) invoicing (manual and
+ * automated): an item is not sent/shown until its Timesheet Approval reads
+ * "Approved" (KAN-271). NDIS's own call sites (ndisInvoiceGeneratorRouteHelpers.js,
+ * routes/items.js, exportOptimizedNdisCsvHelpers.js) still carry their own
+ * copies of this check rather than calling this one — left alone deliberately,
+ * since they already work and this ticket's blast radius is SaH only.
+ */
+export function isApprovedTimesheet(item) {
+  const approval = item?.data?.[NDIS_MASTERPLAN_ATTR.TIMESHEET_APPROVAL];
+  return formatLabelValue(approval).trim().toLowerCase() === 'approved';
+}
+
 export function getValue(item, attributeName) {
   return item?.data?.[attributeName] ?? null;
 }

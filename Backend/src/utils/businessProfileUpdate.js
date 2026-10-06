@@ -1,6 +1,9 @@
 import path from 'path';
 import { deleteFileFromS3, uploadFileToS3 } from './uploadS3.js';
 import { setLogo } from '../services/isoplus.js';
+import { DOCUMENT_SERIES } from '../constants/documentNumbering.js';
+import Business from '../models/Business.js';
+import { uninitializedFilter } from './documentNumberingInitial.js';
 
 const LOGO_UPLOADS = [
   { field: 'defaultLogo', pathPrefix: 'default-logo', syncToIsoplus: null },
@@ -64,6 +67,102 @@ export async function applyBusinessLogoUpdates({
   return updateData;
 }
 
+/**
+ * Shallow-merge numbering series so a PUT that omits a series (e.g. older
+ * Configure Business / Financial Settings clients without statementOfAccount)
+ * cannot reset that series to the schema default of 1.
+ */
+export function mergeDocumentNumbering(existing, incoming = {}) {
+  if (!existing || typeof existing !== 'object') {
+    return { ...incoming };
+  }
+  const plain =
+    typeof existing.toObject === 'function' ? existing.toObject() : existing;
+  return { ...plain, ...incoming };
+}
+
+/**
+ * The numbering fields a profile save may write for an EXISTING business: each
+ * series' prefix, as its own database path, and nothing else.
+ *
+ * KAN-290: the numbering sequence is read-only through the profile form. A
+ * counter is advanced only by the generators that issue the numbers; invoices,
+ * statements and statements of account claim theirs atomically (quotes and
+ * purchase orders still read-then-increment, see KAN-291). The save used to
+ * read the business, merge the stored
+ * numbering with whatever the page sent, and write the whole object back; a page
+ * opened before invoices were issued then wound the counter back to the number
+ * it had loaded, and later invoices reused numbers already on issued invoices.
+ * A `nextNumber` in the request is therefore ignored here, and writing each
+ * prefix on its own path means a counter that moved while the save was in
+ * flight is never rewritten.
+ *
+ * (A brand-new business takes its prefixes only and starts every counter at 1:
+ * see documentNumberingForNewBusiness and the create branch in routes/business.js.)
+ */
+export function documentNumberingSetPaths(incoming) {
+  const paths = {};
+  if (!incoming || typeof incoming !== 'object') return paths;
+  for (const series of DOCUMENT_SERIES) {
+    const fields = incoming[series];
+    if (!fields || typeof fields !== 'object' || Array.isArray(fields)) continue;
+    if (fields.prefix !== undefined) {
+      paths[`documentNumbering.${series}.prefix`] = fields.prefix;
+    }
+  }
+  return paths;
+}
+
+/**
+ * The numbering a BRAND-NEW business is created with: each series' prefix, and no
+ * counter. The schema default of 1 then applies, so every new workspace starts
+ * every series at 1 automatically (KAN-290, KAN-292). The numbering sequence is
+ * read-only, so a starting number cannot be chosen at creation either.
+ */
+export function documentNumberingForNewBusiness(incoming) {
+  const numbering = {};
+  for (const [series, fields] of Object.entries(documentNumberingSetPaths(incoming))) {
+    const [, name] = series.split('.');
+    numbering[name] = { prefix: fields };
+  }
+  return numbering;
+}
+
+/**
+ * Save an existing business's profile. When the save also sets the first
+ * document numbers (KAN-292), they are written only if the business is still
+ * uninitialized at the moment of the write: if a document was issued in the
+ * meantime the filter no longer matches, and the profile is saved without the
+ * numbers instead, so a counter is never set over one that has moved.
+ *
+ * Returns the saved business and whether the numbers were written, so the
+ * caller can tell the user when theirs were not.
+ */
+export async function updateExistingBusiness(id, updateData, initialPaths) {
+  if (Object.keys(initialPaths).length > 0) {
+    const withNumbers = await Business.findOneAndUpdate(
+      uninitializedFilter(id),
+      { ...updateData, ...initialPaths },
+      { new: true }
+    );
+    if (withNumbers) return { business: withNumbers, initialNumbersWritten: true };
+  }
+  const business = await Business.findByIdAndUpdate(id, updateData, { new: true });
+  return { business, initialNumbersWritten: false };
+}
+
+/** Drop undefined entries so findByIdAndUpdate does not persist empty nests as {}. */
+function omitUndefined(object) {
+  return Object.fromEntries(
+    Object.entries(object).filter(([, value]) => value !== undefined)
+  );
+}
+
+function nestedUpdate(fields) {
+  const defined = omitUndefined(fields);
+  return Object.keys(defined).length > 0 ? defined : undefined;
+}
+
 export function buildBusinessUpdateData(body) {
   const {
     name,
@@ -89,16 +188,16 @@ export function buildBusinessUpdateData(body) {
     documentNumbering,
   } = body;
 
-  return {
+  return omitUndefined({
     name,
-    address: { street, country, suburb, state, postcode },
+    address: nestedUpdate({ street, country, suburb, state, postcode }),
     phone,
     email,
     abn,
     acn,
     companyRegistrationId,
     workspaceId,
-    bankDetails: {
+    bankDetails: nestedUpdate({
       accountName: bankAccountName,
       bankName,
       bsb,
@@ -106,10 +205,12 @@ export function buildBusinessUpdateData(body) {
       paymentReference,
       accountsReceivableTerms,
       accountsPayableTerms,
-    },
+    }),
     documentNumbering,
-    headOfficeTimezone: headOfficeTimezone || 'Australia/Sydney',
-  };
+    // Left out when the page did not send it (Finance Settings does not), so a
+    // save never resets a stored zone. The schema default covers a new business.
+    headOfficeTimezone: headOfficeTimezone || undefined,
+  });
 }
 
 export function parseLogoRemovals(body) {

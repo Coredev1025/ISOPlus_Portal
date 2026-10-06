@@ -12,16 +12,60 @@ import {
   resolveQrLogoField,
   buildLogoUrls,
 } from '../utils/businessLogo.js';
-import { updateOrganizationInfo } from '../services/xero.js';
+import {
+  updateOrganizationInfo,
+} from '../services/xero.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
+import { logXeroAudit } from '../utils/xeroAuditHelpers.js';
 import { collectBusinessProfileErrors } from '../validators/businessProfile.js';
 import { toRequiredQueryString } from '../utils/securityHelpers.js';
 import {
   applyBusinessLogoUpdates,
   buildBusinessUpdateData,
+  documentNumberingForNewBusiness,
+  documentNumberingSetPaths,
   parseLogoRemovals,
+  updateExistingBusiness,
 } from '../utils/businessProfileUpdate.js';
+import {
+  initialNumbersAuditMetadata,
+  initialNumbersReply,
+  initialNumberingForNewBusiness,
+  planInitialNumbers,
+} from '../utils/documentNumberingInitial.js';
+import { repointWorkspaceSchedules } from '../services/scheduler/schedules.js';
 import { sanitizeLogValue } from '../utils/sanitizeLog.js';
+import { normalizeLineItemMapping, enrichMappingWithTaxRatePercents } from '../utils/xeroLineItemMapping.js';
+import { loadXeroChartOptions } from '../utils/xeroAccountTaxHelpers.js';
+
+function mapXeroAccountOptions(rawAccounts) {
+  return (rawAccounts || [])
+    .map((a) => ({
+      code: a.Code ?? a.code ?? '',
+      name: a.Name ?? a.name ?? '',
+      type: a.Type ?? a.type ?? '',
+      class: a.Class ?? a._class ?? a.class ?? '',
+      status: a.Status ?? a.status ?? '',
+    }))
+    .filter((a) => a.code && a.status !== 'ARCHIVED');
+}
+
+function mapXeroTaxRateOptions(rawTaxRates) {
+  return (rawTaxRates || [])
+    .map((t) => ({
+      taxType: t.TaxType ?? t.taxType ?? '',
+      name: t.Name ?? t.name ?? '',
+      status: t.Status ?? t.status ?? '',
+      canApplyToRevenue: t.CanApplyToRevenue ?? t.canApplyToRevenue ?? false,
+      canApplyToExpenses: t.CanApplyToExpenses ?? t.canApplyToExpenses ?? false,
+      effectiveRate: Number(t.EffectiveRate ?? t.effectiveRate ?? t.DisplayTaxRate ?? t.displayTaxRate ?? NaN),
+    }))
+    .map((t) => ({
+      ...t,
+      effectiveRate: Number.isFinite(t.effectiveRate) ? t.effectiveRate : null,
+    }))
+    .filter((t) => t.taxType && t.status !== 'DELETED' && t.status !== 'ARCHIVED');
+}
 
 const validateBusinessProfile = (req, res, next) => {
   const errors = collectBusinessProfileErrors(req.body);
@@ -154,22 +198,98 @@ router.get('/logo', authenticateToken, async (req, res) => {
   }
 });
 
+function parseIncomingNumbering(body) {
+  return body.documentNumbering ? JSON.parse(body.documentNumbering) : {};
+}
+
+/**
+ * Save the profile of a business that exists. KAN-290: the numbering sequence is
+ * read-only here: an existing business takes only its series prefixes, each on
+ * its own path (already in `updateData`); the counters are advanced by the
+ * generators that issue the numbers and are never taken from the form. The one
+ * exception is KAN-292, the first save of Finance Settings, which sets the first
+ * numbers once (`plan`).
+ */
+async function saveExistingProfile({ business, updateData, plan, incomingNumbering, workspaceId, req }) {
+  const before = business?.toObject ? business.toObject() : business;
+  const { business: saved, initialNumbersWritten } = await updateExistingBusiness(
+    business._id, updateData, plan.initialPaths,
+  );
+  info('Business-Service', 'Business profile updated', { businessName: saved.name }, req ?? null);
+  if (plan.requested && !initialNumbersWritten) {
+    // The user typed first numbers and they were not applied: the business was
+    // already initialized, or a document was issued while the save was in
+    // flight, or a counter is missing from the stored document because the
+    // backfill migration has not run (see uninitializedFilter).
+    warn('Business-Service', 'The first document numbers were not applied', {
+      workspaceId,
+      alreadyInitialized: !plan.allowed,
+      hint: plan.allowed ? 'a counter moved, or the backfill migration has not run' : undefined,
+    }, req ?? null);
+  }
+  await logAuditTrail({
+    workspaceId,
+    action: 'Updated Business profile',
+    detail: initialNumbersWritten
+      ? 'Business profile updated; first document numbers set'
+      : 'Business profile updated',
+    req,
+    category: 'Business',
+    entityType: 'Business',
+    entityId: saved?._id?.toString(),
+    before,
+    after: updateData,
+    metadata: initialNumbersWritten ? initialNumbersAuditMetadata(incomingNumbering) : undefined,
+    success: true
+  });
+  return { business: saved, initialNumbersWritten };
+}
+
+/**
+ * Create the profile of a workspace that has none. Takes the series prefixes and
+ * starts every counter at 1 (KAN-290), unless this is the first Finance Settings
+ * save, which also sets the first numbers (KAN-292).
+ */
+async function createProfile({ updateData, plan, incomingNumbering, workspaceId, req }) {
+  const prefixes = documentNumberingForNewBusiness(incomingNumbering);
+  const business = new Business({
+    ...updateData,
+    ...(plan.allowed ? { documentNumberingInitialized: true } : {}),
+    documentNumbering: plan.allowed
+      ? initialNumberingForNewBusiness(prefixes, incomingNumbering)
+      : prefixes,
+  });
+  await business.save();
+  info('Business-Service', 'New Business profile created', { businessName: business.name }, req ?? null);
+  await logAuditTrail({
+    workspaceId,
+    action: 'Created new Business profile',
+    detail: `Resource ID: ${business._id}`,
+    req,
+    category: 'Business',
+    entityType: 'Business',
+    entityId: business?._id?.toString(),
+    metadata: plan.allowed ? initialNumbersAuditMetadata(incomingNumbering) : undefined,
+    success: true
+  });
+  return { business, initialNumbersWritten: plan.allowed };
+}
+
 router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, async (req, res) => {
   try {
     const workspaceId = toRequiredQueryString(req.body.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
 
-    let documentNumbering = {};
-    if (req.body.documentNumbering) {
-      documentNumbering = JSON.parse(req.body.documentNumbering);
-    }
-
-    let business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
+    const incomingNumbering = parseIncomingNumbering(req.body);
+    const business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
+    const plan = planInitialNumbers({ business, body: req.body, incomingNumbering });
     const updateData = buildBusinessUpdateData({
       ...req.body,
       workspaceId,
-      documentNumbering,
+      // The request carries the numbering as a JSON string; it is applied below.
+      documentNumbering: undefined,
     });
+    if (business) Object.assign(updateData, documentNumberingSetPaths(incomingNumbering));
 
     const logoUpdates = await applyBusinessLogoUpdates({
       workspaceId,
@@ -181,44 +301,30 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
     });
     Object.assign(updateData, logoUpdates);
 
-    if (business) {
-      const before = business?.toObject ? business.toObject() : business;
-      business = await Business.findByIdAndUpdate(
-        business._id,
-        updateData,
-        { new: true }
-      );
-      info('Business-Service', 'Business profile updated', { businessName: business.name }, req ?? null);
-      await logAuditTrail({
-        workspaceId,
-        action: 'Updated Business profile',
-        detail: 'Business profile updated',
-        req,
-        category: 'Business',
-        entityType: 'Business',
-        entityId: business?._id?.toString(),
-        before,
-        after: updateData,
-        success: true
-      });
-    } else {
-      business = new Business(updateData);
-      await business.save();
-      info('Business-Service', 'New Business profile created', { businessName: business.name }, req ?? null);
-      await logAuditTrail({
-        workspaceId,
-        action: 'Created new Business profile',
-        detail: `Resource ID: ${business._id}`,
-        req,
-        category: 'Business',
-        entityType: 'Business',
-        entityId: business?._id?.toString(),
-        success: true
-      });
+    const { business: saved, initialNumbersWritten } = business
+      ? await saveExistingProfile({ business, updateData, plan, incomingNumbering, workspaceId, req })
+      : await createProfile({ updateData, plan, incomingNumbering, workspaceId, req });
+
+    // KAN-262. A schedule's timezone is a snapshot taken from
+    // headOfficeTimezone when the automation form was last saved, and nothing
+    // re-took it when the business moved — so the run kept firing on the old
+    // wall clock, and the "Next Run" caption kept naming a zone the client had
+    // already changed. A no-op unless the zone actually moved.
+    //
+    // Failure here does not fail the request: the profile is already saved, and
+    // a schedule row that no longer validates must not stop a client saving
+    // their address. It is logged as the error it is, and the next save of the
+    // automation form still corrects the schedule the way it always did.
+    try {
+      await repointWorkspaceSchedules({ workspaceId });
+    } catch (err) {
+      error('Business-Service', 'Could not re-point automation schedules after a timezone change', {
+        workspaceId, message: err.message,
+      }, req ?? null);
     }
 
-    const response = await formatBusinessProfileResponse(business);
-    res.status(200).json(response);
+    const response = await formatBusinessProfileResponse(saved);
+    res.status(200).json({ ...response, ...initialNumbersReply(plan, initialNumbersWritten) });
   } catch (err) {
     error('Business-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
     res.status(500).json({ message: 'Server error' });
@@ -289,50 +395,6 @@ router.get('/qr-logo', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/xero/connect', authenticateToken, async (req, res) => {
-  try {
-    const workspaceId = toRequiredQueryString(req.body.workspaceId);
-    if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
-    const { tokens, organization } = req.body;
-
-    let business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
-    if (!business) {
-      const now = new Date();
-      business = new Business({
-        workspaceId,
-        xeroIntegrated: true,
-        xeroTokens: {
-          accessToken: tokens.access_token,
-          refreshToken: tokens.refresh_token,
-          expiresAt: tokens.expires_at,
-          refreshTokenExpiresAt: now.getTime() + 60 * 24 * 60 * 60 * 1000
-        },
-        xeroOrganization: organization || null
-      });
-      await business.save();
-    } else {
-      const now = new Date();
-      business.xeroIntegrated = true;
-      business.xeroTokens = {
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token,
-        expiresAt: tokens.expires_at,
-        refreshTokenExpiresAt: now.getTime() + 60 * 24 * 60 * 60 * 1000
-      };
-      if (organization) {
-        business.xeroOrganization = organization;
-      }
-      await business.save();
-    }
-
-    info('Business-Service', 'Xero integration connected', { businessId: business._id }, req ?? null);
-    res.json({ success: true });
-  } catch (err) {
-    error('Business-Service', 'Server error during Xero connection', { message: err.message, stack: err.stack }, req ?? null);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
 router.post('/xero/disconnect', authenticateToken, async (req, res) => {
   try {
     const workspaceId = toRequiredQueryString(req.body.workspaceId);
@@ -345,21 +407,43 @@ router.post('/xero/disconnect', authenticateToken, async (req, res) => {
     }
 
     business.xeroIntegrated = false;
+    business.xeroTenantId = null;
     business.xeroTokens = {
       accessToken: null,
       refreshToken: null,
       expiresAt: null
     };
     business.xeroOrganization = null;
+    business.xeroLineItemMapping = normalizeLineItemMapping();
 
     await business.save();
     info('Business-Service', 'Xero integration disconnected', { businessId: business._id }, req ?? null);
+    await logXeroAudit({
+      workspaceId,
+      action: 'Disconnected Xero',
+      detail: 'Xero integration disconnected',
+      req,
+      entityType: 'Business',
+      entityId: business?._id?.toString(),
+      success: true,
+    });
     res.json({ success: true });
   } catch (err) {
     error('Business-Service', 'Server error during Xero disconnection', { message: err.message, stack: err.stack }, req ?? null);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: err.message || 'Server error' });
   }
 });
+
+function isXeroReconnectError(message) {
+  const text = String(message || '').toLowerCase();
+  return (
+    text.includes('no xero organisation') ||
+    text.includes('no xero organization') ||
+    text.includes('reconnect') ||
+    text.includes('expired') ||
+    text.includes('not authenticated')
+  );
+}
 
 router.post('/xero/update-organization', authenticateToken, async (req, res) => {
   try {
@@ -381,14 +465,16 @@ router.post('/xero/update-organization', authenticateToken, async (req, res) => 
 
     if (updatedOrganization) {
       business.xeroOrganization = updatedOrganization;
+      if (updatedOrganization.organisationId) {
+        business.xeroTenantId = updatedOrganization.organisationId;
+      }
       await business.save();
       info('Business-Service', 'Xero organization info updated', { businessId: business._id }, req ?? null);
-      await logAuditTrail({
+      await logXeroAudit({
         workspaceId,
         action: 'Updated Xero organization info',
         detail: 'Updated Xero organization info',
         req,
-        category: 'Xero',
         entityType: 'Business',
         entityId: business?._id?.toString(),
         after: updatedOrganization,
@@ -401,7 +487,83 @@ router.post('/xero/update-organization', authenticateToken, async (req, res) => 
     }
   } catch (err) {
     error('Business-Service', 'Server error during Xero organization update', { message: err.message, stack: err.stack }, req ?? null);
-    res.status(500).json({ message: 'Server error' });
+    const message = err.message || 'Server error';
+    const status = isXeroReconnectError(message) ? 409 : 500;
+    res.status(status).json({ message });
+  }
+});
+
+router.get('/xero/account-tax-options', authenticateToken, async (req, res) => {
+  try {
+    const workspaceId = toRequiredQueryString(req.query.workspaceId);
+    if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
+
+    const business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } }).lean();
+    if (!business) return res.status(404).json({ message: 'Business not found' });
+    if (!business.xeroIntegrated) {
+      return res.status(400).json({ message: 'Xero integration not found' });
+    }
+
+    const { accounts: rawAccounts, taxRates: rawTaxRates } =
+      await loadXeroChartOptions(workspaceId);
+    const accounts = mapXeroAccountOptions(rawAccounts);
+    const taxRates = mapXeroTaxRateOptions(rawTaxRates);
+
+    info('Business-Service', 'Fetched Xero account/tax options', {
+      accounts: accounts.length,
+      taxRates: taxRates.length,
+    }, req ?? null);
+    res.json({ accounts, taxRates });
+  } catch (err) {
+    error('Business-Service', 'Error fetching Xero account/tax options', {
+      message: err.message,
+      stack: err.stack,
+    }, req ?? null);
+    res.status(500).json({
+      message: 'Failed to load Xero account and tax options',
+    });
+  }
+});
+
+router.put('/xero/line-item-mapping', authenticateToken, async (req, res) => {
+  try {
+    const workspaceId = toRequiredQueryString(req.body.workspaceId);
+    if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
+
+    let mapping = normalizeLineItemMapping(req.body.mapping);
+    try {
+      const { taxRates: rawTaxRates } = await loadXeroChartOptions(workspaceId);
+      mapping = enrichMappingWithTaxRatePercents(mapping, mapXeroTaxRateOptions(rawTaxRates));
+    } catch {
+      mapping = enrichMappingWithTaxRatePercents(mapping, []);
+    }
+
+    const business = await Business.findOneAndUpdate(
+      { workspaceId: { $eq: String(workspaceId) } },
+      { $set: { xeroLineItemMapping: mapping } },
+      { new: true }
+    ).lean();
+
+    if (!business) return res.status(404).json({ message: 'Business not found' });
+
+    info('Business-Service', 'Saved Xero line-item mapping', { workspaceId }, req ?? null);
+    await logXeroAudit({
+      workspaceId,
+      action: 'Updated Xero line-item mapping',
+      detail: 'Updated Xero account/tax line-item mapping',
+      req,
+      entityType: 'Business',
+      entityId: business?._id?.toString(),
+      after: mapping,
+      success: true,
+    });
+    res.json({ success: true, xeroLineItemMapping: business.xeroLineItemMapping });
+  } catch (err) {
+    error('Business-Service', 'Error saving Xero line-item mapping', {
+      message: err.message,
+      stack: err.stack,
+    }, req ?? null);
+    res.status(500).json({ message: 'Failed to save Xero line-item mapping' });
   }
 });
 

@@ -10,10 +10,26 @@
     "dev": "nodemon src/index.js",
     "debug": "node --inspect-brk src/index.js",
     "build-windows": "(if exist dist (rmdir /S /Q dist)) && mkdir dist && xcopy src\\* dist\\ /E /I /Y",
-    "build-linux": "mkdir -p dist && cp -r src/* dist/"
+    "build-linux": "mkdir -p dist && cp -r src/* dist/",
+    "migrate": "node scripts/migrate.mjs",
+    "schema": "node scripts/schema.mjs",
+    "invoice-backfill": "node scripts/invoice-backfill.mjs",
+    "invoice-audit": "node scripts/invoice-audit.mjs",
+    "invoice-marker-backfill": "node scripts/invoice-marker-backfill.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:api:live": "RUN_REAL_API_TESTS=1 vitest run --config vitest.real-api.config.js"
+  },
+  "nodemonConfig": {
+    "ignore": [
+      ".local-s3/**"
+    ]
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1035.0",
+    "@aws-sdk/client-sesv2": "^3.1112.0",
+    "@aws-sdk/client-sqs": "^3.1112.0",
     "@aws-sdk/s3-request-presigner": "^3.1035.0",
     "@bull-board/api": "^6.14.2",
     "@bull-board/express": "^6.14.2",
@@ -26,23 +42,29 @@
     "bullmq": "^5.61.0",
     "connect-mongo": "^5.1.0",
     "cors": "^2.8.5",
+    "cron-parser": "5.8.1",
     "dotenv": "^16.4.5",
     "express": "^4.22.2",
     "express-mongo-sanitize": "^2.2.0",
     "express-session": "^1.18.1",
     "express-validator": "^7.0.1",
+    "google-auth-library": "^9.15.1",
+    "googleapis": "^148.0.0",
     "got": "^14.4.7",
     "he": "^1.2.0",
     "ioredis": "^5.8.2",
     "joi": "^17.13.4",
     "jsonwebtoken": "^9.0.2",
+    "lodash-es": "^4.18.1",
     "lokijs": "^1.5.12",
     "moment": "^2.30.1",
     "mongoose": "^8.2.1",
     "multer": "^2.1.0",
-    "node-schedule": "^2.1.1",
+    "nodemailer": "^9.0.5",
     "querystring": "^0.2.1",
     "sanitize-html": "^2.12.1",
+    "sqs-consumer": "^15.0.3",
+    "ts-migrate-mongoose": "^5.3.3",
     "uuid": "^14.0.0",
     "winston": "^3.17.0",
     "winston-daily-rotate-file": "^5.0.0",
@@ -50,7 +72,12 @@
     "xero-node": "^13.3.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0"
+    "@vitest/coverage-v8": "^4.1.6",
+    "mongodb-memory-server": "^10.3.0",
+    "msw": "^2.11.6",
+    "nodemon": "^3.1.0",
+    "supertest": "^7.1.4",
+    "vitest": "^4.0.7"
   },
   "overrides": {
     "dompurify": "^3.4.11",

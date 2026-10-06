@@ -1,9 +1,9 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import Business from '../models/Business.js';
-import InvoiceNumber from '../models/InvoiceNumber.js';
 import Board from '../models/Board.js';
 import Item from '../models/Item.js';
+import { authenticateToken } from '../middleware/auth.js';
 import { warn, error } from '../utils/logger.js';
 import { isEmpty } from '../utils/helpers.js';
 import { mongoEq } from '../utils/securityHelpers.js';
@@ -25,16 +25,33 @@ import {
   createOrUpdateContact,
   createQuote,
   createPurchaseOrder,
-  getAuthUrl,
   refreshTokenSet,
-  callback,
   getContactByEmail,
   getContactByName,
   findOrCreateItem,
-  getAccounts
 } from '../services/xero.js';
 import { Item as ItemPayloadDTO } from '../dto/itemsPayload.js';
-import { logAuditTrail } from '../utils/auditLogger.js';
+import { logXeroAudit } from '../utils/xeroAuditHelpers.js';
+import {
+  handleXeroOAuthCallback,
+  handleXeroOAuthRedirect,
+} from '../utils/xeroOAuthRouteHelpers.js';
+import { resolveSalesLineMapping } from '../utils/xeroLineItemMapping.js';
+import {
+  appendXeroLineDateSuffix as appendDateSuffix,
+  xeroRound2 as round2,
+  xeroRound4 as round4,
+  xeroServiceRowDate as getXeroServiceRowDate,
+} from '../utils/xeroLineFormatting.js';
+import {
+  loadXeroChartOptions,
+  rejectIfAccountTaxMismatch,
+} from '../utils/xeroAccountTaxHelpers.js';
+import {
+  buildUsedMaterialLineItem,
+  getPayableMaterialFeeAmount,
+  resolveMaterialSalesLine,
+} from '../utils/xeroMaterialLineHelpers.js';
 import {
   NDIS_MASTERPLAN_ATTR as NDIS_MASTERPLAN_ATTR_DB,
   buildNdisMasterPlanServiceRows,
@@ -55,6 +72,13 @@ import {
   buildNdisXeroInvoiceReference,
   enrichNdisInvoiceGeneratorRows,
 } from '../utils/ndisInvoiceGeneratorOutput.js';
+// Section 3.3 of the invoice selection spec: every path that allocates an
+// invoice number must set the same invoiced marker, or the next scheduled run
+// finds these items unmarked and bills them again. This router used to keep a
+// private copy that only wrote the ledger row.
+import { saveInvoiceNumber } from '../utils/invoicePdfSupport.js';
+import { recordXeroInvoice, billedTotal } from '../utils/invoiceLedger/recordXero.js';
+import { INVOICE_KIND } from '../constants/invoiceLedger.js';
 import {
   handleXeroInvoicendis,
   handleXeroQuotendis,
@@ -85,47 +109,10 @@ function formatValue(val) {
   }
 }
 
-function roundTo(value, dp) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return 0;
-  const factor = Math.pow(10, dp);
-  return Math.round((num + Number.EPSILON) * factor) / factor;
-}
-
-function round2(value) {
-  return roundTo(value, 2);
-}
-
-function round4(value) {
-  return roundTo(value, 4);
-}
-
-function escapeRegExp(str) {
-  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function getXeroServiceRowDate(item) {
-  const status = (item?.transactionStatus ?? '').toString().trim();
-  const scheduled = (item?.scheduledServiceDate ?? '').toString().trim();
-  const delivered = (item?.serviceDeliveryDate ?? '').toString().trim();
-
-  const isDelivered =
-    status === 'Delivered - To be claimed and invoiced.' ||
-    status.toLowerCase().startsWith('delivered');
-
-  const preferred = isDelivered ? delivered : scheduled;
-  const fallback = isDelivered ? scheduled : delivered;
-  return preferred || fallback || '';
-}
-
-function appendDateSuffix(description, rowDate) {
-  const base = (description ?? '').toString().trim() || 'Service';
-  const date = (rowDate ?? '').toString().trim();
-  if (!date) return base;
-
-  const alreadyHasDateSuffix = new RegExp(`\\s*-\\s*${escapeRegExp(date)}\\s*$`).test(base);
-  return alreadyHasDateSuffix ? base : `${base} - ${date}`;
-}
+// round2/round4/getXeroServiceRowDate/appendDateSuffix now live in
+// utils/xeroLineFormatting.js, so the scheduled push (which runs in the BullMQ
+// worker and cannot import this router) shapes its lines by exactly the same
+// rules. Aliased on import to keep every call site below unchanged.
 
 async function initializeXeroOperation(workspaceId, boardId, item) {
   const business = await Business.findOne({ workspaceId: mongoEq(workspaceId) });
@@ -139,52 +126,6 @@ async function initializeXeroOperation(workspaceId, boardId, item) {
   await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
   return business;
-}
-
-async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, type) {
-  try {
-    const safeItemId = mongoEq(itemId);
-    const safeWorkspaceId = mongoEq(workspaceId);
-    const safeBoardId = mongoEq(boardId);
-    const safeType = mongoEq(type);
-    const safeInvoiceNumber = mongoEq(invoiceNumber);
-
-    await InvoiceNumber.findOneAndUpdate(
-      {
-        itemId: { $eq: String(safeItemId) },
-        workspaceId: { $eq: String(safeWorkspaceId) },
-        boardId: { $eq: String(safeBoardId) },
-        type: { $eq: String(safeType) }
-      },
-      {
-        $set: {
-          itemId: safeItemId,
-          workspaceId: safeWorkspaceId,
-          boardId: safeBoardId,
-          invoiceNumber: safeInvoiceNumber,
-          type: safeType,
-          updatedAt: new Date()
-        },
-        $setOnInsert: {
-          createdAt: new Date()
-        }
-      },
-      {
-        upsert: true,
-        new: true
-      }
-    );
-  } catch (err) {
-    // Log error but don't fail the invoice generation if saving fails
-    warn('Xero-Service', 'Failed to save invoice number to database', {
-      workspaceId,
-      boardId,
-      itemId,
-      invoiceNumber,
-      type,
-      error: err.message
-    }, null);
-  }
 }
 
 function createContactPayload(values, isUpdate = false) {
@@ -225,11 +166,12 @@ async function handleError(err, workspaceId, boardId, item, req, entityType = 'i
     );
   }
 
-  logAuditTrail({
+  logXeroAudit({
     workspaceId,
     action: `Process Xero ${entityType}`,
     detail: `Error processing ${entityType}: ${err.message}`,
-    req
+    req,
+    success: false
   });
 
   return {
@@ -380,19 +322,53 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
-    let gst = item.values["GST"] == "10%" ? "10%" : "0%";
+    const chart = await loadXeroChartOptions(workspaceId);
+    const gstValue = item.values["GST"];
+    const invoiceLineTax = resolveSalesLineMapping(
+      business,
+      'invoice',
+      gstValue,
+      chart.accounts
+    );
+    const salesAccountCode = invoiceLineTax.accountCode;
+    const materialFeeAmount = getPayableMaterialFeeAmount(item.values);
+    const materialLineTax = resolveMaterialSalesLine(
+      business,
+      'invoice',
+      gstValue,
+      chart.accounts
+    );
 
-    // Get valid account codes
-    const accounts = await getAccounts(workspaceId);
-    const salesAccountCode = accounts.find(acc =>
-      acc.Type === 'REVENUE'
-    )?.Code || '200'; // Default to '200' if no revenue account found
+    const mismatchResponse = await rejectIfAccountTaxMismatch({
+      workspaceId,
+      boardId,
+      itemId: item.id,
+      accountCode: salesAccountCode,
+      taxType: invoiceLineTax.taxType,
+      res,
+      chart,
+    });
+    if (mismatchResponse) return mismatchResponse;
+
+    if (materialFeeAmount > 0) {
+      const materialMismatch = await rejectIfAccountTaxMismatch({
+        workspaceId,
+        boardId,
+        itemId: item.id,
+        accountCode: materialLineTax.accountCode || salesAccountCode,
+        taxType: materialLineTax.taxType,
+        res,
+        chart,
+      });
+      if (materialMismatch) return materialMismatch;
+    }
 
     const invoice = {
       type: 'ACCREC',
       contact: { contactID: contact.contactID },
       reference: jobPlanningValues.jobNumber,
       lineItems: [],
+      lineAmountTypes: 'Exclusive',
       date: getDateOnlyIso(new Date(), business?.headOfficeTimezone || 'Australia/Sydney'),
       dueDate: (() => { const d = new Date(); d.setDate(d.getDate() + 30); return getDateOnlyIso(d, business?.headOfficeTimezone || 'Australia/Sydney'); })(),
       status: "DRAFT"
@@ -404,18 +380,14 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       description: `${jobPlanningValues.jobTitle} - ${serviceFeeType} - ${item.values['Job Duration (Hrs.)']} Hrs.`,
       quantity: 1,
       unitAmount: item.values['Payable Service Fee($) - GST Excl.'],
-      taxType: gst == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
+      taxType: invoiceLineTax.taxType,
       accountCode: salesAccountCode
     });
 
-    if (item.values['Payable Material Fee($) - GST Excl.'] > 0) {
-      invoice.lineItems.push({
-        description: "Used Material/Part",
-        quantity: 1,
-        unitAmount: item.values['Payable Material Fee($) - GST Excl.'],
-        taxType: gst == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
-        accountCode: salesAccountCode
-      });
+    if (materialFeeAmount > 0) {
+      invoice.lineItems.push(
+        buildUsedMaterialLineItem(materialFeeAmount, materialLineTax, salesAccountCode)
+      );
     }
 
     if (item.values['Other Payable Fee($) - GST Excl.'] > 0) {
@@ -423,7 +395,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
         description: "Other Payable Fee",
         quantity: 1,
         unitAmount: item.values['Other Payable Fee($) - GST Excl.'],
-        taxType: gst == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
+        taxType: invoiceLineTax.taxType,
         accountCode: salesAccountCode
       });
     }
@@ -431,7 +403,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     const createdInvoice = await createInvoice(invoice);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Your invoice has been created successfully in Xero.");
 
-    logAuditTrail({
+    logXeroAudit({
       workspaceId,
       action: "Create Xero Invoice",
       detail: `Invoice created successfully, invoice number: ${createdInvoice.invoiceNumber}`,
@@ -440,6 +412,18 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
 
     await setGeneratedField(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`);
     await saveInvoiceNumber(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`, 'Xero');
+    // KAN-308: the invoice record, behind INVOICE_LEDGER_WRITE. Never throws.
+    await recordXeroInvoice({
+      workspaceId,
+      boardId,
+      itemIds: [item.id],
+      created: createdInvoice,
+      kind: INVOICE_KIND.JOB,
+      participant: { name: contactValues.client },
+      lineAmounts: { [item.id]: billedTotal(createdInvoice, invoice.lineItems) },
+      invoiceDate: invoice.date,
+      dueDate: invoice.dueDate,
+    });
 
     res.json(createdInvoice);
   } catch (err) {
@@ -582,7 +566,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
   const { item } = await validatePayload(payload, req);
 
   try {
-    await initializeXeroOperation(workspaceId, boardId, item);
+    const business = await initializeXeroOperation(workspaceId, boardId, item);
     const quoteValues = item.values;
 
     const [contactValues, jobTypeValues] = await getQuoteReferencedItems(workspaceId, boardId, item.id);
@@ -652,6 +636,44 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
+    const chart = await loadXeroChartOptions(workspaceId);
+    const quoteGst = quoteValues['GST'];
+    const quoteLineTax = resolveSalesLineMapping(
+      business,
+      'quote',
+      quoteGst,
+      chart.accounts,
+      'quoteService'
+    );
+    const materialFeeAmount = getPayableMaterialFeeAmount(quoteValues);
+    const materialLineTax = resolveMaterialSalesLine(
+      business,
+      'quote',
+      quoteGst,
+      chart.accounts
+    );
+    const quoteMismatch = await rejectIfAccountTaxMismatch({
+      workspaceId,
+      boardId,
+      itemId: item.id,
+      accountCode: quoteLineTax.accountCode,
+      taxType: quoteLineTax.taxType,
+      res,
+      chart,
+    });
+    if (quoteMismatch) return quoteMismatch;
+    if (materialFeeAmount > 0) {
+      const materialMismatch = await rejectIfAccountTaxMismatch({
+        workspaceId,
+        boardId,
+        itemId: item.id,
+        accountCode: materialLineTax.accountCode || quoteLineTax.accountCode,
+        taxType: materialLineTax.taxType,
+        res,
+        chart,
+      });
+      if (materialMismatch) return materialMismatch;
+    }
     const jobDescription = quoteValues['Job Description']
       ? quoteValues['Job Description'].toString().replace(/<[^>]*>/g, '')
       : '';
@@ -661,9 +683,19 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
         description: `${quoteValues['Job Title']} - ${jobDescription}`,
         quantity: quoteValues.Quantity,
         unitAmount: quoteValues['Unit Price($) - GST Excl.'],
-        taxType: quoteValues['GST'] == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
+        taxType: quoteLineTax.taxType,
+        accountCode: quoteLineTax.accountCode,
       },
     ];
+    if (materialFeeAmount > 0) {
+      lineItems.push(
+        buildUsedMaterialLineItem(
+          materialFeeAmount,
+          materialLineTax,
+          quoteLineTax.accountCode
+        )
+      );
+    }
     const mappedQuote = {
       issueDate: quoteValues['Issue Date'],
       expiryDate: quoteValues['Expiry Date'],
@@ -691,7 +723,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     const createdQuote = await createQuote(xeroQuote);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Your quote has been created successfully in Xero.");
 
-    logAuditTrail({
+    logXeroAudit({
       workspaceId,
       action: "Create Xero Quote",
       detail: `Quote created successfully, quote number: ${createdQuote.quoteNumber}`,
@@ -728,7 +760,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
   const { item } = await validatePayload(payload, req);
 
   try {
-    await initializeXeroOperation(workspaceId, boardId, item);
+    const business = await initializeXeroOperation(workspaceId, boardId, item);
 
     const purchaseOrderValues = item.values;
 
@@ -799,6 +831,25 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
+    const chart = await loadXeroChartOptions(workspaceId);
+    const poLineTax = resolveSalesLineMapping(
+      business,
+      'purchaseOrder',
+      purchaseOrderValues['GST'],
+      chart.accounts,
+      undefined,
+      { fallbackAccountType: 'EXPENSE', defaultAccountCode: undefined }
+    );
+    const poMismatch = await rejectIfAccountTaxMismatch({
+      workspaceId,
+      boardId,
+      itemId: item.id,
+      accountCode: poLineTax.accountCode,
+      taxType: poLineTax.taxType,
+      res,
+      chart,
+    });
+    if (poMismatch) return poMismatch;
 
     const mappedPO = {
       clientsOrderNumber: purchaseOrderValues["Client's Order Number"],
@@ -823,7 +874,8 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
           description: `${purchaseOrderValues['Job Title']}${purchaseOrderValues['Job Description'] ? ` - ${purchaseOrderValues['Job Description'].replace(/<[^>]*>/g, '')}` : ''}`,
           quantity: purchaseOrderValues.Quantity,
           unitAmount: purchaseOrderValues['Unit Price($) - GST Excl.'],
-          taxType: purchaseOrderValues['GST'] == "10%" ? "INPUT" : "EXEMPTEXPENSES",
+          taxType: poLineTax.taxType,
+          accountCode: poLineTax.accountCode,
         }
       ]
     };
@@ -837,7 +889,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     const createdPurchaseOrder = await createPurchaseOrder(purchaseOrder);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Your purchase order has been created successfully in Xero.");
 
-    logAuditTrail({
+    logXeroAudit({
       workspaceId,
       action: "Create Xero Purchase Order",
       detail: `Purchase order created successfully, PO number: ${createdPurchaseOrder.purchaseOrderNumber}`,
@@ -851,45 +903,9 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
   }
 });
 
-router.get("/redirect", async (req, res) => {
-  try {
-    await configure();
-    const url = await getAuthUrl();
-    res.json({ url });
-  } catch (err) {
-    error('Xero-Service', 'Error generating redirect URL', err);
-    res.status(200).json({ message: 'Error generating redirect URL', error: err.message });
-  }
-});
+router.get("/redirect", authenticateToken, handleXeroOAuthRedirect);
 
-router.get('/callback', async (req, res) => {
-  try {
-    const { code } = req.query;
-    const result = await callback(code, req.url);
-    res.send(`
-            <html>
-                <body>
-                    <script>
-                        window.opener.postMessage(${JSON.stringify({ ...result, type: 'XERO_AUTH' })}, '*');
-                        window.close();
-                    </script>
-                </body>
-            </html>
-        `);
-  } catch (err) {
-    error('Xero-Service', 'Error in Xero callback', err);
-    res.status(200).send(`
-            <html>
-                <body>
-                    <script>
-                        window.opener.postMessage(${JSON.stringify({ success: false, message: 'Authentication failed', type: 'XERO_AUTH' })}, '*');
-                        window.close();
-                    </script>
-                </body>
-            </html>
-        `);
-  }
-});
+router.get('/callback', handleXeroOAuthCallback);
 
 router.post('/refresh', async (req, res) => {
   try {

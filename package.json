@@ -1,0 +1,27 @@
+{
+  "name": "isoplus-portal",
+  "private": true,
+  "type": "module",
+  "description": "Local development orchestration for the ISO+ Portal monorepo. The apps themselves live in Backend/ and Frontend/ and have their own package.json files; this one has no dependencies and is not built, published, or deployed.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev:login": "node scripts/dev.mjs login",
+    "dev:up": "node scripts/dev.mjs up",
+    "dev:build": "node scripts/dev.mjs up --build",
+    "dev:down": "node scripts/dev.mjs down",
+    "dev:status": "node scripts/dev.mjs status",
+    "dev:logs": "docker compose logs -f",
+    "seed": "node scripts/dev.mjs seed",
+    "dev:fixture": "node scripts/dev.mjs fixture",
+    "worktree": "node scripts/dev.mjs worktree",
+    "doctor": "node scripts/dev.mjs doctor",
+    "rehearse": "node scripts/dev.mjs rehearse",
+    "migrate": "node scripts/dev.mjs migrate",
+    "schema": "node scripts/dev.mjs schema",
+    "agents": "node scripts/dev.mjs agents",
+    "tick": "node scripts/dev.mjs tick",
+    "test:scripts": "node --test \"scripts/test/**/*.test.mjs\""
+  }
+}

@@ -1,10 +1,26 @@
+import { loadInvoiceMaps } from './invoiceLedger/listMaps.js';
 import { parseListPagination, matchesStatusFilter } from './itemsRouteHelpers.js';
 import { getCachedTransform, setCachedTransform } from './transformCache.js';
 import { toRequiredQueryString, mongoEq } from './securityHelpers.js';
+import { spellingVariants } from './invoiceSelectionFields.js';
+import { isApprovedTimesheet } from './ndisServiceRecords.js';
 
 function getValueFromItem(item, attributeName) {
   if (!item.data) return null;
   return item.data[attributeName] ?? null;
+}
+
+/**
+ * A date field under either of its two spellings (spec 2.4). Which one a row
+ * carries depends on when it was synced, and reading one silently drops the
+ * other's rows out of every date filter on this screen.
+ */
+function getDateValueFromItem(item, attributeName) {
+  for (const name of spellingVariants(attributeName)) {
+    const value = getValueFromItem(item, name);
+    if (value !== null && value !== undefined && value !== '') return value;
+  }
+  return null;
 }
 
 function parseNumber(value) {
@@ -50,8 +66,8 @@ function getRawStatusData(item, attributeName) {
 
 async function processInvoiceGeneratorItems(allItems, ATTRIBUTE_NAMES, REF_ATTRIBUTE_NAMES, Item) {
   return Promise.all(allItems.map(async (item) => {
-    const scheduledStart = getValueFromItem(item, ATTRIBUTE_NAMES.SCHEDULED_START);
-    const actualEnd = getValueFromItem(item, ATTRIBUTE_NAMES.ACTUAL_END);
+    const scheduledStart = getDateValueFromItem(item, ATTRIBUTE_NAMES.SCHEDULED_START);
+    const actualEnd = getDateValueFromItem(item, ATTRIBUTE_NAMES.ACTUAL_END);
     const participantIds = getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE) || '';
     const participantId = participantIds.length > 0 ? participantIds[0] : '';
     let participantName = '';
@@ -88,6 +104,33 @@ function filterByEndDate(filteredItems, field, dateValue) {
   return filteredItems.filter((p) => p[field] && p[field] <= dateObj);
 }
 
+/** Is `date` a real date sitting inside the (possibly one-sided) bounds? */
+function isWithinDateBounds(date, startObj, endObj) {
+  if (!date) return false;
+  if (startObj && date < startObj) return false;
+  if (endObj && date > endObj) return false;
+  return true;
+}
+
+/**
+ * The service-delivery window, matched on EITHER of the type's two date fields.
+ *
+ * Section 2.1 of the invoice selection spec: an item qualifies when either its
+ * scheduled service date or its service delivery date falls in the period.
+ * Reading the actual shift end alone dropped every cancelled and adjustment
+ * row, which never gets one — never listed, never selected, never billed.
+ *
+ * The scheduled-range filter (startDate/endDate) is a different pair and is
+ * deliberately left reading the scheduled start alone.
+ */
+function filterByServiceDeliveryWindow(filteredItems, { serviceDeliveryStart, serviceDeliveryEnd }) {
+  if (!serviceDeliveryStart && !serviceDeliveryEnd) return filteredItems;
+  const startObj = serviceDeliveryStart ? new Date(serviceDeliveryStart) : null;
+  const endObj = serviceDeliveryEnd ? new Date(serviceDeliveryEnd) : null;
+  return filteredItems.filter((p) => isWithinDateBounds(p.actualEndDate, startObj, endObj)
+    || isWithinDateBounds(p.scheduledStartDate, startObj, endObj));
+}
+
 function filterByParticipant(filteredItems, participant, warn, req) {
   if (!participant) return filteredItems;
   try {
@@ -107,8 +150,7 @@ function applyInvoiceGeneratorFilters(processedItems, filters, warn, req) {
   let filteredItems = processedItems;
   filteredItems = filterByDateRange(filteredItems, 'scheduledStartDate', filters.startDate);
   filteredItems = filterByEndDate(filteredItems, 'scheduledStartDate', filters.endDate);
-  filteredItems = filterByDateRange(filteredItems, 'actualEndDate', filters.serviceDeliveryStart);
-  filteredItems = filterByEndDate(filteredItems, 'actualEndDate', filters.serviceDeliveryEnd);
+  filteredItems = filterByServiceDeliveryWindow(filteredItems, filters);
   filteredItems = filterByParticipant(filteredItems, filters.participant, warn, req);
 
   if (filters.transactionStatusFilter && filters.transactionStatusFilter !== 'all') {
@@ -505,6 +547,12 @@ export async function getInvoiceGeneratorData({ workspaceId, boardId, query, req
     };
   }
 
+  // KAN-271: gate on Timesheet Approval before anything else sees these rows.
+  // This is the one list both the manual Invoice Generator page and automated
+  // SaH invoicing (generateAgeCareGeneratorInvoices) read, so filtering here
+  // covers both without either caller needing its own check.
+  allItems = allItems.filter((item) => isApprovedTimesheet(item));
+
   const processedItems = await processInvoiceGeneratorItems(
     allItems,
     ATTRIBUTE_NAMES,
@@ -547,15 +595,13 @@ export async function getInvoiceGeneratorData({ workspaceId, boardId, query, req
     totalFound: refItemsMap.size,
   }, req ?? null);
 
-  const itemIdsForInvoice = items.map((p) => p.item.itemId);
-  const invoiceNumbers = await deps.InvoiceNumber.find({
+  // The old log, the invoice record, or both compared (KAN-313).
+  const { invoiceNumberMap, invoiceFileUrlMap } = await loadInvoiceMaps({
     workspaceId: safeWorkspaceId,
     boardId: safeBoardId,
-    itemId: { $in: itemIdsForInvoice },
-    type: 'PDF',
-  }).lean();
-  const invoiceNumberMap = new Map(invoiceNumbers.map((inv) => [inv.itemId, inv.invoiceNumber]));
-  const invoiceFileUrlMap = new Map(invoiceNumbers.map((inv) => [inv.itemId, inv.pdfLink || null]));
+    itemIds: items.map((p) => p.item.itemId),
+    InvoiceNumber: deps.InvoiceNumber,
+  });
 
   const transformContext = {
     workspaceId: safeWorkspaceId,

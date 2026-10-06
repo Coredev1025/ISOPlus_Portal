@@ -1,20 +1,65 @@
 import type { AxiosInstance } from 'axios';
+import { downloadGeneratedPdfViaBackend } from '@/lib/pdf-download-helpers';
 
-export async function downloadInvoicePdf(fileUrl: string, invoiceNumber: string, participantName: string) {
-  const pdfResponse = await fetch(fileUrl);
-  const pdfBlob = await pdfResponse.blob();
-  const pdfUrl = URL.createObjectURL(pdfBlob);
-  const link = document.createElement('a');
-  link.href = pdfUrl;
-  link.download = `Invoice_${invoiceNumber}_${participantName.replace(/\s+/g, '_')}.pdf`;
-  link.style.display = 'none';
-  document.body.appendChild(link);
-  link.click();
+const ISO_TRADEMARK = 'ISO+\u2122';
 
-  setTimeout(() => {
-    document.body.removeChild(link);
-    URL.revokeObjectURL(pdfUrl);
-  }, 100);
+/**
+ * Download name for an invoice PDF.
+ *
+ * Prefer the stored S3 object name (last path segment). That is the name the
+ * browser saved when it opened the bucket URL directly:
+ * `INV-1109-ISO+™-Jane-Smith.pdf`. The ™ stays in `link.download`; the proxy
+ * puts only an ASCII fallback in the `filename=` header.
+ *
+ * When the URL has no `.pdf` name, build the same shape from the invoice
+ * number and participant (spaces become hyphens, matching the stored key).
+ */
+export function invoicePdfDownloadFilename({
+  fileUrl,
+  invoiceNumber,
+  participantName,
+}: {
+  fileUrl?: string;
+  invoiceNumber?: string;
+  participantName?: string;
+}): string {
+  const fromKey = pdfNameFromFileUrl(fileUrl);
+  if (fromKey) return fromKey;
+
+  const raw = String(invoiceNumber || 'INV').trim();
+  const suffix = ` (${ISO_TRADEMARK})`;
+  const base = (raw.endsWith(suffix) ? raw.slice(0, -suffix.length) : raw).trim() || 'INV';
+  const participant = String(participantName || 'Participant').trim().replace(/\s+/g, '-') || 'Participant';
+  return `${base}-${ISO_TRADEMARK}-${participant}.pdf`;
+}
+
+function pdfNameFromFileUrl(fileUrl?: string): string | null {
+  if (!fileUrl) return null;
+  const last = String(fileUrl).split(/[?#]/)[0].split('/').pop() || '';
+  if (!last || !/\.pdf$/i.test(last)) return null;
+  let decoded = last;
+  try {
+    decoded = decodeURIComponent(last);
+  } catch {
+    decoded = last;
+  }
+  if (!decoded || decoded.includes('/') || decoded.includes('\\') || decoded.includes('..')) return null;
+  return decoded;
+}
+
+export async function downloadInvoicePdf(
+  fileUrl: string,
+  invoiceNumber: string,
+  participantName: string,
+  workspaceId: string,
+  axios: AxiosInstance,
+) {
+  await downloadGeneratedPdfViaBackend({
+    fileUrl,
+    filename: invoicePdfDownloadFilename({ fileUrl, invoiceNumber, participantName }),
+    workspaceId,
+    axios,
+  });
 }
 
 export async function updateLegacyInvoiceStatuses({
@@ -99,7 +144,7 @@ export async function finalizePdfInvoiceGeneration({
 
   if (fileUrl) {
     try {
-      await downloadInvoicePdf(fileUrl, invoiceNumber, participantName);
+      await downloadInvoicePdf(fileUrl, invoiceNumber, participantName, id, axios);
     } catch (downloadErr) {
       console.error('Error downloading PDF:', downloadErr);
       window.open(fileUrl, '_blank');

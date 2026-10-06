@@ -19,6 +19,15 @@ import {
   sumNdisLineAmounts,
 } from '../utils/ndisMasterPlanLineHelpers.js';
 import { buildNdisQuotePdfOrders } from '../utils/ndisQuoteLineHelpers.js';
+import {
+  GENERATED_DOCUMENT_PUBLIC_READ,
+  GENERATED_PDF_URL_EXPIRY_SECONDS,
+  OUTPUT_TYPE,
+} from '../constants/storage.js';
+import { buildOutputKey } from '../utils/s3OutputKey.js';
+import { claimInvoiceNumber } from '../utils/documentNumberAllocator.js';
+import { recordIssuedInvoice } from './invoiceLedger/issue.js';
+import { INVOICE_KIND, INVOICE_TRIGGER } from '../constants/invoiceLedger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -113,13 +122,18 @@ export async function processWebhookNdisQuotePdfItem({
       plugins: { text, image, line, table, multiVariableText },
     });
 
-    const filename = `output/${workspaceId}/${boardId}/NDIS-quote/${quoteNumber + '-ISO+™-' + item.id}.pdf`;
-    const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
+    const filename = buildOutputKey({
+      workspaceId,
+      boardId,
+      type: OUTPUT_TYPE.NDIS_QUOTE,
+      name: `${quoteNumber}-ISO+™-${item.id}.pdf`,
+    });
+    const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
     if (uploadResult['$metadata'].httpStatusCode !== 200) {
       throw new Error('Upload of PDF failed, please provide correct information.');
     }
 
-    const fileUrl = await getS3FileUrl(filename, 3600, true);
+    const fileUrl = await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Quote', req, res);
     await setGeneratedField(workspaceId, boardId, item.id, `${quoteNumber} (ISO+™)`);
     business.documentNumbering.quote.nextNumber += 1;
@@ -161,7 +175,6 @@ export async function processWebhookNdisInvoicePdfItem({
     enableRepeatHeadOnTables(template);
 
     const logoBase64 = await getLogoData(business);
-    const invoiceNumber = business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
     const invoiceValues = item.values;
     const invoiceDate = invoiceValues['Invoice Date'] ? invoiceValues['Invoice Date'].replace('Z', '') : '';
     const dueDate = invoiceValues['Due Date'] ? invoiceValues['Due Date'].replace('Z', '') : '';
@@ -195,6 +208,12 @@ export async function processWebhookNdisInvoicePdfItem({
     subTotal = formatValue(subTotal);
     const gstTotal = formatValue((parseFloat(subTotal) * parseFloat(gst)) / 100);
     const total = formatValue(parseFloat(subTotal) + parseFloat(gstTotal));
+
+    // Claimed here, once there is something to invoice and just before the
+    // number is first used. Items in one request run at the same time against
+    // one shared `business`, so reading its counter here gave every one of them
+    // the same number (KAN-288); the claim is a single database operation.
+    const invoiceNumber = await claimInvoiceNumber(workspaceId);
 
     const participantProfileItemForPdf = await fetchParticipantProfileItemForMasterPlan(workspaceId, boardId, item.id);
     const clientDetails = buildNdisInvoicePdfClientDetails({
@@ -237,18 +256,51 @@ export async function processWebhookNdisInvoicePdfItem({
       plugins: { text, image, line, table, multiVariableText },
     });
 
-    const filename = `output/${workspaceId}/${boardId}/NDIS-invoices/${invoiceNumber + '-ISO+™-' + item.id}.pdf`;
-    const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
+    const filename = buildOutputKey({
+      workspaceId,
+      boardId,
+      type: OUTPUT_TYPE.NDIS_INVOICE,
+      name: `${invoiceNumber}-ISO+™-${item.id}.pdf`,
+    });
+    const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
     if (uploadResult['$metadata'].httpStatusCode !== 200) {
       throw new Error('Upload of PDF failed, please provide correct information.');
     }
 
-    const fileUrl = await getS3FileUrl(filename, 3600, true);
-    await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Invoice', req, res);
-    await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
-    await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);
-    business.documentNumbering.invoice.nextNumber += 1;
-    await business.save();
+    const fileUrl = await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
+    // The details the statement of account matches on. Until they travelled
+    // with the success call, an invoice raised by hand wrote a document row
+    // carrying none of them, and the statement — which looks invoices up by
+    // board and participant and charges `invoiceTotal` — could not see it. On
+    // one dev workspace that was 170 of 175 invoice rows, a year of history
+    // absent from every statement. `invoiceDate` is the operator's own
+    // `Invoice Date` on the item, so a backdated invoice is reported in the
+    // month it claims rather than on the day it happened to be generated.
+    await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Invoice', req, res, {
+      participant: clientDetails['Participant Name'] || '',
+      invoiceNumber,
+      invoiceTotal: Number(total),
+      invoiceDate,
+    });
+    // KAN-294: the invoice number is stored and written back as issued, with no
+    // "(ISO+™)" suffix. Older invoices keep theirs and are still read as before.
+    await setGeneratedField(workspaceId, boardId, item.id, invoiceNumber);
+    await saveInvoiceNumber(workspaceId, boardId, item.id, invoiceNumber, 'PDF', fileUrl);
+    // KAN-306: the invoice record, behind INVOICE_LEDGER_WRITE. Never throws.
+    await recordIssuedInvoice({
+      workspaceId,
+      boardId,
+      itemIds: [item.id],
+      generated: { invoiceNumber, fileUrl, invoiceTotal: Number(total) },
+      kind: INVOICE_KIND.NDIS,
+      participant: { name: clientDetails['Participant Name'] || 'Participant' },
+      trigger: INVOICE_TRIGGER.MANUAL,
+      lineAmounts: { [item.id]: Number(total) },
+      // The operator's own values, with their zone: `invoiceDate` above has it stripped
+      // for the PDF, and a zoneless string reads differently on different servers.
+      invoiceDate: invoiceValues['Invoice Date'] || undefined,
+      dueDate: invoiceValues['Due Date'] || undefined,
+    });
   } catch (err) {
     await handlePDFError(err, workspaceId, boardId, item.id, 'Generate PDF NDIS Invoice', req, res);
   }

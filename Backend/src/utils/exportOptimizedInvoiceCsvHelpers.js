@@ -1,3 +1,4 @@
+import { loadInvoiceMaps } from './invoiceLedger/listMaps.js';
 import { toQueryString, toRequiredQueryString } from './securityHelpers.js';
 
 export function mapRawItemToProcessedInvoiceRow(item, helpers) {
@@ -396,9 +397,10 @@ export async function handleInvoiceCsvExport(req, res, deps) {
     totals = calculateInvoiceCsvTotals(processedItems);
     refItemsMap = await loadNestedInvoiceServiceRefs(servicePlanIds, refItemsMap, workspaceId, boardId, deps);
 
-    const itemIdsForInvoice = processedItems.map((p) => p.item.itemId);
-    const invoiceNumbers = await deps.InvoiceNumber.find({ workspaceId, boardId, itemId: { $in: itemIdsForInvoice } }).lean();
-    const invoiceNumberMap = new Map(invoiceNumbers.map((inv) => [inv.itemId, inv.invoiceNumber]));
+    // The old log (rows of every type, as this export always read), the invoice record, or both compared (KAN-313).
+    const { invoiceNumberMap } = await loadInvoiceMaps({
+      workspaceId, boardId, itemIds: processedItems.map((p) => p.item.itemId), InvoiceNumber: deps.InvoiceNumber, allTypes: true,
+    });
     const transformedItems = processedItems.map((p) => transformInvoiceCsvItem(p, refItemsMap, invoiceNumberMap, deps));
 
     const duration = Date.now() - startTime;

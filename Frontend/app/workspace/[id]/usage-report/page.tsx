@@ -23,7 +23,7 @@ import {
 import { useState, useEffect } from "react";
 import axios from "@/app/utils/axiosConfig";
 import { useAppContext } from "@/app/context";
-import { isOwnerOrSupport } from "@/lib/access";
+import { isOwnerOrSupport, isContextUserHydrated } from "@/lib/access";
 import {
   LineChart,
   Line,
@@ -143,15 +143,17 @@ export default function UsageReportPage() {
   const [usageSummary, setUsageSummary] = useState(usageData);
   const [loading, setLoading] = useState(true);
   const isOwnerOrSupportUser = isOwnerOrSupport(user);
+  const userReady = isContextUserHydrated(user);
 
   useEffect(() => {
+    if (!userReady) return;
     if (!isOwnerOrSupportUser) {
       router.replace("/workspace/access-denied");
     }
-  }, [isOwnerOrSupportUser, router]);
+  }, [userReady, isOwnerOrSupportUser, router]);
 
   useEffect(() => {
-    if (!isOwnerOrSupportUser) return;
+    if (!userReady || !isOwnerOrSupportUser) return;
 
     const abortController = new AbortController();
 
@@ -204,14 +206,14 @@ export default function UsageReportPage() {
     return () => {
       abortController.abort();
     };
-  }, [id, dateRange, isOwnerOrSupportUser]);
+  }, [id, dateRange, userReady, isOwnerOrSupportUser]);
 
   const handleDateRangeChange = (value: string) => {
     setDateRange(value);
     setLoading(true);
   };
 
-  if (!isOwnerOrSupportUser) {
+  if (!userReady || !isOwnerOrSupportUser) {
     return null;
   }
 

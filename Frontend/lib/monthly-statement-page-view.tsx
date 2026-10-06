@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Calendar, Download } from "lucide-react";
 import { Header } from "@/components/ui/header";
 import { ResyncDataButton } from "@/components/ui/resync-data-button";
+import { BoardSyncScheduleSummary } from "@/lib/board-sync-schedule-summary";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Spinner from "@/components/ui/spin";
 import {
@@ -63,7 +64,7 @@ function MonthlyStatementToolbar({
       </div>
 
       <Card className="card-hover mb-6 p-6 shadow-lg print:hidden">
-        <div className="flex flex-nowrap items-end gap-4 overflow-x-auto pb-2">
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
           <div className="min-w-[200px] flex-shrink-0 space-y-2">
             <Label className="text-sm font-medium">Participant</Label>
             <Select value={selectedParticipant} onValueChange={setSelectedParticipant} disabled={loadingParticipants}>
@@ -118,28 +119,31 @@ function MonthlyStatementToolbar({
             </Select>
           </div>
 
-          <div className="flex-shrink-0">
-            <ResyncDataButton
-              onSync={handleManualSync}
-              onHelp={() => setShowHelpDialog(true)}
-              isSyncing={isManualSyncing}
-              disabled={syncStatuses.some((sync: { boardId: string; status: string }) => sync.boardId === boardId && (sync.status === 'started' || sync.status === 'in-progress'))}
-            />
-          </div>
+          <div className="flex flex-1 items-end gap-2">
+            <div data-slot="statement-sync" className="max-w-[420px] flex-1 ml-auto">
+              <BoardSyncScheduleSummary boardId={boardId} />
+            </div>
 
-          <div className="flex-shrink-0">
-            <Button
-              className="h-10 min-w-[148px]"
-              onClick={fetchStatementData}
-              disabled={loading || exportingSection === 'statement-pdf' || !selectedParticipant || !selectedMonth || !selectedYear}
-            >
-              <span className="inline-flex items-center justify-center gap-2">
-                {loading && exportingSection !== 'statement-pdf' ? (
-                  <Spinner className="h-4 w-4" />
-                ) : null}
-                <span>Load Statement</span>
-              </span>
-            </Button>
+            <div data-slot="statement-actions" className="flex shrink-0 flex-wrap items-center gap-2">
+              <ResyncDataButton
+                onSync={handleManualSync}
+                onHelp={() => setShowHelpDialog(true)}
+                isSyncing={isManualSyncing}
+                disabled={syncStatuses.some((sync: { boardId: string; status: string }) => sync.boardId === boardId && (sync.status === 'started' || sync.status === 'in-progress'))}
+              />
+              <Button
+                className="h-10 min-w-[148px]"
+                onClick={fetchStatementData}
+                disabled={loading || exportingSection === 'statement-pdf' || !selectedParticipant || !selectedMonth || !selectedYear}
+              >
+                <span className="inline-flex items-center justify-center gap-2">
+                  {loading && exportingSection !== 'statement-pdf' ? (
+                    <Spinner className="h-4 w-4" />
+                  ) : null}
+                  <span>Load Statement</span>
+                </span>
+              </Button>
+            </div>
           </div>
         </div>
       </Card>

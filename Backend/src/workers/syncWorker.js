@@ -9,6 +9,7 @@ import { validateBoard } from '../services/sync/validator.js';
 import { registerBoardWebhooks, unregisterBoardWebhooks, getBoardHooks } from '../services/webhookService.js';
 import { info, error, warn } from '../utils/logger.js';
 import { syncQueue } from '../services/sync/queue.js';
+import { SCHEDULED_SYNC_JOB_TYPE } from '../constants/sync.js';
 import { invalidateCacheForBoard } from '../utils/transformCache.js';
 import { transformItemData } from '../utils/itemTransform.js';
 import { syncTimeTrackingFromItem } from '../utils/timeTrackSync.js';
@@ -144,12 +145,15 @@ async function deleteHooksFromApiList(authorization, workspaceId, boardId, hooks
   }
 }
 
-function resolveRetryJobName(jobType, fallbackName) {
-  if (jobType === 'board_validation') return 'board_validation';
-  if (jobType === 'data_backlog_sync') return 'backlog_sync';
-  if (jobType === 'manual_triggered_sync') return 'manual_sync';
-  return fallbackName || 'retry';
-}
+const RETRY_JOB_NAMES = {
+  board_validation: 'board_validation',
+  data_backlog_sync: 'backlog_sync',
+  manual_triggered_sync: 'manual_sync',
+  [SCHEDULED_SYNC_JOB_TYPE]: SCHEDULED_SYNC_JOB_TYPE,
+};
+
+const resolveRetryJobName = (jobType, fallbackName) =>
+  RETRY_JOB_NAMES[jobType] ?? fallbackName ?? 'retry';
 
 async function disableWebhooksForBoard(authorization, workspaceId, boardId) {
   try {
@@ -500,36 +504,30 @@ async function processDataBacklogSync(job) {
  * Process manual triggered sync
  * Similar to backlog sync but sets status back to realtime_sync after completion
  */
-async function processManualTriggeredSync(job) {
-  const { authorization, workspaceId, boardId } = job.data;
-  
-  info('Sync-Worker', 'Processing manual triggered sync', { jobId: job.id, workspaceId, boardId });
-  
+async function processCatchUpSync(job) {
+  const { workspaceId, boardId, jobType } = job.data;
+
+  info('Sync-Worker', 'Processing catch-up sync', { jobId: job.id, workspaceId, boardId, jobType });
+
   try {
-    // Update status
     await Board.findOneAndUpdate(
       { boardId },
-      { 
-        $set: { 
-          syncStatus: 'manual_triggered_sync',
+      {
+        $set: {
+          syncStatus: jobType,
           syncJobId: job.id
-        } 
+        }
       }
     );
-    
-    // Note: We no longer delete all items before manual sync
-    // Instead, the backlog sync will update existing items and delete old ones using syncGUID
-    
-    // Process the same way as backlog sync
-    const result = await processDataBacklogSync(job);
-    
-    return result;
+
+    return await processDataBacklogSync(job);
   } catch (err) {
-    error('Sync-Worker', 'Manual triggered sync failed', { 
+    error('Sync-Worker', 'Catch-up sync failed', {
       jobId: job.id,
-      workspaceId, 
-      boardId, 
-      error: err.message 
+      workspaceId,
+      boardId,
+      jobType,
+      error: err.message
     });
     throw err;
   }
@@ -662,7 +660,8 @@ async function processJob(job) {
         result = await processDataBacklogSync(job);
         break;
       case 'manual_triggered_sync':
-        result = await processManualTriggeredSync(job);
+      case SCHEDULED_SYNC_JOB_TYPE:
+        result = await processCatchUpSync(job);
         break;
       default:
         throw new Error(`Unknown job type: ${jobType}`);
@@ -690,9 +689,12 @@ async function processJob(job) {
 // For Redis Cluster, use hash tags to ensure all keys are in the same hash slot
 // Must match the queue name used in queue.js
 const queueName = useCluster ? '{board-sync}' : 'board-sync';
+// Concurrency 1 is the traffic cap for scheduled catch-up, manual Resync, and
+// backlog sharing this worker. Per Node process (each EB instance runs its own
+// worker); multi-instance fan-out still dedupes via BullMQ jobIds from the cron slot.
 export const syncWorker = new Worker(queueName, processJob, {
   connection: redisConnection,
-  concurrency: 2,
+  concurrency: 1,
   limiter: {
     max: 10, // Max 10 jobs
     duration: 1000 // per second
@@ -729,7 +731,7 @@ syncWorker.on('error', (err) => {
 });
 
 info('Sync-Worker', 'Sync worker initialized and ready', {
-  concurrency: 2,
+  concurrency: 1,
   queueName: queueName
 });
 

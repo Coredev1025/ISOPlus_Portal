@@ -71,7 +71,9 @@ import { useInvoiceGeneratorEligibleRecords } from "@/lib/use-invoice-generator-
 import { InvoiceGeneratorPageView } from "@/lib/invoice-generator-page-view";
 import {
   finalizePdfInvoiceGeneration,
+  invoicePdfDownloadFilename,
 } from "@/lib/invoice-generator-pdf-helpers";
+import { downloadGeneratedPdfViaBackend } from "@/lib/pdf-download-helpers";
 import { generateXeroInvoiceFromModal } from "@/lib/invoice-generator-xero-helpers";
 import { useInvoiceGeneratorSetup } from "@/lib/use-invoice-generator-setup";
 import { pollInvoiceGeneratorSyncStatus } from "@/lib/invoice-generator-sync-helpers";
@@ -478,7 +480,7 @@ export default function InvoiceGenerator() {
     return value.replace(/<[^>]*>/g, '').trim();
   };
 
-  const handleDownloadPDF = async (fileUrl: string, invoiceNumber?: string) => {
+  const handleDownloadPDF = async (fileUrl: string, invoiceNumber?: string, participantName?: string) => {
     try {
       if (!fileUrl) {
         if (invoiceNumber) {
@@ -492,24 +494,13 @@ export default function InvoiceGenerator() {
         return;
       }
 
-      // Download the PDF file directly from fileUrl
       try {
-        const pdfResponse = await fetch(fileUrl);
-        const pdfBlob = await pdfResponse.blob();
-        const pdfObjectUrl = URL.createObjectURL(pdfBlob);
-        const link = document.createElement('a');
-        link.href = pdfObjectUrl;
-        const baseInvoiceNumber = invoiceNumber ? invoiceNumber.replace(/\s*\(ISO\+™\)\s*$/, '').trim() : 'Invoice';
-        link.download = `Invoice_${baseInvoiceNumber}.pdf`;
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-
-        // Clean up
-        setTimeout(() => {
-          document.body.removeChild(link);
-          URL.revokeObjectURL(pdfObjectUrl);
-        }, 100);
+        await downloadGeneratedPdfViaBackend({
+          fileUrl,
+          filename: invoicePdfDownloadFilename({ fileUrl, invoiceNumber, participantName }),
+          workspaceId: id,
+          axios,
+        });
 
         showSuccessToast('Invoice downloaded', {
           description: invoiceNumber 

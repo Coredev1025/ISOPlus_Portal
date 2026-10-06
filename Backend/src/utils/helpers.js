@@ -36,9 +36,14 @@ export class RateLimiter {
         const delay = options.delayBetweenBatches || this.delayBetweenBatches;
         const requestDelay = options.delayBetweenRequests || this.delayBetweenRequests;
         const results = [];
+        const safePromises = promises.map((promise) => {
+            const wrapped = Promise.resolve().then(() => promise);
+            wrapped.catch(() => {});
+            return wrapped;
+        });
 
-        for (let i = 0; i < promises.length; i += batchSize) {
-            const batch = promises.slice(i, i + batchSize);
+        for (let i = 0; i < safePromises.length; i += batchSize) {
+            const batch = safePromises.slice(i, i + batchSize);
             
             // Process requests in batch with delay between each request
             const batchResults = [];
@@ -58,7 +63,7 @@ export class RateLimiter {
             results.push(...batchResults);
 
             // Add delay between batches (except for the last batch)
-            if (i + batchSize < promises.length) {
+            if (i + batchSize < safePromises.length) {
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
@@ -120,12 +125,9 @@ export async function batchProcess(items, processor, options = {}) {
     };
     
     const rateLimiter = new RateLimiter(defaultOptions);
-    const promises = items.map(item => () => processor(item));
+    const promises = items.map(item => Promise.resolve().then(() => processor(item)));
     
-    const results = await rateLimiter.processBatches(
-        promises.map(p => p()),
-        defaultOptions
-    );
+    const results = await rateLimiter.processBatches(promises, defaultOptions);
 
     return results.map((result, index) => {
         if (result.status === 'fulfilled') {
@@ -151,7 +153,7 @@ export async function batchProcessFast(items, processor, options = {}) {
         const batch = items.slice(i, i + defaultOptions.batchSize);
         
         const batchResults = await Promise.allSettled(
-            batch.map(item => processor(item))
+            batch.map(item => Promise.resolve().then(() => processor(item)))
         );
         
         for (const result of batchResults) {
@@ -176,7 +178,7 @@ export async function processParallel(items, processor, concurrencyLimit = 50) {
     for (let i = 0; i < items.length; i += concurrencyLimit) {
         const batch = items.slice(i, i + concurrencyLimit);
         const batchResults = await Promise.allSettled(
-            batch.map(item => processor(item))
+            batch.map(item => Promise.resolve().then(() => processor(item)))
         );
         
         for (const result of batchResults) {
@@ -187,14 +189,24 @@ export async function processParallel(items, processor, concurrencyLimit = 50) {
     return results;
 }
 
+export function stripTrailingSlashes(value) {
+    if (typeof value !== 'string') return '';
+    return value.replace(/\/+$/, '');
+}
+
+export function getAllowedOrigins() {
+    return (process.env.ALLOWED_ORIGINS || '')
+        .split(/[\s,]+/)
+        .filter(Boolean)
+        .map(stripTrailingSlashes);
+}
+
 export function getFrontendBaseUrl() {
     const explicit = process.env.FRONTEND_URL;
-    if (explicit) return explicit.replace(/\/+$/, '');
+    if (explicit) return stripTrailingSlashes(explicit);
 
-    const origins = (process.env.ALLOWED_ORIGINS || '')
-        .split(/[\s,]+/)
-        .filter(Boolean);
-    if (origins.length > 0) return origins[0].replace(/\/+$/, '');
+    const origins = getAllowedOrigins();
+    if (origins.length > 0) return origins[0];
 
     return 'http://localhost:3000';
 }

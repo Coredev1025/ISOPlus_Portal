@@ -1,3 +1,4 @@
+import { loadInvoiceMaps } from './invoiceLedger/listMaps.js';
 import {
   buildNdisMasterPlanServiceRows,
   buildNdisSupportCatalogueForServicePlan,
@@ -17,6 +18,7 @@ import {
   enrichNdisInvoiceGeneratorRows,
 } from './ndisInvoiceGeneratorOutput.js';
 import { parseListPagination } from './itemsRouteHelpers.js';
+import { readField } from './invoiceSelectionFields.js';
 
 function isApprovedTimesheet(item) {
   const approval = item?.data?.[NDIS_MASTERPLAN_ATTR.TIMESHEET_APPROVAL];
@@ -103,17 +105,10 @@ async function loadNdisRefItemsMap(workspaceId, boardId, refIdSets, deps) {
 }
 
 async function loadNdisInvoiceMaps(workspaceId, boardId, masterItems, InvoiceNumber) {
-  const itemIdsForInvoice = masterItems.map((i) => i.itemId);
-  const invoiceNumbers = await InvoiceNumber.find({
-    workspaceId,
-    boardId,
-    itemId: { $in: itemIdsForInvoice },
-    type: 'PDF',
-  }).lean();
-  return {
-    invoiceNumberMap: new Map(invoiceNumbers.map((inv) => [inv.itemId, inv.invoiceNumber])),
-    invoiceFileUrlMap: new Map(invoiceNumbers.map((inv) => [inv.itemId, inv.pdfLink || null])),
-  };
+  // The old log, the invoice record, or both compared (KAN-313).
+  return loadInvoiceMaps({
+    workspaceId, boardId, itemIds: masterItems.map((i) => i.itemId), InvoiceNumber,
+  });
 }
 
 function resolveRefDisplayName(refId, refItemsMap) {
@@ -211,32 +206,56 @@ function filterNdisByInvoiceStatus(masterItems, status, invoiceNumberMap) {
   });
 }
 
+/** Is `date` a real date sitting inside the (possibly one-sided) bounds? */
+function isWithinDateBounds(date, startObj, endObj) {
+  if (!date || isNaN(date.getTime())) return false;
+  if (startObj && date < startObj) return false;
+  if (endObj && date > endObj) return false;
+  return true;
+}
+
+/**
+ * The two dates the NDIS filters read, under either spelling (spec 2.4).
+ * readField is the shared reader selection uses, so the list and selection
+ * cannot disagree about which spellings exist.
+ */
+function ndisFilterDates(item) {
+  const scheduledStart = readField(item, NDIS_MASTERPLAN_ATTR.SCHEDULED_START);
+  const actualStart = readField(item, NDIS_MASTERPLAN_ATTR.ACTUAL_START);
+  return {
+    scheduledStartDate: scheduledStart ? new Date(scheduledStart) : null,
+    actualStartDate: actualStart ? new Date(actualStart) : null,
+  };
+}
+
+/**
+ * Two distinct date filters, deliberately not the same rule.
+ *
+ * `startDate`/`endDate` is the Invoice Generator's scheduled-service range and
+ * stays on the scheduled start alone — that is what the screen's column means.
+ *
+ * `serviceDeliveryStart`/`serviceDeliveryEnd` is the period a scheduled run
+ * bills, and section 2.1 of the invoice selection spec makes it an OR across
+ * the type's two date fields. Reading the actual start alone dropped every
+ * Cancelled shift, which by 2.3 is dated by its scheduled start precisely
+ * because it has no actual start: never listed, never selected, never billed.
+ */
 function filterNdisByDates(masterItems, { startDate, endDate, serviceDeliveryStart, serviceDeliveryEnd }) {
   const startDateObj = startDate ? new Date(startDate) : null;
   const endDateObj = endDate ? new Date(endDate) : null;
   const serviceDeliveryStartObj = serviceDeliveryStart ? new Date(serviceDeliveryStart) : null;
   const serviceDeliveryEndObj = serviceDeliveryEnd ? new Date(serviceDeliveryEnd) : null;
+  const hasScheduledRange = Boolean(startDateObj || endDateObj);
+  const hasServiceDeliveryWindow = Boolean(serviceDeliveryStartObj || serviceDeliveryEndObj);
 
   return masterItems.filter((item) => {
-    const scheduledStartRaw = item?.data?.[NDIS_MASTERPLAN_ATTR.SCHEDULED_START];
-    const actualStartRaw = item?.data?.[NDIS_MASTERPLAN_ATTR.ACTUAL_START]
-      ?? item?.data?.['Actual Shift Start Date & Time'];
-    const scheduledStartDate = scheduledStartRaw ? new Date(scheduledStartRaw) : null;
-    const actualStartDate = actualStartRaw ? new Date(actualStartRaw) : null;
-
-    if (startDateObj && (!scheduledStartDate || isNaN(scheduledStartDate.getTime()) || scheduledStartDate < startDateObj)) {
+    const { scheduledStartDate, actualStartDate } = ndisFilterDates(item);
+    if (hasScheduledRange && !isWithinDateBounds(scheduledStartDate, startDateObj, endDateObj)) {
       return false;
     }
-    if (endDateObj && (!scheduledStartDate || isNaN(scheduledStartDate.getTime()) || scheduledStartDate > endDateObj)) {
-      return false;
-    }
-    if (serviceDeliveryStartObj && (!actualStartDate || isNaN(actualStartDate.getTime()) || actualStartDate < serviceDeliveryStartObj)) {
-      return false;
-    }
-    if (serviceDeliveryEndObj && (!actualStartDate || isNaN(actualStartDate.getTime()) || actualStartDate > serviceDeliveryEndObj)) {
-      return false;
-    }
-    return true;
+    if (!hasServiceDeliveryWindow) return true;
+    return isWithinDateBounds(actualStartDate, serviceDeliveryStartObj, serviceDeliveryEndObj)
+      || isWithinDateBounds(scheduledStartDate, serviceDeliveryStartObj, serviceDeliveryEndObj);
   });
 }
 

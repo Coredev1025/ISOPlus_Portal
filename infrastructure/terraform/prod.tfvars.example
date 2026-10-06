@@ -1,0 +1,88 @@
+# Production configuration.
+#
+# Do not apply this until UAT has been running cleanly for at least one full
+# billing cycle. See section 8 of 02-terraform-runbook.md.
+#
+# IMPORTANT: production shares this AWS account with dev and UAT. A careless
+# apply here can affect live client email. Always run plan and read every line
+# before applying.
+
+environment = "prod"
+name_prefix = "isoplus-prod"
+aws_region  = "ap-southeast-2"
+
+# ---------------------------------------------------------------------------
+# SES
+# ---------------------------------------------------------------------------
+
+# Production sends from its own subdomain identity, like dev (dev.isoplus.online).
+# The parent isoplus.online is already a verified SES identity used by ISO+, the
+# main platform. Do NOT use it here: applying would collide with it, or change
+# mail that is not ours. See docs/infrastructure/13-terraform-checked-against-dev.md,
+# including the checklist for the day ISO+ moves to this subdomain.
+sending_domain = "mail.isoplus.online"
+
+# SES requires the MAIL FROM domain to be a subdomain of the identity, so this
+# gives bounce.mail.isoplus.online.
+mail_from_subdomain = "bounce"
+
+manage_dns      = false
+route53_zone_id = ""
+
+# ---------------------------------------------------------------------------
+# Recipient allowlist
+#
+# EMPTY in production. Real clients are on arbitrary domains and any allowlist
+# would silently block them. The empty list removes the IAM condition entirely.
+# ---------------------------------------------------------------------------
+
+recipient_allowlist = []
+
+# ---------------------------------------------------------------------------
+# Application
+# ---------------------------------------------------------------------------
+
+# The application authenticates as the existing IAM user isoplus-app, which already
+# has s3:* on the production buckets (isoplus-portal and isoplus-portal-public).
+# Terraform attaches only the SES and queue policy to that user. It creates no
+# user and no key. So no S3 buckets here: listing them would duplicate that
+# permission.
+existing_app_user_name = "isoplus-app"
+app_s3_buckets         = []
+
+create_app_access_key = false
+
+# ---------------------------------------------------------------------------
+# Alerting
+#
+# A shared group address is best (KAN-332). Until one exists, list every person who
+# must receive alarms, at least two so one person on leave is not the whole of
+# monitoring. Each address gets its own subscription and must confirm it.
+# ---------------------------------------------------------------------------
+
+alert_emails              = ["person-one@example.com", "person-two@example.com"]
+subscribe_email_to_events = false # would be thousands of emails a day
+
+# Tighter than UAT. Production invoicing is time sensitive.
+stalled_queue_threshold_seconds = 600
+
+# ---------------------------------------------------------------------------
+# Scheduler
+# ---------------------------------------------------------------------------
+
+enable_scheduler        = true
+scheduler_endpoint      = "https://portal-backend.isoplus.online/api/scheduler/tick"
+scheduler_rules_enabled = false # enable deliberately, as its own change
+
+scheduler_rules = {
+  invoice = {
+    schedule_expression = "rate(1 minute)"
+    api_key             = "REPLACE_ME"
+    description         = "Scheduler tick for invoice issuance"
+  }
+  statement = {
+    schedule_expression = "rate(1 minute)"
+    api_key             = "REPLACE_ME"
+    description         = "Scheduler tick for statement generation"
+  }
+}

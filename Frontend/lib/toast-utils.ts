@@ -228,9 +228,6 @@ export const dismissToast = (toastId: number) => {
   }
 };
 
-/**
- * Dismiss all toasts
- */
 export const dismissAllToasts = () => {
   activeToasts.forEach((instance) => {
     instance.hideToast();

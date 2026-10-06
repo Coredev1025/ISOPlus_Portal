@@ -3,6 +3,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import Item from '../models/Item.js';
 import Business from '../models/Business.js';
 import InvoiceNumber from '../models/InvoiceNumber.js';
+import { lookupPdfLink } from '../utils/invoiceLedger/pdfLinkLookup.js';
 import { info, error, warn } from '../utils/logger.js';
 import { getFolder } from '../services/isoplus.js';
 import { batchProcess } from '../utils/helpers.js';
@@ -1058,37 +1059,9 @@ router.get('/:workspaceId/:boardId/invoice/:invoiceNumber/pdf-link', authenticat
         // Decode the invoice number from URL
         const decodedInvoiceNumber = decodeURIComponent(invoiceNumber);
         
-        // Try to find invoice with exact match first, then try with (ISO+™) suffix
-        let invoiceRecord = await InvoiceNumber.findOne({
-            workspaceId,
-            boardId,
-            invoiceNumber: decodedInvoiceNumber,
-            type: 'PDF'
-        }).lean();
-
-        // If not found, try with (ISO+™) suffix
-        if (!invoiceRecord) {
-            invoiceRecord = await InvoiceNumber.findOne({
-                workspaceId,
-                boardId,
-                invoiceNumber: `${decodedInvoiceNumber} (ISO+™)`,
-                type: 'PDF'
-            }).lean();
-        }
-
-        if (!invoiceRecord) {
-            return res.status(404).json({ message: 'Invoice not found or is not a PDF invoice' });
-        }
-
-        if (!invoiceRecord.pdfLink) {
-            return res.status(404).json({ message: 'PDF link not available for this invoice' });
-        }
-
-        return res.status(200).json({
-            pdfLink: invoiceRecord.pdfLink,
-            invoiceNumber: invoiceRecord.invoiceNumber,
-            itemId: invoiceRecord.itemId
-        });
+        // The old log, the invoice record, or both compared: see utils/invoiceLedger/pdfLinkLookup.js.
+        const result = await lookupPdfLink({ workspaceId, boardId, number: decodedInvoiceNumber });
+        return res.status(result.status).json(result.body);
     } catch (err) {
         error('Items-Service', 'Failed to get PDF link', {
             message: err.message

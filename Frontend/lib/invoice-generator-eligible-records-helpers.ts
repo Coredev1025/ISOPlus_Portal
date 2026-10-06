@@ -1,5 +1,5 @@
 import type { DateRange } from 'react-day-picker';
-import { getTransactionStatusSearchValue } from '@/lib/invoice-generator-helpers';
+import { getTransactionStatusSearchValue, exclusiveInvoiceGeneratorDateRanges } from '@/lib/invoice-generator-helpers';
 import { dateToStartOfDayISO, dateToEndOfDayISO } from '@/lib/timezone';
 
 import type { InvoiceGeneratorServiceRecord } from '@/lib/invoice-generator-types';
@@ -22,18 +22,22 @@ export function buildEligibleRecordsSearchParams(options: {
   if (options.participantFilter && options.participantFilter !== 'all') {
     params.append('participant', options.participantFilter);
   }
-  if (options.scheduledServiceDateRange?.from) {
-    params.append('startDate', dateToStartOfDayISO(new Date(options.scheduledServiceDateRange.from), options.businessTimezone));
+  const exclusive = exclusiveInvoiceGeneratorDateRanges(
+    options.scheduledServiceDateRange,
+    options.serviceDeliveryDateRange,
+  );
+  if (exclusive.scheduledServiceDateRange?.from) {
+    params.append('startDate', dateToStartOfDayISO(new Date(exclusive.scheduledServiceDateRange.from), options.businessTimezone));
   }
-  if (options.scheduledServiceDateRange?.to || options.scheduledServiceDateRange?.from) {
-    const toSource = options.scheduledServiceDateRange?.to || options.scheduledServiceDateRange?.from;
+  if (exclusive.scheduledServiceDateRange?.to || exclusive.scheduledServiceDateRange?.from) {
+    const toSource = exclusive.scheduledServiceDateRange?.to || exclusive.scheduledServiceDateRange?.from;
     params.append('endDate', dateToEndOfDayISO(new Date(toSource as Date), options.businessTimezone));
   }
-  if (options.serviceDeliveryDateRange?.from) {
-    params.append('serviceDeliveryStart', dateToStartOfDayISO(new Date(options.serviceDeliveryDateRange.from), options.businessTimezone));
+  if (exclusive.serviceDeliveryDateRange?.from) {
+    params.append('serviceDeliveryStart', dateToStartOfDayISO(new Date(exclusive.serviceDeliveryDateRange.from), options.businessTimezone));
   }
-  if (options.serviceDeliveryDateRange?.to || options.serviceDeliveryDateRange?.from) {
-    const toSource = options.serviceDeliveryDateRange?.to || options.serviceDeliveryDateRange?.from;
+  if (exclusive.serviceDeliveryDateRange?.to || exclusive.serviceDeliveryDateRange?.from) {
+    const toSource = exclusive.serviceDeliveryDateRange?.to || exclusive.serviceDeliveryDateRange?.from;
     params.append('serviceDeliveryEnd', dateToEndOfDayISO(new Date(toSource as Date), options.businessTimezone));
   }
 

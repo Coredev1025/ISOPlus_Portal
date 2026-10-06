@@ -1,0 +1,117 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SesReadDevResources",
+      "Effect": "Allow",
+      "Action": [
+        "ses:GetEmailIdentity",
+        "ses:GetEmailIdentityPolicies",
+        "ses:GetConfigurationSet",
+        "ses:GetConfigurationSetEventDestinations"
+      ],
+      "Resource": [
+        "arn:aws:ses:ap-southeast-2:<AWS_ACCOUNT_ID>:identity/dev.isoplus.online",
+        "arn:aws:ses:ap-southeast-2:<AWS_ACCOUNT_ID>:configuration-set/isoplus-dev"
+      ]
+    },
+    {
+      "Sid": "SesReadAccountLevel",
+      "Effect": "Allow",
+      "Action": [
+        "ses:GetAccount",
+        "ses:ListEmailIdentities",
+        "ses:ListConfigurationSets",
+        "ses:GetSuppressedDestination"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SqsReadDevQueues",
+      "Effect": "Allow",
+      "Action": [
+        "sqs:GetQueueAttributes",
+        "sqs:GetQueueUrl",
+        "sqs:ListQueueTags",
+        "sqs:ListDeadLetterSourceQueues",
+        "sqs:ReceiveMessage"
+      ],
+      "Resource": [
+        "arn:aws:sqs:ap-southeast-2:<AWS_ACCOUNT_ID>:isoplus-dev-ses-events",
+        "arn:aws:sqs:ap-southeast-2:<AWS_ACCOUNT_ID>:isoplus-dev-ses-events-dlq"
+      ]
+    },
+    {
+      "Sid": "SqsListForConsole",
+      "Effect": "Allow",
+      "Action": "sqs:ListQueues",
+      "Resource": "*"
+    },
+    {
+      "Sid": "SnsReadDevTopics",
+      "Effect": "Allow",
+      "Action": [
+        "sns:GetTopicAttributes",
+        "sns:ListSubscriptionsByTopic",
+        "sns:ListTagsForResource"
+      ],
+      "Resource": [
+        "arn:aws:sns:ap-southeast-2:<AWS_ACCOUNT_ID>:isoplus-dev",
+        "arn:aws:sns:ap-southeast-2:<AWS_ACCOUNT_ID>:isoplus-dev-alerts"
+      ]
+    },
+    {
+      "Sid": "SnsListForConsole",
+      "Effect": "Allow",
+      "Action": [
+        "sns:ListTopics",
+        "sns:ListSubscriptions",
+        "sns:GetSubscriptionAttributes"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EventBridgeReadDevScheduler",
+      "Effect": "Allow",
+      "Action": [
+        "events:DescribeRule",
+        "events:ListTargetsByRule",
+        "events:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:events:ap-southeast-2:<AWS_ACCOUNT_ID>:rule/isoplus-dev-*"
+    },
+    {
+      "Sid": "EventBridgeReadDevEndpoints",
+      "Effect": "Allow",
+      "Action": [
+        "events:DescribeConnection",
+        "events:DescribeApiDestination"
+      ],
+      "Resource": [
+        "arn:aws:events:ap-southeast-2:<AWS_ACCOUNT_ID>:connection/isoplus-dev-*/*",
+        "arn:aws:events:ap-southeast-2:<AWS_ACCOUNT_ID>:api-destination/isoplus-dev-*/*"
+      ]
+    },
+    {
+      "Sid": "EventBridgeListForConsole",
+      "Effect": "Allow",
+      "Action": [
+        "events:ListRules",
+        "events:ListConnections",
+        "events:ListApiDestinations",
+        "events:ListEventBuses"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CloudWatchMetricsRead",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:ListMetrics"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

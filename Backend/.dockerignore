@@ -1,0 +1,16 @@
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs
+dist
+.env
+.env.local
+.env.*.local
+.git
+.gitignore
+Dockerfile
+.dockerignore
+.ebextensions
+.platform
+sonar-project.properties

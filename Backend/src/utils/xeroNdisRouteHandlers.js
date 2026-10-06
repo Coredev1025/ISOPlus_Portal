@@ -1,11 +1,22 @@
+import { recordXeroInvoice } from './invoiceLedger/recordXero.js';
+import { lineAmountsFrom } from './invoiceLedger/lineAmounts.js';
+import { INVOICE_KIND } from '../constants/invoiceLedger.js';
 import Business from '../models/Business.js';
 import Item from '../models/Item.js';
 import { setIntegrationMessage, setGeneratedField, getQuoteNDISReferencedItems, getNDISMasterPlanReferencedItems, validateItemBelongsToTenant } from '../services/isoplus.js';
-import { createInvoice, createQuote, createOrUpdateContact, getContactByEmail, getContactByName, getAccounts, configure, ensureAuthenticated } from '../services/xero.js';
+import { createInvoice, createQuote, createOrUpdateContact, getContactByEmail, getContactByName, configure, ensureAuthenticated } from '../services/xero.js';
 import { Item as ItemPayloadDTO } from '../dto/itemsPayload.js';
-import { logAuditTrail } from '../utils/auditLogger.js';
+import { logXeroAudit } from '../utils/xeroAuditHelpers.js';
 import { getDateOnlyIso } from '../utils/ndisServiceRecords.js';
 import { mongoEq } from '../utils/securityHelpers.js';
+import {
+  pickGstValue,
+  resolveSalesLineMapping,
+} from '../utils/xeroLineItemMapping.js';
+import {
+  loadXeroChartOptions,
+  rejectIfAccountTaxMismatch,
+} from '../utils/xeroAccountTaxHelpers.js';
 import {
   getNdisInvoiceGeneratorContextFromMasterItems,
   prepareParticipantForInvoiceGenerator,
@@ -28,6 +39,7 @@ import {
   computeNdisServiceDate,
   ndisLinesToXeroItems,
   resolveNdisParticipantContact,
+  sumNdisLineAmounts,
 } from '../utils/ndisMasterPlanLineHelpers.js';
 import {
   buildNdisQuoteMappedAndXeroPayload,
@@ -39,21 +51,11 @@ import {
   buildParticipantTaxLineItems,
   resolveParticipantTaxDueDate,
 } from '../utils/xeroParticipantTaxHelpers.js';
+import { REF_ATTRIBUTE_NAMES } from '../constants/monthlyStatementAttributes.js';
+import { resolveInvoiceRecipient, readProfileRecipientAttributes } from '../utils/invoiceRecipientHelpers.js';
 
-const REF_ATTRIBUTE_NAMES = {
-  PROFILE_EMAIL_ADDRESS: 'Email',
-  PROFILE_BILLING_EMAIL: 'Billing Email',
-  PROFILE_BILLING_CONTACT: 'Billing Contact',
-  PROFILE_BILLING_ADDRESS: 'Billing Address',
-};
-
-const DEFAULT_SALES_ACCOUNT_CODE = '200';
 const DEFAULT_XERO_TIMEZONE = 'Australia/Sydney';
-const GST_TYPE_EXEMPT_OUTPUT = 'EXEMPTOUTPUT';
-
-function getSalesAccountCode(accounts) {
-  return accounts.find((acc) => acc.Type === 'REVENUE')?.Code || DEFAULT_SALES_ACCOUNT_CODE;
-}
+const NDIS_SALES_MAPPING_OPTIONS = { unmappedTaxFreeType: 'EXEMPTOUTPUT' };
 
 function parseMasterItemIdEntry(entry) {
   if (!entry) return null;
@@ -146,15 +148,24 @@ async function setupParticipantTaxXeroAuth(workspaceId, boardId, items) {
   ]);
 }
 
+/**
+ * KAN-272: `receiverName`/`billingAddressBase` are Case A/AA/B resolved — the
+ * Billing Contact/Address are used as the recipient only when a Billing
+ * Email is also on the profile; otherwise the participant's own name and
+ * address are used instead of "Unknown Participant". See
+ * invoiceRecipientHelpers.js for the shared rule.
+ */
 function getParticipantTaxBillingDetails(participantProfileItem) {
-  const receiverName = (getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || '').trim() || '';
-  const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || '';
-  const participantEmail = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_EMAIL_ADDRESS) || '';
+  const fullName = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_FULL_NAME) || '';
+  const recipient = resolveInvoiceRecipient(
+    readProfileRecipientAttributes(participantProfileItem, getValueFromFlatData, fullName),
+  );
+  const participantEmail = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_EMAIL) || '';
   return {
-    receiverName,
-    billingAddressBase,
+    receiverName: recipient.recipientName,
+    billingAddressBase: recipient.addressLines.join(', '),
     participantEmail,
-    effectiveParticipantName: receiverName || 'Unknown Participant',
+    effectiveParticipantName: recipient.recipientName || 'Unknown Participant',
   };
 }
 
@@ -180,14 +191,25 @@ async function persistParticipantTaxSuccess(items, workspaceId, boardId, savedIn
   }));
 }
 
+async function fetchBusinessForXero(workspaceId) {
+  try {
+    return await Business.findOne({ workspaceId: mongoEq(workspaceId) }).lean();
+  } catch {
+    return null;
+  }
+}
+
 async function fetchBusinessTimezone(workspaceId) {
-  return Business.findOne({ workspaceId: mongoEq(workspaceId) })
-    .select('headOfficeTimezone')
-    .lean()
-    .then(
-      (businessDoc) => businessDoc?.headOfficeTimezone || DEFAULT_XERO_TIMEZONE,
-      () => DEFAULT_XERO_TIMEZONE,
-    );
+  const businessDoc = await fetchBusinessForXero(workspaceId);
+  return businessDoc?.headOfficeTimezone || DEFAULT_XERO_TIMEZONE;
+}
+
+function firstRowGst(rows) {
+  for (const row of rows || []) {
+    const gst = pickGstValue(row?.gst, row?.GST);
+    if (gst) return gst;
+  }
+  return '';
 }
 
 function getMasterPlanItemRefs(masterPlanItem, refItemsMap) {
@@ -218,10 +240,10 @@ export async function handleXeroInvoicendis({
     const timezone = business?.headOfficeTimezone || DEFAULT_XERO_TIMEZONE;
     const serviceDate = computeNdisServiceDate(invoiceValues, timezone);
 
-    const [[servicePlanValues, cancellationTypeValues, , participantProfileValues], accounts] =
+    const [[servicePlanValues, cancellationTypeValues, , participantProfileValues], chart] =
       await Promise.all([
         getNDISMasterPlanReferencedItems(workspaceId, boardId, item.id),
-        getAccounts(workspaceId),
+        loadXeroChartOptions(workspaceId),
       ]);
     await assertMasterPlanReferences(workspaceId, boardId, item.id, servicePlanValues, participantProfileValues);
 
@@ -236,9 +258,26 @@ export async function handleXeroInvoicendis({
     });
 
     const groupSize = Number(invoiceValues['Group Size']) || 1;
-    const gstType = GST_TYPE_EXEMPT_OUTPUT;
     const nowISO = getDateOnlyIso(new Date(), timezone);
-    const salesAccountCode = getSalesAccountCode(accounts);
+    const gstValue = pickGstValue(invoiceValues.GST, invoiceValues['GST']);
+    const { accountCode: salesAccountCode, taxType: gstType } = resolveSalesLineMapping(
+      business,
+      'invoice',
+      gstValue,
+      chart.accounts,
+      undefined,
+      NDIS_SALES_MAPPING_OPTIONS,
+    );
+    const mismatchResponse = await rejectIfAccountTaxMismatch({
+      workspaceId,
+      boardId,
+      itemId: item.id,
+      accountCode: salesAccountCode,
+      taxType: gstType,
+      res,
+      chart,
+    });
+    if (mismatchResponse) return mismatchResponse;
 
     const lineCtx = {
       workspaceId,
@@ -263,6 +302,7 @@ export async function handleXeroInvoicendis({
       contact: { contactID: contact.contactID },
       reference: item.values['Invoice Number'],
       lineItems: ndisLinesToXeroItems(ndisLines, { gstType, salesAccountCode, serviceDate, formatValue }),
+      lineAmountTypes: 'Exclusive',
       date: invoiceDate || nowISO,
       dueDate: dueDate || nowISO,
       status: 'DRAFT',
@@ -270,7 +310,7 @@ export async function handleXeroInvoicendis({
 
     const createdInvoice = await createInvoice(invoice);
     await setIntegrationMessage(workspaceId, boardId, item.id, 'Your invoice has been created successfully in Xero.');
-    logAuditTrail({
+    logXeroAudit({
       workspaceId,
       action: 'Create Xero Invoice',
       detail: `Invoice created successfully, invoice number: ${createdInvoice.invoiceNumber}`,
@@ -278,6 +318,19 @@ export async function handleXeroInvoicendis({
     });
     await setGeneratedField(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`);
     await saveInvoiceNumber(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`, 'Xero');
+    // KAN-308: the invoice record, behind INVOICE_LEDGER_WRITE. Never throws.
+    await recordXeroInvoice({
+      workspaceId,
+      boardId,
+      itemIds: [item.id],
+      created: createdInvoice,
+      kind: INVOICE_KIND.NDIS,
+      participant: { name: participantProfileValues?.fullName },
+      lineAmounts: { [item.id]: Math.round(sumNdisLineAmounts(ndisLines) * 100) / 100 },
+      // What Xero received, not the item's own fields, which can be blank.
+      invoiceDate: invoice.date,
+      dueDate: invoice.dueDate,
+    });
     return res.json(createdInvoice);
   } catch (err) {
     const result = await handleError(err, workspaceId, boardId, item, req, 'invoice');
@@ -321,7 +374,31 @@ export async function handleXeroQuotendis({
       itemId: item.id,
     });
 
-    const lineItems = buildNdisQuoteXeroLineItems(NDISQuoteValues, refs.slice(1));
+    const chart = await loadXeroChartOptions(workspaceId);
+    const gstValue = pickGstValue(NDISQuoteValues.GST, NDISQuoteValues['GST']);
+    const { accountCode, taxType: gstType } = resolveSalesLineMapping(
+      business,
+      'quote',
+      gstValue,
+      chart.accounts,
+      'quoteService',
+      NDIS_SALES_MAPPING_OPTIONS,
+    );
+    const mismatchResponse = await rejectIfAccountTaxMismatch({
+      workspaceId,
+      boardId,
+      itemId: item.id,
+      accountCode,
+      taxType: gstType,
+      res,
+      chart,
+    });
+    if (mismatchResponse) return mismatchResponse;
+
+    const lineItems = buildNdisQuoteXeroLineItems(NDISQuoteValues, refs.slice(1), {
+      gstType,
+      accountCode,
+    });
     const nowISO = getDateOnlyIso(new Date(), business?.headOfficeTimezone || DEFAULT_XERO_TIMEZONE);
     const { mappedQuote, xeroQuote } = buildNdisQuoteMappedAndXeroPayload({
       NDISQuoteValues,
@@ -339,7 +416,7 @@ export async function handleXeroQuotendis({
 
     const createdQuote = await createQuote(xeroQuote);
     await setIntegrationMessage(workspaceId, boardId, item.id, 'Your quote has been created successfully in Xero.');
-    logAuditTrail({
+    logXeroAudit({
       workspaceId,
       action: 'Create Xero Quote',
       detail: `Quote created successfully, quote number: ${createdQuote.quoteNumber}`,
@@ -440,7 +517,7 @@ export async function handleXeroInvoicendisInvoiceGenerator({
       );
     }
 
-    const [contact, xeroNdisTimezone, accounts] = await Promise.all([
+    const [contact, business, chart] = await Promise.all([
       buildParticipantTaxContact({
         billingContact,
         participantProfile,
@@ -448,17 +525,16 @@ export async function handleXeroInvoicendisInvoiceGenerator({
         getContactByName,
         createOrUpdateContact,
       }),
-      fetchBusinessTimezone(workspaceId),
-      getAccounts(workspaceId),
+      fetchBusinessForXero(workspaceId),
+      loadXeroChartOptions(workspaceId),
     ]);
+    const xeroNdisTimezone = business?.headOfficeTimezone || DEFAULT_XERO_TIMEZONE;
 
     const invoiceDateRaw = req.body?.invoiceDate || new Date().toISOString();
     const dueDateRaw = req.body?.dueDate || '';
     const invoiceDate = invoiceDateRaw ? String(invoiceDateRaw).split('T')[0] : new Date().toISOString().split('T')[0];
     const dueDate = resolveParticipantTaxDueDate(invoiceDateRaw, dueDateRaw);
 
-    const salesAccountCode = getSalesAccountCode(accounts);
-    const gstType = GST_TYPE_EXEMPT_OUTPUT;
     const reference = buildNdisXeroInvoiceReference(participantProfile, profileItem);
 
     const invoice = {
@@ -466,6 +542,7 @@ export async function handleXeroInvoicendisInvoiceGenerator({
       contact: { contactID: contact.contactID },
       reference,
       lineItems: [],
+      lineAmountTypes: 'Exclusive',
       date: invoiceDate,
       dueDate,
       status: 'DRAFT',
@@ -485,6 +562,26 @@ export async function handleXeroInvoicendisInvoiceGenerator({
       return res.status(200).json({ message: 'There is nothing to invoice!' });
     }
 
+    const gstValue = pickGstValue(req.body?.gst, req.body?.GST, firstRowGst(allRows));
+    const { accountCode: salesAccountCode, taxType: gstType } = resolveSalesLineMapping(
+      business,
+      'invoice',
+      gstValue,
+      chart.accounts,
+      undefined,
+      NDIS_SALES_MAPPING_OPTIONS,
+    );
+    const mismatchResponse = await rejectIfAccountTaxMismatch({
+      workspaceId,
+      boardId,
+      itemId: masterItems[0]?.itemId,
+      accountCode: salesAccountCode,
+      taxType: gstType,
+      res,
+      chart,
+    });
+    if (mismatchResponse) return mismatchResponse;
+
     const enrichedRows = enrichNdisInvoiceGeneratorRows(allRows, buildMasterItemsMap(masterItems), xeroNdisTimezone);
     appendEnrichedRowsToXeroInvoice(
       invoice,
@@ -498,6 +595,18 @@ export async function handleXeroInvoicendisInvoiceGenerator({
     const createdInvoice = await createInvoice(invoice);
     const savedInvoiceNumber = `${createdInvoice.invoiceNumber} (Xero)`;
     await persistXeroInvoiceNumbers(masterItems, workspaceId, boardId, savedInvoiceNumber, saveInvoiceNumber);
+    // KAN-308: the invoice record, behind INVOICE_LEDGER_WRITE. Never throws.
+    await recordXeroInvoice({
+      workspaceId,
+      boardId,
+      itemIds: masterItems.map((item) => item.itemId),
+      created: createdInvoice,
+      kind: INVOICE_KIND.NDIS,
+      participant: { name: participantName },
+      lineAmounts: lineAmountsFrom(allRows, 'sourceItemId', (row) => row.totalAmount),
+      invoiceDate: invoice.date,
+      dueDate: invoice.dueDate,
+    });
 
     return res.json({
       invoiceNumber: createdInvoice.invoiceNumber,
@@ -550,7 +659,7 @@ export async function handleXeroInvoiceParticipantTax({
       effectiveParticipantName,
     } = getParticipantTaxBillingDetails(participantProfileItem);
 
-    const [contact, accounts] = await Promise.all([
+    const [contact, chart] = await Promise.all([
       buildParticipantTaxContact({
         billingContact: receiverName,
         participantProfile: {
@@ -562,16 +671,40 @@ export async function handleXeroInvoiceParticipantTax({
         getContactByName,
         createOrUpdateContact,
       }),
-      getAccounts(workspaceId),
+      loadXeroChartOptions(workspaceId),
     ]);
 
     const effectiveDueDate = resolveParticipantTaxDueDate(invoiceDate, dueDate, true);
-    const salesAccountCode = getSalesAccountCode(accounts);
-    const { lineItems } = buildParticipantTaxLineItems({
+    const gstValue = pickGstValue(
+      req.body?.gst,
+      req.body?.GST,
+      items[0]?.values?.GST,
+      items[0]?.gst,
+    );
+    const { accountCode: salesAccountCode, taxType: gstType } = resolveSalesLineMapping(
+      business,
+      'invoice',
+      gstValue,
+      chart.accounts,
+      undefined,
+      NDIS_SALES_MAPPING_OPTIONS,
+    );
+    const mismatchResponse = await rejectIfAccountTaxMismatch({
+      workspaceId,
+      boardId,
+      itemId: items[0]?.id,
+      accountCode: salesAccountCode,
+      taxType: gstType,
+      res,
+      chart,
+    });
+    if (mismatchResponse) return mismatchResponse;
+
+    const { lineItems, lineAmounts } = buildParticipantTaxLineItems({
       items,
       isLowCatBoard,
       salesAccountCode,
-      gstType: GST_TYPE_EXEMPT_OUTPUT,
+      gstType,
       business,
       getXeroServiceRowDate,
       appendDateSuffix,
@@ -593,6 +726,7 @@ export async function handleXeroInvoiceParticipantTax({
       contact: { contactID: contact.contactID },
       reference: `${labels.invoiceReferencePrefix} - ${effectiveParticipantName}`,
       lineItems,
+      lineAmountTypes: 'Exclusive',
       date: invoiceDate,
       dueDate: effectiveDueDate,
       status: 'DRAFT',
@@ -607,8 +741,22 @@ export async function handleXeroInvoiceParticipantTax({
       labels.successMessage,
       saveInvoiceNumber,
     );
+    // KAN-308: the invoice record, behind INVOICE_LEDGER_WRITE. Never throws. The
+    // participant is the person billed for, not the billing contact on the invoice.
+    await recordXeroInvoice({
+      workspaceId,
+      boardId,
+      itemIds: items.map((item) => item.id),
+      created: createdInvoice,
+      kind: INVOICE_KIND.AGE_CARE,
+      lowCat: Boolean(isLowCatBoard),
+      participant: { name: participantName },
+      lineAmounts,
+      invoiceDate,
+      dueDate: effectiveDueDate,
+    });
 
-    logAuditTrail({
+    logXeroAudit({
       workspaceId,
       action: labels.auditAction,
       detail: `Invoice created successfully, invoice number: ${createdInvoice.invoiceNumber}, ${labels.auditRoleLabel}: ${effectiveParticipantName}, items: ${items.length}`,

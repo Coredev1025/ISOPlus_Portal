@@ -2,29 +2,54 @@ import { XeroClient } from 'xero-node';
 import Business from '../models/Business.js';
 import { error } from '../utils/logger.js';
 import { buildXeroContactErrorMessage } from '../utils/xeroContactErrorHelpers.js';
-import { randomAlphanumeric } from '../utils/securityHelpers.js';
 import {
     IsoPlusInvoiceValues
 } from '../dto/itemsPayload.js';
+import {
+    applyIncomingOAuthStateToXeroClient,
+    buildXeroConsentUrl,
+} from '../utils/xeroOAuthStateHelpers.js';
 
 let xeroClient = null;
 
+/**
+ * The OAuth scopes requested at consent.
+ *
+ * The default is the broad set the production app was registered with. Xero
+ * apps created after 2 March 2026 only receive the new granular scopes, so a
+ * consent request naming 'accounting.transactions' or 'accounting.reports.read'
+ * is refused for them — XERO_SCOPES (space-separated) lets such an environment
+ * name the scopes its app actually has without changing what production sends.
+ */
+function resolveXeroScopes() {
+    const configured = (process.env.XERO_SCOPES || '').trim();
+    const scopes = configured
+        || 'openid profile email accounting.settings accounting.contacts accounting.transactions accounting.reports.read accounting.attachments offline_access';
+    return scopes.split(/\s+/);
+}
+
+function buildXeroClient() {
+    const config = {
+        clientId: process.env.XERO_CLIENT_ID,
+        clientSecret: process.env.XERO_CLIENT_SECRET,
+        scopes: resolveXeroScopes(),
+    };
+
+    if (process.env.XERO_REDIRECT_URL) {
+        config.grantType = 'authorization_code';
+        config.redirectUris = [process.env.XERO_REDIRECT_URL];
+    } else {
+        config.grantType = 'client_credentials';
+    }
+
+    return new XeroClient(config);
+}
+
+export const createXeroOAuthClient = buildXeroClient;
+
 export async function configure() {
     try {
-        const config = {
-            clientId: process.env.XERO_CLIENT_ID,
-            clientSecret: process.env.XERO_CLIENT_SECRET,
-            scopes: 'openid profile email accounting.settings accounting.contacts accounting.transactions accounting.reports.read accounting.attachments offline_access'.split(" "),
-        };
-
-        if (process.env.XERO_REDIRECT_URL) {
-            config.grantType = 'authorization_code';
-            config.redirectUris = [process.env.XERO_REDIRECT_URL];
-        } else {
-            config.grantType = 'client_credentials';
-        }
-
-        xeroClient = new XeroClient(config);
+        xeroClient = buildXeroClient();
         return xeroClient;
     } catch (err) {
         error('Xero-Service', 'Error configuring Xero client', err);
@@ -32,34 +57,50 @@ export async function configure() {
     }
 }
 
-export async function getAuthUrl() {
-    if (!xeroClient) {
+function requireXeroClient(client) {
+    const resolved = client || xeroClient;
+    if (!resolved) {
         throw new Error('Xero client is not configured.');
     }
-
-    const scopes = 'openid profile email accounting.settings accounting.contacts accounting.transactions accounting.reports.read accounting.attachments offline_access'.split(" ");
-    const state = randomAlphanumeric(16);
-    const url = await xeroClient.buildConsentUrl(scopes, state);
-    return url;
+    return resolved;
 }
 
-export async function callback(code, url) {
+export async function getAuthUrl(workspaceId, frontendOrigin, userId, connectTicket, client) {
+    const xero = requireXeroClient(client);
+    const consentUrl = await xero.buildConsentUrl();
+    return buildXeroConsentUrl(consentUrl, workspaceId, frontendOrigin, userId, connectTicket);
+}
+
+export async function callback(code, url, client) {
     try {
-        await xeroClient.apiCallback(url);
-        const tokenSet = xeroClient.readTokenSet();
-        const tenants = await xeroClient.updateTenants(false);
-        
-        // Get organization information
+        const xero = requireXeroClient(client);
+        applyIncomingOAuthStateToXeroClient(xero, url);
+        const requestUrl = new URL(url || '', 'https://placeholder.local');
+        if (requestUrl.searchParams.get('error')) {
+            return {
+                success: false,
+                message: 'Xero authorization was denied or could not be completed. Please try again.',
+            };
+        }
+        await xero.apiCallback(url);
+        const tokenSet = xero.readTokenSet();
+        const tenants = await xero.updateTenants(false);
+
         let organizationInfo = null;
         if (tenants && tenants.length > 0) {
-            organizationInfo = await getOrganizationInfo(tenants[0].tenantId);
+            try {
+                organizationInfo = await readOrganizationFromClient(xero, tenants[0].tenantId);
+            } catch (err) {
+                error('Xero-Service', 'Error getting organization info', err);
+            }
         }
-        
+
         return {
             success: true,
             message: 'Successfully connected to Xero!',
             tokenSet,
             tenants,
+            tenantId: tenants?.[0]?.tenantId,
             organization: organizationInfo
         };
     } catch (err) {
@@ -71,30 +112,53 @@ export async function callback(code, url) {
     }
 }
 
+const XERO_RECONNECT_MESSAGE =
+    'No Xero organisation is linked. Disconnect and Connect Xero again, then select an organisation.';
+
+function organizationFromApiOrg(org) {
+    if (!org) return null;
+    return {
+        name: org.name,
+        legalName: org.legalName,
+        shortCode: org.shortCode,
+        organisationId: org.organisationID || org.organisationId,
+        baseCurrency: org.baseCurrency,
+        countryCode: org.countryCode,
+        isDemoCompany: org.isDemoCompany,
+        organisationStatus: org.organisationStatus
+    };
+}
+
+function organizationFromTenantConnection(tenant) {
+    if (!tenant?.tenantId) return null;
+    return {
+        name: tenant.tenantName || 'Connected organisation',
+        legalName: tenant.tenantName || '',
+        shortCode: '',
+        organisationId: tenant.tenantId,
+        baseCurrency: '',
+        countryCode: '',
+        isDemoCompany: false,
+        organisationStatus: ''
+    };
+}
+
+async function readOrganizationFromClient(client, tenantId) {
+    const response = await client.accountingApi.getOrganisations(tenantId);
+    const orgs = response.body?.organisations || response.body?.Organisations || [];
+    if (orgs.length > 0) {
+        return organizationFromApiOrg(orgs[0]);
+    }
+    return null;
+}
+
 export async function getOrganizationInfo(tenantId) {
     try {
         if (!xeroClient) {
             throw new Error('Xero client is not configured.');
         }
 
-        // Get organization details using the accounting API
-        const response = await xeroClient.accountingApi.getOrganisations(tenantId);
-        
-        if (response.body.organisations && response.body.organisations.length > 0) {
-            const org = response.body.organisations[0];
-            return {
-                name: org.name,
-                legalName: org.legalName,
-                shortCode: org.shortCode,
-                organisationId: org.organisationId,
-                baseCurrency: org.baseCurrency,
-                countryCode: org.countryCode,
-                isDemoCompany: org.isDemoCompany,
-                organisationStatus: org.organisationStatus
-            };
-        }
-        
-        return null;
+        return await readOrganizationFromClient(xeroClient, tenantId);
     } catch (err) {
         error('Xero-Service', 'Error getting organization info', err);
         // Don't throw error here as it's not critical for the OAuth flow
@@ -253,6 +317,7 @@ export async function createInvoice(invoice) {
                 reference: invoice.reference,
                 date: normalizeDateOnly(invoice.date),
                 dueDate: normalizeDateOnly(invoice.dueDate),
+                lineAmountTypes: invoice.lineAmountTypes || 'Exclusive',
                 lineItems: mapInvoiceLineItems(invoice.lineItems),
                 status: invoice.status || 'AUTHORISED'
             }]
@@ -438,7 +503,10 @@ export async function createQuote(quote) {
         const { token, xeroTenantId } = await createToken();
 
         const quotes = {
-            quotes: [quote],
+            quotes: [{
+                ...quote,
+                lineAmountTypes: quote.lineAmountTypes || 'Exclusive',
+            }],
         };
 
         const createdQuotes = await xeroClient.accountingApi.createQuotes(
@@ -503,7 +571,10 @@ export async function createPurchaseOrder(purchaseOrder) {
         const { token, xeroTenantId } = await createToken();
 
         const purchaseOrders = {
-            purchaseOrders: [purchaseOrder],
+            purchaseOrders: [{
+                ...purchaseOrder,
+                lineAmountTypes: purchaseOrder.lineAmountTypes || 'Exclusive',
+            }],
         };
 
         const createdPurchaseOrders = await xeroClient.accountingApi.createPurchaseOrders(
@@ -531,44 +602,110 @@ async function getLatestTokens(workspaceId) {
     return business.xeroTokens;
 }
 
-async function refreshExpiredXeroToken(workspaceId, currentTokenSet, refreshTokenExpiresAt) {
-    if (!currentTokenSet.expired() || !currentTokenSet.refresh_token) return;
+async function persistRefreshedTokenSet(workspaceId, newTokenSet, previousRefreshToken) {
+    const refreshTokenChanged =
+        newTokenSet.refresh_token && newTokenSet.refresh_token !== previousRefreshToken;
+    const now = new Date();
+    const updateFields = {
+        'xeroTokens.accessToken': newTokenSet.access_token,
+        'xeroTokens.refreshToken': newTokenSet.refresh_token,
+        'xeroTokens.expiresAt': newTokenSet.expires_at
+    };
+    if (refreshTokenChanged) {
+        updateFields['xeroTokens.refreshTokenExpiresAt'] =
+            now.getTime() + 60 * 24 * 60 * 60 * 1000;
+    }
+    await Business.updateOne(
+        { workspaceId: { $eq: String(workspaceId) } },
+        { $set: updateFields }
+    );
+    await xeroClient.setTokenSet(newTokenSet);
+}
+
+async function refreshXeroTokenSet(workspaceId, refreshToken, refreshTokenExpiresAt) {
+    if (!refreshToken) {
+        throw new Error('Your Xero authorization token is expired. Please reconnect to Xero.');
+    }
     if (!refreshTokenExpiresAt || refreshTokenExpiresAt < new Date().getTime()) {
-        throw new Error('Your Xero authorization token is expired.');
+        throw new Error('Your Xero authorization token is expired. Please reconnect to Xero.');
     }
     try {
         const newTokenSet = await xeroClient.refreshWithRefreshToken(
             process.env.XERO_CLIENT_ID,
             process.env.XERO_CLIENT_SECRET,
-            currentTokenSet.refresh_token
+            refreshToken
         );
-
-        const refreshTokenChanged = newTokenSet.refresh_token && newTokenSet.refresh_token !== currentTokenSet.refresh_token;
-        const now = new Date();
-        const updateFields = {
-            'xeroTokens.accessToken': newTokenSet.access_token,
-            'xeroTokens.refreshToken': newTokenSet.refresh_token,
-            'xeroTokens.expiresAt': newTokenSet.expires_at
-        };
-        if (refreshTokenChanged) {
-            updateFields['xeroTokens.refreshTokenExpiresAt'] = now.getTime() + 60 * 24 * 60 * 60 * 1000;
-        }
-        await Business.updateOne(
-            { workspaceId: { $eq: String(workspaceId) } },
-            { $set: updateFields }
-        );
-        await xeroClient.setTokenSet(newTokenSet);
+        await persistRefreshedTokenSet(workspaceId, newTokenSet, refreshToken);
+        return newTokenSet;
     } catch (refreshError) {
         error('Xero-Service', 'Error refreshing token', refreshError);
-        throw new Error('Your Xero authorization token is expired. Please go to ISOPlus Portal and authorize again.');
+        throw new Error('Your Xero authorization token is expired. Please reconnect to Xero.');
     }
+}
+
+async function refreshExpiredXeroToken(workspaceId, currentTokenSet, refreshTokenExpiresAt) {
+    if (!currentTokenSet.expired() || !currentTokenSet.refresh_token) return;
+    await refreshXeroTokenSet(
+        workspaceId,
+        currentTokenSet.refresh_token,
+        refreshTokenExpiresAt
+    );
+}
+
+async function loadStoredXeroTenantId(workspaceId) {
+    const business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } })
+        .select('xeroTenantId xeroOrganization')
+        .lean();
+    return (
+        business?.xeroTenantId ||
+        business?.xeroOrganization?.organisationId ||
+        null
+    );
+}
+
+async function persistXeroTenantId(workspaceId, tenantId) {
+    if (!tenantId) return;
+    await Business.updateOne(
+        { workspaceId: { $eq: String(workspaceId) } },
+        { $set: { xeroTenantId: tenantId } }
+    );
+}
+
+async function resolveActiveTenantId(workspaceId, refreshTokenExpiresAt) {
+    let tenants = await xeroClient.updateTenants(false);
+    if (!tenants?.length) {
+        const tokenSet = xeroClient.readTokenSet();
+        if (tokenSet?.refresh_token) {
+            await refreshXeroTokenSet(
+                workspaceId,
+                tokenSet.refresh_token,
+                refreshTokenExpiresAt
+            );
+            tenants = await xeroClient.updateTenants(false);
+        }
+    }
+    if (tenants?.length) {
+        const tenantId = tenants[0].tenantId;
+        await persistXeroTenantId(workspaceId, tenantId);
+        return { tenantId, tenant: tenants[0] };
+    }
+
+    const storedTenantId = await loadStoredXeroTenantId(workspaceId);
+    if (storedTenantId) {
+        // xero-node exposes tenants via a getter over `_tenants` (no setter).
+        xeroClient._tenants = [{ tenantId: storedTenantId }];
+        return { tenantId: storedTenantId, tenant: { tenantId: storedTenantId } };
+    }
+
+    throw new Error(XERO_RECONNECT_MESSAGE);
 }
 
 export async function ensureAuthenticated(workspaceId) {
     if (!isValidWorkspaceId(workspaceId)) {
         throw new Error('Invalid workspace Id');
     }
-    const { accessToken, refreshToken, expiresAt, refreshTokenExpiresAt } = await getLatestTokens(workspaceId);
+    const { accessToken, refreshToken, expiresAt, refreshTokenExpiresAt } =
+        await getLatestTokens(workspaceId);
 
     if (!xeroClient) throw new Error('Xero client not configured');
 
@@ -580,17 +717,12 @@ export async function ensureAuthenticated(workspaceId) {
         scopes: 'openid profile email accounting.settings accounting.contacts accounting.transactions accounting.reports.read accounting.attachments offline_access'.split(" "),
     });
 
-    let currentTokenSet = xeroClient.readTokenSet();
-    if (currentTokenSet) {
-        await refreshExpiredXeroToken(workspaceId, currentTokenSet, refreshTokenExpiresAt);
-    } else {
+    const currentTokenSet = xeroClient.readTokenSet();
+    if (!currentTokenSet) {
         throw new Error('Not authenticated with Xero');
     }
-
-    const tenants = await xeroClient.updateTenants(false);
-    if (!tenants || !tenants.length) {
-        throw new Error('No Xero organizations connected');
-    }
+    await refreshExpiredXeroToken(workspaceId, currentTokenSet, refreshTokenExpiresAt);
+    return resolveActiveTenantId(workspaceId, refreshTokenExpiresAt);
 }
 
 export async function getAccounts(workspaceId) {
@@ -599,13 +731,7 @@ export async function getAccounts(workspaceId) {
             throw new Error('Invalid workspace Id');
         }
         if (!xeroClient) await configure();
-        await ensureAuthenticated(workspaceId);
-
-        await xeroClient.updateTenants();
-        if (!xeroClient.tenants?.length) {
-            throw new Error('No organizations connected');
-        }
-        const tenantId = xeroClient.tenants[0].tenantId;
+        const { tenantId } = await ensureAuthenticated(workspaceId);
         const response = await xeroClient.accountingApi.getAccounts(tenantId);
         const accounts = response.body?.Accounts ?? response.body?.accounts;
         if (!Array.isArray(accounts)) {
@@ -619,11 +745,68 @@ export async function getAccounts(workspaceId) {
             throw new Error('Permission denied. Ensure your app has accounting.settings scope.');
         }
         if (err.response?.statusCode === 401) {
-            throw new Error('Authentication expired. Please re-authenticate.');
+            throw new Error('Authentication expired. Please reconnect to Xero.');
         }
         
-        throw new Error('Error getting accounts: ' + err.message);
+        throw new Error(err.message || 'Error getting accounts');
     }
+}
+
+export async function getTaxRates(workspaceId) {
+    try {
+        if (!isValidWorkspaceId(workspaceId)) {
+            throw new Error('Invalid workspace Id');
+        }
+        if (!xeroClient) await configure();
+        const { tenantId } = await ensureAuthenticated(workspaceId);
+        const response = await xeroClient.accountingApi.getTaxRates(tenantId);
+        const taxRates = response.body?.TaxRates ?? response.body?.taxRates;
+        if (!Array.isArray(taxRates)) {
+            return [];
+        }
+        return taxRates;
+    } catch (err) {
+        error('Xero-Service', 'Error getting tax rates', err);
+
+        if (err.response?.statusCode === 403) {
+            throw new Error('Permission denied. Ensure your app has accounting.settings scope.');
+        }
+        if (err.response?.statusCode === 401) {
+            throw new Error('Authentication expired. Please reconnect to Xero.');
+        }
+
+        throw new Error(err.message || 'Error getting tax rates');
+    }
+}
+
+export async function isAccountTaxRateMatched(workspaceId, accountCode, taxType, chart) {
+    if (!accountCode || !taxType) return true;
+
+    let accounts;
+    let taxRates;
+    try {
+        if (chart?.accounts && chart?.taxRates) {
+            accounts = chart.accounts;
+            taxRates = chart.taxRates;
+        } else {
+            // Sequential: concurrent getAccounts + getTaxRates can race refresh tokens.
+            accounts = await getAccounts(workspaceId);
+            taxRates = await getTaxRates(workspaceId);
+        }
+    } catch {
+        // Cannot validate (auth/network) — do not block create.
+        return true;
+    }
+
+    const account = (accounts || []).find((a) => (a.Code ?? a.code) === accountCode);
+    const rate = (taxRates || []).find((t) => (t.TaxType ?? t.taxType) === taxType);
+    // Unknown account or tax type in chart: skip gate (not a confirmed mismatch).
+    if (!account || !rate) return true;
+
+    const accountClass = String(account.Class ?? account._class ?? account.class ?? '').toUpperCase();
+    const canApplyToRevenue = rate.CanApplyToRevenue ?? rate.canApplyToRevenue ?? false;
+    const canApplyToExpenses = rate.CanApplyToExpenses ?? rate.canApplyToExpenses ?? false;
+    return accountClass === 'EXPENSE' ? !!canApplyToExpenses : !!canApplyToRevenue;
 }
 
 export async function updateOrganizationInfo(workspaceId) {
@@ -631,26 +814,29 @@ export async function updateOrganizationInfo(workspaceId) {
         if (!isValidWorkspaceId(workspaceId)) {
             throw new Error('Invalid workspace Id');
         }
-        await configure();        
-        await ensureAuthenticated(workspaceId);
-        
-        const tenants = await xeroClient.updateTenants(false);
-        if (!tenants || !tenants.length) {
-            throw new Error('No Xero organizations connected');
+        await configure();
+        const { tenantId, tenant } = await ensureAuthenticated(workspaceId);
+        const organizationInfo =
+            (await getOrganizationInfo(tenantId)) ||
+            organizationFromTenantConnection(tenant);
+
+        if (!organizationInfo) {
+            throw new Error(XERO_RECONNECT_MESSAGE);
         }
-        
-        const organizationInfo = await getOrganizationInfo(tenants[0].tenantId);
-        
-        if (organizationInfo) {
-            await Business.updateOne(
-                { workspaceId: { $eq: String(workspaceId) } },
-                { $set: { xeroOrganization: organizationInfo } }
-            );
-        }
-        
+
+        await Business.updateOne(
+            { workspaceId: { $eq: String(workspaceId) } },
+            {
+                $set: {
+                    xeroOrganization: organizationInfo,
+                    xeroTenantId: tenantId,
+                },
+            }
+        );
+
         return organizationInfo;
     } catch (err) {
         error('Xero-Service', 'Error updating organization info', err);
-        throw new Error('Error updating organization info: ' + err.message);
+        throw new Error(err.message || 'Error updating organization info');
     }
 }

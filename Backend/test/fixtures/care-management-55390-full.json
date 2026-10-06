@@ -1,0 +1,2678 @@
+{
+  "$description": [
+    "Full local replica of workspace 55390 \"ISO+™ NDIS & SaH Demo\" as read from",
+    "portal-dev on 2026-08-17 — every invoice-generator row of the three Care",
+    "Management boards, verbatim ids, dates, statuses and amounts (SaH totals match",
+    "dev's computed 24587.50 / 22319.70 / 1216.50 to the cent). Person, bank and",
+    "billing-contact values are invented; participant NAMES are the demo names dev",
+    "itself shows. Data only: no automationSettings / scheduledJobs — load",
+    "care-management-automation.json when you need an armed, billable slot.",
+    "Only rows dev shows as named-with-a-service-code carry Timesheet Approval",
+    "\"Approved\" (with resolvable UUID refs and zero-priced plans), so a scheduler",
+    "tick over this data can list rows but never mint an unexpected invoice."
+  ],
+  "capturedFrom": {
+    "workspaceId": "55390",
+    "workspaceName": "ISO+™ NDIS & SaH Demo",
+    "boards": [
+      {
+        "boardId": "jpjztrn14pJ",
+        "boardName": "🧑‍⚕️ Care Management",
+        "label": "Care Management - SaH"
+      },
+      {
+        "boardId": "o24sGM1FoST",
+        "boardName": "🧑‍⚕️ Care Management",
+        "label": "Care Management - NDIS - Certification"
+      },
+      {
+        "boardId": "dwV23F5WcQL",
+        "boardName": "🧑‍⚕️ Care Management (NEW)",
+        "label": "Care Management - NDIS - Certification"
+      }
+    ],
+    "readOn": "2026-08-17",
+    "via": "portal-be-dev.isoplus.online /api/items/*/invoice-generator (65 + 43 + 3 rows), /api/boards, /api/business/profile"
+  },
+  "business": {
+    "workspaceId": "55390",
+    "name": "ISO Consulting Services (Fixture)",
+    "abn": "98 765 432 109",
+    "headOfficeTimezone": "Australia/Sydney",
+    "address": {
+      "street": "2 Fixture Avenue",
+      "suburb": "Demoville",
+      "state": "NSW",
+      "postcode": "2001",
+      "country": "Australia"
+    },
+    "bankDetails": {
+      "accountName": "ISO Consulting Services Fixture",
+      "bankName": "Fixture Bank",
+      "bsb": "000-000",
+      "accountNumber": "12345678",
+      "accountsReceivableTerms": "Payment due within 14 days of invoice date."
+    },
+    "documentNumbering": {
+      "quote": {
+        "prefix": "QT-",
+        "nextNumber": 1000
+      },
+      "invoice": {
+        "prefix": "INV-",
+        "nextNumber": 1004
+      },
+      "purchaseOrder": {
+        "prefix": "PO-",
+        "nextNumber": 1000
+      }
+    },
+    "featureToggles": {
+      "invoiceStatementAutomation": true
+    }
+  },
+  "boards": [
+    {
+      "boardId": "jpjztrn14pJ",
+      "workspaceId": "55390",
+      "name": "🧑‍⚕️ Care Management",
+      "label": "Care Management - SaH",
+      "syncData": true,
+      "syncStatus": "realtime_sync",
+      "attribute": {
+        "id": "24682234-d689-4504-879b-5bd0ae89b031",
+        "name": "Integration Message"
+      },
+      "pdfAttribute": {
+        "id": ""
+      }
+    },
+    {
+      "boardId": "o24sGM1FoST",
+      "workspaceId": "55390",
+      "name": "🧑‍⚕️ Care Management",
+      "label": "Care Management - NDIS - Certification",
+      "syncData": true,
+      "syncStatus": "realtime_sync",
+      "attribute": {
+        "id": ""
+      },
+      "pdfAttribute": {
+        "id": ""
+      }
+    },
+    {
+      "boardId": "dwV23F5WcQL",
+      "workspaceId": "55390",
+      "name": "🧑‍⚕️ Care Management (NEW)",
+      "label": "Care Management - NDIS - Certification",
+      "syncData": true,
+      "syncStatus": "realtime_sync",
+      "attribute": {
+        "id": "5f6ce8ae-ea66-49d0-92fb-ed67af9086e2",
+        "name": "Integration Message"
+      },
+      "pdfAttribute": {
+        "id": ""
+      }
+    },
+    {
+      "boardId": "t29GNU4nV2A",
+      "workspaceId": "55390",
+      "name": "📖 NDIS Library",
+      "label": "No Label",
+      "syncData": true,
+      "syncStatus": "realtime_sync",
+      "attribute": {
+        "id": ""
+      },
+      "pdfAttribute": {
+        "id": ""
+      }
+    }
+  ],
+  "invoiceNumbers": [
+    {
+      "itemId": "d39ba1c1-95e0-41f0-8d3b-ad3d50253f28",
+      "boardId": "jpjztrn14pJ",
+      "invoiceNumber": "INV-1002 (ISO+™)",
+      "pdfLink": "https://isoplus-portal-dev-public.s3.ap-southeast-2.amazonaws.com/output/55390/jpjztrn14pJ/Participant-invoices/INV-1002-ISO%2B™-Jane-Smith.pdf"
+    },
+    {
+      "itemId": "8ddc3c43-2a97-470e-a959-d2817fc532cb",
+      "boardId": "jpjztrn14pJ",
+      "invoiceNumber": "INV-1002 (ISO+™)",
+      "pdfLink": "https://isoplus-portal-dev-public.s3.ap-southeast-2.amazonaws.com/output/55390/jpjztrn14pJ/Participant-invoices/INV-1002-ISO%2B™-Jane-Smith.pdf"
+    },
+    {
+      "itemId": "316e1440-d7c6-44ae-b765-1b73b179ad70",
+      "boardId": "jpjztrn14pJ",
+      "invoiceNumber": "INV-1002 (ISO+™)",
+      "pdfLink": "https://isoplus-portal-dev-public.s3.ap-southeast-2.amazonaws.com/output/55390/jpjztrn14pJ/Participant-invoices/INV-1002-ISO%2B™-Jane-Smith.pdf"
+    },
+    {
+      "itemId": "75a48aa4-737e-405a-83b5-881f0e7665db",
+      "boardId": "jpjztrn14pJ",
+      "invoiceNumber": "INV-1002 (ISO+™)",
+      "pdfLink": "https://isoplus-portal-dev-public.s3.ap-southeast-2.amazonaws.com/output/55390/jpjztrn14pJ/Participant-invoices/INV-1002-ISO%2B™-Jane-Smith.pdf"
+    },
+    {
+      "itemId": "41fdecfd-7949-48bd-b1b1-2b37102a3913",
+      "boardId": "o24sGM1FoST",
+      "invoiceNumber": "INV-1003 (ISO+™)",
+      "pdfLink": "https://isoplus-portal-dev-public.s3.ap-southeast-2.amazonaws.com/output/55390/o24sGM1FoST/NDIS-invoices/INV-1003-ISO%2B™-David_Smith.pdf"
+    }
+  ],
+  "items": [
+    {
+      "$case": "participant profile — Jane Smith (jane)",
+      "itemId": "55390f00-aaaa-4001-8001-000000000001",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "📋 Participants Intake",
+      "data": {
+        "Full Name/Preferred Name": "Jane Smith",
+        "My Aged Care ID Number": "AC12345",
+        "Provider ID": "AA111",
+        "Billing Contact": "Jane Smith",
+        "Billing Address": "12 Fixture Street, Demoville NSW 2001"
+      }
+    },
+    {
+      "$case": "participant profile — David Brown (davidb)",
+      "itemId": "55390f00-aaaa-4001-8001-000000000002",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "📋 Participants Intake",
+      "data": {
+        "Full Name/Preferred Name": "David Brown",
+        "Billing Contact": "David Brown",
+        "Billing Address": "14 Fixture Street, Demoville NSW 2001"
+      }
+    },
+    {
+      "$case": "participant profile — Lisa Morphy (lisa)",
+      "itemId": "55390f00-aaaa-4001-8001-000000000003",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "📋 Participants Intake",
+      "data": {
+        "Full Name/Preferred Name": "Lisa Morphy",
+        "Billing Contact": "Lisa Morphy",
+        "Billing Address": "16 Fixture Street, Demoville NSW 2001"
+      }
+    },
+    {
+      "$case": "participant profile — David Smith (davids)",
+      "itemId": "55390f00-bbbb-4001-8001-000000000001",
+      "boardId": "o24sGM1FoST",
+      "folderId": "📋 Participants Intake",
+      "data": {
+        "Full Name/Preferred Name": "David Smith",
+        "NDIS Number": "430111222",
+        "Billing Contact": "David Smith",
+        "Billing Address": "21 Fixture Road, Demoville NSW 2001"
+      }
+    },
+    {
+      "$case": "participant profile — Martin Space (martin)",
+      "itemId": "55390f00-bbbb-4001-8001-000000000002",
+      "boardId": "o24sGM1FoST",
+      "folderId": "📋 Participants Intake",
+      "data": {
+        "Full Name/Preferred Name": "Martin Space",
+        "NDIS Number": "430333444",
+        "Billing Contact": "Martin Space",
+        "Billing Address": "23 Fixture Road, Demoville NSW 2001"
+      }
+    },
+    {
+      "$case": "participant profile — Sunil Patel (sunil)",
+      "itemId": "55390f00-bbbb-4001-8001-000000000003",
+      "boardId": "o24sGM1FoST",
+      "folderId": "📋 Participants Intake",
+      "data": {
+        "Full Name/Preferred Name": "Sunil Patel",
+        "NDIS Number": "430555777",
+        "Billing Contact": "Sunil Patel",
+        "Billing Address": "25 Fixture Road, Demoville NSW 2001"
+      }
+    },
+    {
+      "$case": "participant profile — George Brown (george)",
+      "itemId": "55390f00-bbbb-4001-8001-000000000004",
+      "boardId": "o24sGM1FoST",
+      "folderId": "📋 Participants Intake",
+      "data": {
+        "Full Name/Preferred Name": "George Brown",
+        "NDIS Number": "430777888",
+        "Billing Contact": "George Brown",
+        "Billing Address": "27 Fixture Road, Demoville NSW 2001"
+      }
+    },
+    {
+      "$case": "participant profile — Kate Abraham (kate)",
+      "itemId": "55390f00-bbbb-4001-8001-000000000005",
+      "boardId": "o24sGM1FoST",
+      "folderId": "📋 Participants Intake",
+      "data": {
+        "Full Name/Preferred Name": "Kate Abraham",
+        "NDIS Number": "430999000",
+        "Billing Contact": "Kate Abraham",
+        "Billing Address": "29 Fixture Road, Demoville NSW 2001"
+      }
+    },
+    {
+      "$case": "participant profile — Mike Bird (mike)",
+      "itemId": "55390f00-cccc-4001-8001-000000000001",
+      "boardId": "dwV23F5WcQL",
+      "folderId": "📋 Participants Intake",
+      "data": {
+        "Full Name/Preferred Name": "Mike Bird",
+        "NDIS Number": "430555666",
+        "Billing Contact": "Mike Bird",
+        "Billing Address": "31 Fixture Lane, Demoville NSW 2001"
+      }
+    },
+    {
+      "$case": "funding source — Home Support(HS) Quarterly",
+      "itemId": "55390f00-aaaa-4004-8004-000000000001",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Funding Stream": "Home Support(HS) Quarterly"
+      }
+    },
+    {
+      "$case": "funding source — Restorative Care Pathway",
+      "itemId": "55390f00-aaaa-4004-8004-000000000002",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Funding Stream": "Restorative Care Pathway"
+      }
+    },
+    {
+      "$case": "funding source — Assistive Technology - Short-term",
+      "itemId": "55390f00-aaaa-4004-8004-000000000003",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Funding Stream": "Assistive Technology - Short-term"
+      }
+    },
+    {
+      "$case": "funding source — Home Modification",
+      "itemId": "55390f00-aaaa-4004-8004-000000000004",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Funding Stream": "Home Modification"
+      }
+    },
+    {
+      "$case": "SaH service plan — med",
+      "itemId": "55390f00-aaaa-4002-8002-000000000001",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Assistance with the self-administration of medication",
+        "Service ID/Item ID": "SERV-0021"
+      }
+    },
+    {
+      "$case": "SaH service plan — respite",
+      "itemId": "55390f00-aaaa-4002-8002-000000000002",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Flexible respite",
+        "Service ID/Item ID": "SERV-0048"
+      }
+    },
+    {
+      "$case": "SaH service plan — physio",
+      "itemId": "55390f00-aaaa-4002-8002-000000000003",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Physiotherapy",
+        "Service ID/Item ID": "SERV-0034"
+      }
+    },
+    {
+      "$case": "SaH service plan — rn",
+      "itemId": "55390f00-aaaa-4002-8002-000000000004",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Registered nurse clinical care",
+        "Service ID/Item ID": "SERV-0023"
+      }
+    },
+    {
+      "$case": "SaH service plan — social",
+      "itemId": "55390f00-aaaa-4002-8002-000000000005",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Social Work",
+        "Service ID/Item ID": "SERV-0029"
+      }
+    },
+    {
+      "$case": "SaH service plan — hmot",
+      "itemId": "55390f00-aaaa-4002-8002-000000000006",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "HM Prescription and clinical support - Occupational therapy",
+        "Service ID/Item ID": "SERV-0068"
+      }
+    },
+    {
+      "$case": "SaH service plan — atrx",
+      "itemId": "55390f00-aaaa-4002-8002-000000000007",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Assistive technology prescription and clinical support",
+        "Service ID/Item ID": "SERV-0066"
+      }
+    },
+    {
+      "$case": "SaH service plan — clean",
+      "itemId": "55390f00-aaaa-4002-8002-000000000008",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "General house cleaning",
+        "Service ID/Item ID": "SERV-0001"
+      }
+    },
+    {
+      "$case": "SaH service plan — selfcare",
+      "itemId": "55390f00-aaaa-4002-8002-000000000009",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Assistance with self-care and activities of daily living",
+        "Service ID/Item ID": "SERV-0020"
+      }
+    },
+    {
+      "$case": "SaH service plan — mattress",
+      "itemId": "55390f00-aaaa-4002-8002-000000000010",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Mattress and mattress coverings",
+        "Service ID/Item ID": "SERV-0064"
+      }
+    },
+    {
+      "$case": "SaH service plan — reach",
+      "itemId": "55390f00-aaaa-4002-8002-000000000011",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Extended reach",
+        "Service ID/Item ID": "SERV-0064"
+      }
+    },
+    {
+      "$case": "SaH service plan — beds",
+      "itemId": "55390f00-aaaa-4002-8002-000000000012",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Beds and detachable bed boards/mattress support platforms, non-adjustable",
+        "Service ID/Item ID": "SERV-0064"
+      }
+    },
+    {
+      "$case": "SaH service plan — meal",
+      "itemId": "55390f00-aaaa-4002-8002-000000000013",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Meal preparation",
+        "Service ID/Item ID": "SERV-0008"
+      }
+    },
+    {
+      "$case": "SaH service plan — rollator",
+      "itemId": "55390f00-aaaa-4002-8002-000000000014",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Rollators",
+        "Service ID/Item ID": "SERV-0063"
+      }
+    },
+    {
+      "$case": "SaH service plan — wrapdel",
+      "itemId": "55390f00-aaaa-4002-8002-000000000015",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "AT Wraparound - Delivery"
+      }
+    },
+    {
+      "$case": "SaH service plan — wrapsetup",
+      "itemId": "55390f00-aaaa-4002-8002-000000000016",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "AT Wraparound-  Set up"
+      }
+    },
+    {
+      "$case": "SaH service plan — emollients",
+      "itemId": "55390f00-aaaa-4002-8002-000000000017",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Nursing care consumables - Prescribed skin emollients",
+        "Service ID/Item ID": "SERV-0026"
+      }
+    },
+    {
+      "$case": "SaH service plan — exphys",
+      "itemId": "55390f00-aaaa-4002-8002-000000000018",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Exercise physiology",
+        "Service ID/Item ID": "SERV-0036"
+      }
+    },
+    {
+      "$case": "SaH service plan — podiatry",
+      "itemId": "55390f00-aaaa-4002-8002-000000000019",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Podiatry",
+        "Service ID/Item ID": "SERV-0028"
+      }
+    },
+    {
+      "$case": "SaH service plan — wheelchair",
+      "itemId": "55390f00-aaaa-4002-8002-000000000020",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Manual Wheelchair - Others",
+        "Service ID/Item ID": "SERV-0063"
+      }
+    },
+    {
+      "$case": "SaH service plan — wrapadmin",
+      "itemId": "55390f00-aaaa-4002-8002-000000000021",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "AT Wraparound - Administration"
+      }
+    },
+    {
+      "$case": "SaH service plan — dietitian",
+      "itemId": "55390f00-aaaa-4002-8002-000000000022",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Dietitian or Nutritionist",
+        "Service ID/Item ID": "SERV-0031"
+      }
+    },
+    {
+      "$case": "SaH service plan — garden",
+      "itemId": "55390f00-aaaa-4002-8002-000000000023",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Gardening",
+        "Service ID/Item ID": "SERV-0004"
+      }
+    },
+    {
+      "$case": "SaH service plan — rails",
+      "itemId": "55390f00-aaaa-4002-8002-000000000024",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Minor rails for functional support",
+        "Service ID/Item ID": "SERV-0067"
+      }
+    },
+    {
+      "$case": "SaH service plan — complexaccess",
+      "itemId": "55390f00-aaaa-4002-8002-000000000025",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Complex access modification/s",
+        "Service ID/Item ID": "SERV-0067"
+      }
+    },
+    {
+      "$case": "SaH service plan — wraptraining",
+      "itemId": "55390f00-aaaa-4002-8002-000000000026",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "HM Wraparound - Training"
+      }
+    },
+    {
+      "$case": "SaH service plan — wrapother",
+      "itemId": "55390f00-aaaa-4002-8002-000000000027",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "HM Wraparound -  Other"
+      }
+    },
+    {
+      "$case": "SaH service plan — wrapcoord",
+      "itemId": "55390f00-aaaa-4002-8002-000000000028",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "HM Wraparound - Coordination"
+      }
+    },
+    {
+      "$case": "SaH service plan — complexhm",
+      "itemId": "55390f00-aaaa-4002-8002-000000000029",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "Complex Home Modification/s",
+        "Service ID/Item ID": "SERV-0067"
+      }
+    },
+    {
+      "$case": "NDIS legacy service plan — ds15",
+      "itemId": "55390f00-bbbb-4002-8002-000000000001",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "15_410_0114_1_3",
+        "Direct Support Item Number": "15_410_0114_1_3",
+        "Unit (Direct Support)": "Hour",
+        "Agreed Unit Price for Direct Support ($)": 0
+      }
+    },
+    {
+      "$case": "NDIS legacy service plan — ms15",
+      "itemId": "55390f00-bbbb-4002-8002-000000000002",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "15_410_0114_1_3",
+        "Direct Support Item Number": "15_410_0114_1_3",
+        "Unit (Direct Support)": "Hour",
+        "Agreed Unit Price for Direct Support ($)": 0
+      }
+    },
+    {
+      "$case": "NDIS legacy service plan — ms04",
+      "itemId": "55390f00-bbbb-4002-8002-000000000003",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "04_104_0125_6_1",
+        "Direct Support Item Number": "04_104_0125_6_1",
+        "Unit (Direct Support)": "Hour",
+        "Agreed Unit Price for Direct Support ($)": 0
+      }
+    },
+    {
+      "$case": "NDIS legacy service plan — sp04",
+      "itemId": "55390f00-bbbb-4002-8002-000000000004",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "04_104_0125_6_1",
+        "Direct Support Item Number": "04_104_0125_6_1",
+        "Unit (Direct Support)": "Hour",
+        "Agreed Unit Price for Direct Support ($)": 0
+      }
+    },
+    {
+      "$case": "NDIS legacy service plan — gb15619",
+      "itemId": "55390f00-bbbb-4002-8002-000000000005",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "15_619_0118_1 _3",
+        "Direct Support Item Number": "15_619_0118_1 _3",
+        "Unit (Direct Support)": "Hour",
+        "Agreed Unit Price for Direct Support ($)": 0
+      }
+    },
+    {
+      "$case": "NDIS 2026 service plan — p05",
+      "itemId": "55390f00-cccc-4002-8002-000000000001",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "05_040312811_0103_1_1",
+        "Support Item Number": "05_040312811_0103_1_1",
+        "Unit (Support)": "Hour",
+        "Agreed Unit Price for Support ($)": 0
+      }
+    },
+    {
+      "$case": "NDIS 2026 service plan — p01",
+      "itemId": "55390f00-cccc-4002-8002-000000000002",
+      "boardId": "t29GNU4nV2A",
+      "folderId": "dev-capture-refs",
+      "data": {
+        "Service": "01_720_0118_1_3",
+        "Support Item Number": "01_720_0118_1_3",
+        "Unit (Support)": "Hour",
+        "Agreed Unit Price for Support ($)": 0
+      }
+    },
+    {
+      "itemId": "019db34e-56b5-705b-af5d-192a84367660",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2024-12-30T00:00:00+11:00",
+        "Actual Shift End Date & Time": "2024-12-30T00:00:00+11:00"
+      }
+    },
+    {
+      "itemId": "019db34e-628a-777e-ae6f-65d357df7002",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2024-12-30T00:00:00+11:00",
+        "Actual Shift End Date & Time": "2024-12-30T00:00:00+11:00"
+      }
+    },
+    {
+      "itemId": "019db34e-8b6f-74cb-bddd-969d8f3fbcf6",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2024-12-31T00:00:00+11:00",
+        "Actual Shift End Date & Time": "2024-12-31T00:00:00+11:00"
+      }
+    },
+    {
+      "itemId": "019db34e-8878-7378-bdcf-3d54ffae245c",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2024-12-31T00:00:00+11:00",
+        "Actual Shift End Date & Time": "2024-12-31T00:00:00+11:00"
+      }
+    },
+    {
+      "itemId": "019db34e-83b2-77f9-907d-6b8fcf2072b4",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2024-12-31T00:00:00+11:00",
+        "Actual Shift End Date & Time": "2024-12-31T00:00:00+11:00"
+      }
+    },
+    {
+      "itemId": "d39ba1c1-95e0-41f0-8d3b-ad3d50253f28",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2024-12-31T06:00:00+11:00",
+        "Actual Shift End Date & Time": "2025-12-15T06:05:50.000000Z",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000003"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 0.5,
+        "Unit Price ($)": 60,
+        "Total Amount ($)": -30,
+        "Government Subsidy ($)": -30,
+        "Participant Contribution ($)": 5,
+        "Transaction Status": "Adjustment (Refund) - To be claimed and invoiced.",
+        "Additional Notes": "<p>Refund: Services delivered with incorrect charge: 22 ec 2024</p>"
+      }
+    },
+    {
+      "itemId": "8ddc3c43-2a97-470e-a959-d2817fc532cb",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-01T06:00:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-01T07:00:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000001"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000001"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 1,
+        "Unit Price ($)": 100,
+        "Total Amount ($)": 100,
+        "Government Subsidy ($)": 95,
+        "Participant Contribution ($)": 5,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "019b29eb-cdab-799b-ba19-9bc0d75cd75c",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-02T00:00:00+11:00",
+        "Actual Shift End Date & Time": "2024-12-31T00:00:00+11:00"
+      }
+    },
+    {
+      "itemId": "316e1440-d7c6-44ae-b765-1b73b179ad70",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-02T06:00:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-02T09:00:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000002"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000001"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "Associated Provider",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 3,
+        "Unit Price ($)": 99,
+        "Total Amount ($)": 297,
+        "Government Subsidy ($)": 282.15,
+        "Participant Contribution ($)": 14.85,
+        "Transaction Status": "Delivered - To be claimed and invoiced.",
+        "Item First Payment": "True"
+      }
+    },
+    {
+      "itemId": "75a48aa4-737e-405a-83b5-881f0e7665db",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-02T09:00:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-02T10:34:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000003"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000002"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 0.5,
+        "Unit Price ($)": 185,
+        "Total Amount ($)": 92.5,
+        "Government Subsidy ($)": 92.5,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "019b1f76-7369-7ee9-8385-e629a346f0e0",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-03T00:00:00+11:00"
+      }
+    },
+    {
+      "itemId": "fb6a17a4-3a6a-4f6c-b195-1dfbf1c000aa",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-03T14:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-03T15:30:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000004"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000002"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 1,
+        "Unit Price ($)": 160,
+        "Total Amount ($)": 160,
+        "Government Subsidy ($)": 160,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "157eb88e-5ff7-4e97-8ac9-82c5cc45f20b",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-04T14:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-04T15:00:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000005"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000002"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 0.5,
+        "Unit Price ($)": 200,
+        "Total Amount ($)": 100,
+        "Government Subsidy ($)": 100,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "cb8d7c0a-c298-42a5-affb-4302f9c660a0",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-05T09:00:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-05T11:30:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000006"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000004"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 2.5,
+        "Unit Price ($)": 200,
+        "Total Amount ($)": 500,
+        "Government Subsidy ($)": 500,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "acabadee-9eb8-4f90-9838-40e8bb68996a",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-05T09:00:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-05T11:30:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000007"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000003"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 2.5,
+        "Unit Price ($)": 200,
+        "Total Amount ($)": 500,
+        "Government Subsidy ($)": 500,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "b8c87bb6-ca22-4d23-8c58-d97002d9b3a1",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-06T06:00:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-06T06:30:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000001"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000001"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 0.5,
+        "Unit Price ($)": 100,
+        "Total Amount ($)": 50,
+        "Government Subsidy ($)": 47.5,
+        "Participant Contribution ($)": 2.5,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "0f20ffa8-9472-4684-8adf-7dc8904a88f5",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-06T11:00:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-07T11:45:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000008"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000001"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 0.75,
+        "Unit Price ($)": 100,
+        "Total Amount ($)": 71.25,
+        "Government Subsidy ($)": 58.78,
+        "Participant Contribution ($)": 12.47,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "f77b51c6-a8da-413e-83fc-662217369edb",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-06T14:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-06T15:15:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000009"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000002"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 0.75,
+        "Unit Price ($)": 100,
+        "Total Amount ($)": 75,
+        "Government Subsidy ($)": 71.25,
+        "Participant Contribution ($)": 3.75,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "56e66a00-301c-4b64-9c99-a45ed165fc4e",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-07T09:00:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-07T09:00:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000010"
+        ],
+        "Unit": "Item",
+        "Delivered by": "Associated Provider",
+        "Service Provider": "ISO Consulting Services",
+        "Total Amount ($)": 100,
+        "Government Subsidy ($)": 95,
+        "Participant Contribution ($)": 100
+      }
+    },
+    {
+      "itemId": "3a730863-bb2a-4abf-840a-2922f428fcff",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-07T09:00:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-07T09:00:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000010"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000004"
+        ],
+        "Unit": "Item",
+        "Delivered by": "Associated Provider",
+        "Service Provider": "ISO Consulting Services",
+        "Unit Price ($)": 100,
+        "Total Amount ($)": 100,
+        "Government Subsidy ($)": 95,
+        "Participant Contribution ($)": 100,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "3ab91f21-f9c8-4533-a7c3-f12edb893871",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-07T09:00:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-07T09:00:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000011"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000003"
+        ],
+        "Unit": "Item",
+        "Delivered by": "Associated Provider",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 0.5,
+        "Unit Price ($)": 100,
+        "Total Amount ($)": 100,
+        "Government Subsidy ($)": 95,
+        "Participant Contribution ($)": 5,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "12deeca8-f9ab-4a00-bc9c-b9f3faf049df",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-07T09:00:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-07T09:00:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000012"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000003"
+        ],
+        "Unit": "Item",
+        "Delivered by": "Associated Provider",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 1,
+        "Unit Price ($)": 5100,
+        "Total Amount ($)": 5100,
+        "Government Subsidy ($)": 4845,
+        "Participant Contribution ($)": 255,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "914055f2-f467-401e-ae4f-840e583bca28",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-07T11:00:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-07T13:15:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000013"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000001"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 2,
+        "Unit Price ($)": 97,
+        "Total Amount ($)": 194,
+        "Government Subsidy ($)": 160,
+        "Participant Contribution ($)": 33.95,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "019edea7-b289-76a1-abcf-524971b8b622",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-08T00:00:00+11:00"
+      }
+    },
+    {
+      "itemId": "a8152f79-d6d5-4f77-ad7e-b8a87e92da2f",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-09T09:00:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-09T10:34:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000003"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000002"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 0.5,
+        "Unit Price ($)": 185,
+        "Total Amount ($)": 92.5,
+        "Government Subsidy ($)": 92.5,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "8ccfa81e-1221-4296-8e21-4621475bf172",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-09T11:00:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000014"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000003"
+        ],
+        "Unit": "Item",
+        "Delivered by": "Associated Provider",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 1,
+        "Unit Price ($)": 350,
+        "Total Amount ($)": 350,
+        "Government Subsidy ($)": 332.5,
+        "Participant Contribution ($)": 17.5
+      }
+    },
+    {
+      "itemId": "60440cdf-034a-4aaa-bc63-89104146b75e",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-09T11:00:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000015"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000003"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 1.5,
+        "Unit Price ($)": 100,
+        "Total Amount ($)": 150,
+        "Government Subsidy ($)": 200
+      }
+    },
+    {
+      "itemId": "d88ab220-fa8c-4c9c-8052-896ae965cd08",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-09T11:00:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-09T12:00:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000016"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000003"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 1,
+        "Unit Price ($)": 200,
+        "Total Amount ($)": 200,
+        "Government Subsidy ($)": 200,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "019db365-21f6-757e-8b46-99eb940df9c7",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-10T00:00:00+11:00",
+        "Actual Shift End Date & Time": "2025-01-10T00:00:00+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000002"
+        ]
+      }
+    },
+    {
+      "itemId": "9c4a3dbc-5ccf-4980-9caa-4792f12d4748",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-10T14:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-10T15:30:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000004"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000002"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 1,
+        "Unit Price ($)": 160,
+        "Total Amount ($)": 160,
+        "Government Subsidy ($)": 160,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "70519159-7954-42ee-b203-147005b9c967",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-11T11:00:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-11T16:00:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000021"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000003"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 5,
+        "Unit Price ($)": 50,
+        "Total Amount ($)": 250,
+        "Government Subsidy ($)": 250,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "1fbe40c8-c8a4-4cc8-87c2-e32ff18b4fb5",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-11T14:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-11T15:30:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000004"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000001"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 1,
+        "Unit Price ($)": 160,
+        "Total Amount ($)": 160,
+        "Government Subsidy ($)": 160,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "879baeac-21f3-4884-b4b5-b7e86719efa6",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-11T14:30:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000017"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000001"
+        ],
+        "Unit": "Item",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Unit Price ($)": 20,
+        "Total Amount ($)": 20,
+        "Government Subsidy ($)": 20,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "82553f5b-99db-4126-b178-0a55730564d6",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-12T14:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-12T15:30:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000018"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000002"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "Associated Provider",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 1,
+        "Unit Price ($)": 190,
+        "Total Amount ($)": 190,
+        "Government Subsidy ($)": 190,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "2d482737-3341-4a4d-87ff-36ca952a2b04",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-12T14:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-12T15:00:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000019"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000001"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "Associated Provider",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 0.5,
+        "Unit Price ($)": 180,
+        "Total Amount ($)": 90,
+        "Government Subsidy ($)": 90,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "05337271-4853-4a29-9f56-1c59b31df6b0",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-12T14:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-12T14:30:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000020"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000003"
+        ],
+        "Unit": "Item",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 1,
+        "Unit Price ($)": 200,
+        "Total Amount ($)": 200,
+        "Government Subsidy ($)": 200,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "9e440913-dd66-404f-a34f-00f863352173",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-12T14:30:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 0.5,
+        "Unit Price ($)": 160,
+        "Total Amount ($)": 80,
+        "Government Subsidy ($)": 80,
+        "Transaction Status": "Adjustment (Charge) - To be claimed and invoiced.",
+        "Additional Notes": "<p>Missed charge: Registered nursing delivered not charged: 20 Dec 2024</p>"
+      }
+    },
+    {
+      "itemId": "5bd22ff5-d8be-4702-9f06-4cffb32904f4",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-12T14:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-12T15:00:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000003"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000001"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "Associated Provider",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 0.5,
+        "Unit Price ($)": 185,
+        "Total Amount ($)": 92.5,
+        "Government Subsidy ($)": 92.5,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "019da991-d2c4-731f-a1f2-972fc96b00af",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-13T00:00:00+11:00"
+      }
+    },
+    {
+      "itemId": "7e29bf99-76e5-4a87-ab95-84a6c1f67881",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-13T14:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-13T15:15:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000009"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000002"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 0.75,
+        "Unit Price ($)": 100,
+        "Total Amount ($)": 75,
+        "Government Subsidy ($)": 71.25,
+        "Participant Contribution ($)": 3.75,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "019d094d-effe-7998-b230-9541d6b23f05",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-14T00:00:00+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000008"
+        ]
+      }
+    },
+    {
+      "itemId": "abcf8635-4f93-443b-b339-bfc632187a99",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-16T09:00:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-16T10:34:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000003"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000002"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 0.5,
+        "Unit Price ($)": 185,
+        "Total Amount ($)": 92.5,
+        "Government Subsidy ($)": 92.5,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "ce4a8d48-566f-4ae7-a823-5f6289773fb3",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-17T14:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-17T15:30:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000004"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000002"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 1,
+        "Unit Price ($)": 160,
+        "Total Amount ($)": 160,
+        "Government Subsidy ($)": 160,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "019db350-9aec-73ad-abf2-fdc4e9592ff7",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-18T00:00:00+11:00",
+        "Actual Shift End Date & Time": "2025-01-18T00:00:00+11:00"
+      }
+    },
+    {
+      "itemId": "019db350-8d39-7335-aeb5-a4dd6482c494",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-18T00:00:00+11:00",
+        "Actual Shift End Date & Time": "2025-01-18T00:00:00+11:00"
+      }
+    },
+    {
+      "itemId": "8cbe1155-1f2e-4f9b-9d73-efc3f2ec2186",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-19T15:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-19T16:15:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000008"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000001"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "Associated Provider",
+        "Service Provider": "ISO Consulting Services",
+        "Unit Price ($)": 95,
+        "Total Amount ($)": 71.25,
+        "Government Subsidy ($)": 58.78,
+        "Participant Contribution ($)": 12.47,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "9b8a3217-dc3d-46d0-a643-73ac97444c6d",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-19T15:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-19T15:30:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000024"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000004"
+        ],
+        "Unit": "Item",
+        "Delivered by": "Associated Provider",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 2,
+        "Unit Price ($)": 250,
+        "Total Amount ($)": 500,
+        "Government Subsidy ($)": 475,
+        "Participant Contribution ($)": 25,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "a971f71e-bbc7-406f-8a53-3c6f3166a048",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-19T16:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-19T16:30:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000025"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000004"
+        ],
+        "Unit": "Item",
+        "Delivered by": "Associated Provider",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 1,
+        "Unit Price ($)": 2000,
+        "Total Amount ($)": 2000,
+        "Government Subsidy ($)": 1900,
+        "Participant Contribution ($)": 100,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "8014a6c8-cccc-4014-a6f2-82c1dd273c6e",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-20T14:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-20T15:15:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000009"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000002"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 0.75,
+        "Unit Price ($)": 100,
+        "Total Amount ($)": 75,
+        "Government Subsidy ($)": 71.25,
+        "Participant Contribution ($)": 3.75,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "d208239d-b5b8-48e6-9e7e-b31b304d8350",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-20T14:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-20T16:00:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000026"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000004"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 200,
+        "Total Amount ($)": 300,
+        "Government Subsidy ($)": 300,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "e00b77d7-3765-4158-b5a3-8039af175b1f",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-20T15:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-20T15:15:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000022"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000002"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 0.75,
+        "Unit Price ($)": 200,
+        "Total Amount ($)": 150,
+        "Government Subsidy ($)": 150,
+        "Participant Contribution ($)": 3.75,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "20932810-7a9e-49b8-abb0-29290fd53b67",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-21T15:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-21T16:00:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000023"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000003"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "Associated Provider",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 0.75,
+        "Total Amount ($)": 51.5,
+        "Government Subsidy ($)": 42.49,
+        "Participant Contribution ($)": 9.01,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "019db350-a3b8-7719-8033-33d5da4292d1",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-23T00:00:00+11:00",
+        "Actual Shift End Date & Time": "2025-01-23T00:00:00+11:00"
+      }
+    },
+    {
+      "itemId": "6e3fc1c8-754c-40a8-a19a-ae225f7a59c1",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-23T09:00:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-23T10:34:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000003"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000002"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 0.5,
+        "Unit Price ($)": 185,
+        "Total Amount ($)": 92.5,
+        "Government Subsidy ($)": 92.5,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "c07a17b5-5a65-4d94-8175-889c17e0a8dd",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-25T14:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-25T15:00:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000005"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000002"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 0.5,
+        "Unit Price ($)": 200,
+        "Total Amount ($)": 100,
+        "Government Subsidy ($)": 100,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "b1fd517f-20be-47f3-b113-de8f37e42032",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-27T14:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-27T15:15:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000009"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000002"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 0.75,
+        "Unit Price ($)": 100,
+        "Total Amount ($)": 75,
+        "Government Subsidy ($)": 71.25,
+        "Participant Contribution ($)": 3.75,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "5b70f931-c0ea-4a6e-b925-b68ed4474d2e",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-28T14:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-28T15:30:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000027"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000004"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 1,
+        "Unit Price ($)": 100,
+        "Total Amount ($)": 100,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "5dc1f601-5709-42df-9a9b-747ff9a3b5b3",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-28T14:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-28T15:30:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000029"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000004"
+        ],
+        "Unit": "Item",
+        "Delivered by": "Associated Provider",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 1,
+        "Unit Price ($)": 10000,
+        "Total Amount ($)": 10000,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "5bf855fd-6657-487b-9749-80b7a55faa5e",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-29T08:30:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-29T11:00:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000026"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000004"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 1,
+        "Unit Price ($)": 200,
+        "Total Amount ($)": 200,
+        "Government Subsidy ($)": 9500,
+        "Participant Contribution ($)": 500,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "111f768b-76e4-41f9-9f65-fcc6a34f506b",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-01-29T15:00:00.000000+11:00",
+        "Actual Shift End Date & Time": "2025-01-29T11:00:00.000000+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-aaaa-4002-8002-000000000028"
+        ],
+        "Funding Source": [
+          "55390f00-aaaa-4004-8004-000000000004"
+        ],
+        "Unit": "Hours",
+        "Delivered by": "👥 Company Workforce",
+        "Service Provider": "ISO Consulting Services",
+        "Quantity": 50,
+        "Unit Price ($)": 1000,
+        "Total Amount ($)": 1000,
+        "Transaction Status": "Delivered - To be claimed and invoiced."
+      }
+    },
+    {
+      "itemId": "019ab85e-fc12-7ff6-8433-a33407e5f362",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2025-11-26T15:01:00+11:00",
+        "Participant Profile": [
+          "55390f00-aaaa-4001-8001-000000000002"
+        ]
+      }
+    },
+    {
+      "itemId": "019db351-8d52-7443-b483-c83d90806875",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2026-04-23T00:00:00+10:00",
+        "Actual Shift End Date & Time": "2026-04-23T00:00:00+10:00"
+      }
+    },
+    {
+      "itemId": "019db351-77d1-72fa-933e-c022a3745b41",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased",
+        "Scheduled Shift Start Date & Time": "2026-04-23T00:00:00+10:00",
+        "Actual Shift End Date & Time": "2026-04-23T00:00:00+10:00"
+      }
+    },
+    {
+      "itemId": "019c9352-4087-7998-8526-986e02058d07",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased"
+      }
+    },
+    {
+      "itemId": "019c9352-3651-7998-8526-5b30bbdd4fec",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Item Purchased Method": "Purchased"
+      }
+    },
+    {
+      "itemId": "41fdecfd-7949-48bd-b1b1-2b37102a3913",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Paid",
+        "Scheduled Shift Start Date & Time": "2025-01-10T01:19:00.000000+00:00",
+        "Participant Profile": [
+          "55390f00-bbbb-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-bbbb-4002-8002-000000000001"
+        ],
+        "Timesheet Approval": "Approved"
+      }
+    },
+    {
+      "itemId": "019d4196-f54d-70dc-becb-e1ccfc764a49",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Paid",
+        "Scheduled Shift Start Date & Time": "2025-04-08T00:00:00-04:00"
+      }
+    },
+    {
+      "itemId": "f6d5203e-99d8-469b-815e-2f9d960dbf05",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Overdue",
+        "Scheduled Shift Start Date & Time": "2025-04-28T02:46:00.000000+00:00",
+        "Participant Profile": [
+          "55390f00-bbbb-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-bbbb-4002-8002-000000000001"
+        ],
+        "Timesheet Approval": "Approved"
+      }
+    },
+    {
+      "itemId": "f9ff4b4f-370e-42f1-8a3c-2e5333caf019",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-04-30T00:00:00+10:00",
+        "Participant Profile": [
+          "55390f00-bbbb-4001-8001-000000000003"
+        ]
+      }
+    },
+    {
+      "itemId": "9c868c89-d5b1-4c42-bce2-973b54ca60a5",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Paid",
+        "Scheduled Shift Start Date & Time": "2025-04-30T14:00:00.000000+00:00",
+        "Participant Profile": [
+          "55390f00-bbbb-4001-8001-000000000002"
+        ],
+        "Service Plan": [
+          "55390f00-bbbb-4002-8002-000000000002"
+        ],
+        "Timesheet Approval": "Approved"
+      }
+    },
+    {
+      "itemId": "4f5690a0-7ee4-43a4-be6e-0fafa12101c9",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-05-02T00:00:00+10:00",
+        "Participant Profile": [
+          "55390f00-bbbb-4001-8001-000000000004"
+        ],
+        "Service Plan": [
+          "55390f00-bbbb-4002-8002-000000000005"
+        ],
+        "Timesheet Approval": "Approved"
+      }
+    },
+    {
+      "itemId": "c445b771-f293-4963-8a26-465113e83a57",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-05-05T00:00:00+10:00"
+      }
+    },
+    {
+      "itemId": "ee5ffeab-2226-4600-9c7c-971ee532947c",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Void",
+        "Scheduled Shift Start Date & Time": "2025-05-06T02:46:00.000000+00:00",
+        "Participant Profile": [
+          "55390f00-bbbb-4001-8001-000000000002"
+        ]
+      }
+    },
+    {
+      "itemId": "bcae3995-1a5e-46f0-bfe0-1f1df90a2d9f",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Overdue",
+        "Scheduled Shift Start Date & Time": "2025-05-07T10:16:00+10:00",
+        "Participant Profile": [
+          "55390f00-bbbb-4001-8001-000000000002"
+        ],
+        "Service Plan": [
+          "55390f00-bbbb-4002-8002-000000000002"
+        ],
+        "Timesheet Approval": "Approved"
+      }
+    },
+    {
+      "itemId": "93a6b9ee-fa8f-44a4-9647-cec727f67e61",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-05-07T11:00:00+10:00"
+      }
+    },
+    {
+      "itemId": "7007a2b1-1d66-4a7c-8b7b-965a2a64b232",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Overdue",
+        "Scheduled Shift Start Date & Time": "2025-05-07T02:46:00.000000+00:00",
+        "Participant Profile": [
+          "55390f00-bbbb-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-bbbb-4002-8002-000000000001"
+        ],
+        "Timesheet Approval": "Approved"
+      }
+    },
+    {
+      "itemId": "303e7fec-2785-419f-911c-9229955137b3",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-05-08T00:00:00+10:00",
+        "Participant Profile": [
+          "55390f00-bbbb-4001-8001-000000000003"
+        ],
+        "Service Plan": [
+          "55390f00-bbbb-4002-8002-000000000004"
+        ],
+        "Timesheet Approval": "Approved"
+      }
+    },
+    {
+      "itemId": "309b528a-f16a-43a0-a7c5-3b13f088f903",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-05-08T10:00:00+10:00"
+      }
+    },
+    {
+      "itemId": "79a6e54b-0e3b-41b6-81bc-8f9a17bc8fb8",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-05-09T00:00:00+10:00"
+      }
+    },
+    {
+      "itemId": "5696b341-8daf-42a3-a297-1d469600663f",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Void",
+        "Scheduled Shift Start Date & Time": "2025-05-10T02:46:00.000000+00:00",
+        "Participant Profile": [
+          "55390f00-bbbb-4001-8001-000000000002"
+        ]
+      }
+    },
+    {
+      "itemId": "8c23c359-d97e-4777-a0b2-12677a9f8daa",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Void",
+        "Scheduled Shift Start Date & Time": "2025-05-11T02:46:00.000000+00:00",
+        "Participant Profile": [
+          "55390f00-bbbb-4001-8001-000000000002"
+        ]
+      }
+    },
+    {
+      "itemId": "301e73e5-ed44-427a-aeda-e72a70344d94",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Overdue",
+        "Scheduled Shift Start Date & Time": "2025-05-13T02:46:00.000000+00:00",
+        "Participant Profile": [
+          "55390f00-bbbb-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-bbbb-4002-8002-000000000001"
+        ],
+        "Timesheet Approval": "Approved"
+      }
+    },
+    {
+      "itemId": "a9832efa-3d06-4f86-a36f-d801a71ea126",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-05-14T00:00:00+10:00"
+      }
+    },
+    {
+      "itemId": "b60b4fa9-ff3d-481a-a800-83d074c97ceb",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-05-15T00:00:00+10:00",
+        "Service Plan": [
+          "55390f00-bbbb-4002-8002-000000000005"
+        ]
+      }
+    },
+    {
+      "itemId": "b047f52a-ecb6-4e36-8bd8-5cacd2da1bf0",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Overdue",
+        "Scheduled Shift Start Date & Time": "2025-05-16T12:46:00.000000+10:00",
+        "Participant Profile": [
+          "55390f00-bbbb-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-bbbb-4002-8002-000000000001"
+        ],
+        "Timesheet Approval": "Approved"
+      }
+    },
+    {
+      "itemId": "462ab9ad-196b-4766-823c-5f111474d248",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Void",
+        "Scheduled Shift Start Date & Time": "2025-05-17T02:46:00.000000+00:00",
+        "Participant Profile": [
+          "55390f00-bbbb-4001-8001-000000000002"
+        ]
+      }
+    },
+    {
+      "itemId": "af74d082-3fb0-4224-a409-91a02481e5f2",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Void",
+        "Scheduled Shift Start Date & Time": "2025-05-17T02:46:00.000000+00:00",
+        "Participant Profile": [
+          "55390f00-bbbb-4001-8001-000000000002"
+        ],
+        "Service Plan": [
+          "55390f00-bbbb-4002-8002-000000000002"
+        ],
+        "Timesheet Approval": "Approved"
+      }
+    },
+    {
+      "itemId": "46acf1ca-25e1-4682-b2b5-aa464f628e3d",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Refunded",
+        "Scheduled Shift Start Date & Time": "2025-05-18T14:00:00.000000+00:00",
+        "Participant Profile": [
+          "55390f00-bbbb-4001-8001-000000000002"
+        ]
+      }
+    },
+    {
+      "itemId": "670ceb45-af35-407b-93eb-efad755ff21f",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-05-20T00:00:00+10:00"
+      }
+    },
+    {
+      "itemId": "31e16eb3-63b0-4d27-a014-bde2661108e1",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-05-21T00:00:00+10:00"
+      }
+    },
+    {
+      "itemId": "596a67c7-0f3b-4034-8e80-c6e825e7b8f0",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-05-26T00:00:00+10:00"
+      }
+    },
+    {
+      "itemId": "811f84df-ad23-411e-9f24-52f80f437368",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-10-28T02:55:00+11:00",
+        "Participant Profile": [
+          "55390f00-bbbb-4001-8001-000000000002"
+        ],
+        "Service Plan": [
+          "55390f00-bbbb-4002-8002-000000000003"
+        ],
+        "Timesheet Approval": "Approved"
+      }
+    },
+    {
+      "itemId": "7b0e4402-eed2-46a7-b787-4762ee73d71a",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-11-26T10:47:00+11:00"
+      }
+    },
+    {
+      "itemId": "9df7d25a-4adb-4bcb-9f86-2abc94f26558",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2026-01-22T12:00:00+11:00"
+      }
+    },
+    {
+      "itemId": "019bddcd-2b05-766a-9393-051db3f2c2be",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2026-04-09T00:30:00-04:00"
+      }
+    },
+    {
+      "itemId": "10e101eb-767a-4754-9921-0bfc75a85347",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment"
+      }
+    },
+    {
+      "itemId": "399e6db0-ef6c-4ad7-ada8-15a63cdf975b",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment"
+      }
+    },
+    {
+      "itemId": "7814aa01-52f9-4f81-a67c-2f0da74524dd",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment",
+        "Participant Profile": [
+          "55390f00-bbbb-4001-8001-000000000001"
+        ]
+      }
+    },
+    {
+      "itemId": "886e860f-c5d9-4000-a2cf-9488a018adc4",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Paid"
+      }
+    },
+    {
+      "itemId": "4189ee3b-c7d1-4a4c-bc81-ffde041ed60d",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment"
+      }
+    },
+    {
+      "itemId": "36a15c01-0e3b-4f94-96d8-3859b187130a",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment"
+      }
+    },
+    {
+      "itemId": "e054da89-f958-4a87-baf6-d9ce5884036d",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment"
+      }
+    },
+    {
+      "itemId": "019a26e2-bcaf-7cc9-b0c1-e5068c3537cb",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment"
+      }
+    },
+    {
+      "itemId": "e6d9b069-f97e-4674-9ce8-335fbb9e097a",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment"
+      }
+    },
+    {
+      "itemId": "70feff8d-1b10-4cf4-b445-42d3d50c548f",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment"
+      }
+    },
+    {
+      "itemId": "5b056ff5-2049-4f01-93f5-171b20a3f4d7",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment",
+        "Direct Support Item Number": "03_090000911_0103_1_1"
+      }
+    },
+    {
+      "itemId": "8a64df2f-0ae5-4946-a071-729e66c25557",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment"
+      }
+    },
+    {
+      "itemId": "f81de28b-2de3-4eb0-baba-a4360f9cc29f",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Payment Status": "Awaiting Payment"
+      }
+    },
+    {
+      "itemId": "019f1ca9-254b-750c-a4fc-eb7dc8f61dac",
+      "boardId": "dwV23F5WcQL",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Scheduled Shift Start Date & Time": "2026-06-29T06:30:00+10:00",
+        "Participant Profile": [
+          "55390f00-cccc-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-cccc-4002-8002-000000000001"
+        ],
+        "Timesheet Approval": "Approved"
+      }
+    },
+    {
+      "itemId": "019f1ca9-21c1-73ae-b32a-bce221b6a39b",
+      "boardId": "dwV23F5WcQL",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Scheduled Shift Start Date & Time": "2026-06-29T06:30:00+10:00",
+        "Participant Profile": [
+          "55390f00-cccc-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-cccc-4002-8002-000000000002"
+        ],
+        "Timesheet Approval": "Approved"
+      }
+    },
+    {
+      "itemId": "019f1ca9-054e-73c1-a584-7b9d68c2d94e",
+      "boardId": "dwV23F5WcQL",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Scheduled Shift Start Date & Time": "2026-06-29T06:30:00+10:00",
+        "Participant Profile": [
+          "55390f00-cccc-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390f00-cccc-4002-8002-000000000002"
+        ],
+        "Timesheet Approval": "Approved"
+      }
+    }
+  ],
+  "invoices": [
+    {
+      "boardId": "jpjztrn14pJ",
+      "number": "INV-1002",
+      "kind": "age_care",
+      "legacyNumbers": [
+        "INV-1002 (ISO+™)"
+      ],
+      "lines": [
+        {
+          "itemId": "d39ba1c1-95e0-41f0-8d3b-ad3d50253f28",
+          "amount": 0
+        },
+        {
+          "itemId": "8ddc3c43-2a97-470e-a959-d2817fc532cb",
+          "amount": 0
+        },
+        {
+          "itemId": "316e1440-d7c6-44ae-b765-1b73b179ad70",
+          "amount": 0
+        },
+        {
+          "itemId": "75a48aa4-737e-405a-83b5-881f0e7665db",
+          "amount": 0
+        }
+      ],
+      "pdf": {
+        "pdfLink": "https://isoplus-portal-dev-public.s3.ap-southeast-2.amazonaws.com/output/55390/jpjztrn14pJ/Participant-invoices/INV-1002-ISO%2B™-Jane-Smith.pdf"
+      }
+    },
+    {
+      "boardId": "o24sGM1FoST",
+      "number": "INV-1003",
+      "kind": "ndis",
+      "legacyNumbers": [
+        "INV-1003 (ISO+™)"
+      ],
+      "lines": [
+        {
+          "itemId": "41fdecfd-7949-48bd-b1b1-2b37102a3913",
+          "amount": 0
+        }
+      ],
+      "pdf": {
+        "pdfLink": "https://isoplus-portal-dev-public.s3.ap-southeast-2.amazonaws.com/output/55390/o24sGM1FoST/NDIS-invoices/INV-1003-ISO%2B™-David_Smith.pdf"
+      }
+    }
+  ]
+}

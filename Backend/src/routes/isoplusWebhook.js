@@ -15,7 +15,7 @@ import {
 } from '../utils/isoplusWebhookItemHelpers.js';
 import { updateReferencingWebhookItems } from '../utils/isoplusWebhookReferenceHelpers.js';
 import { handleWebhookValueUpdated } from '../utils/isoplusWebhookValueUpdateHelpers.js';
-import { mongoEq } from '../utils/securityHelpers.js';
+import { mongoEq, mongoEqOrNull } from '../utils/securityHelpers.js';
 
 const fetchOrCreateItem = fetchOrCreateWebhookItem;
 const deleteItemFromDatabase = deleteWebhookItemFromDatabase;
@@ -117,8 +117,8 @@ router.post('/isoplus', async (req, res) => {
 async function handleItemCreated(payload) {
   try {
     const itemId = mongoEq(payload.id);
-    const boardId = mongoEq(payload.board_id);
-    const workspaceId = mongoEq(payload.workspace_id);
+    const boardId = mongoEqOrNull(payload.board_id);
+    const workspaceId = mongoEqOrNull(payload.workspace_id);
     
     info('Webhook-Handler', 'Processing item.created event', { 
       itemId,
@@ -302,8 +302,8 @@ async function handleCommentUpdated(payload) {
 async function handleItemFinalized(payload) {
   try {
     const itemId = mongoEq(payload.id);
-    const boardId = mongoEq(payload.board_id);
-    const workspaceId = mongoEq(payload.workspace_id);
+    const boardId = mongoEqOrNull(payload.board_id);
+    const workspaceId = mongoEqOrNull(payload.workspace_id);
     
     info('Webhook-Handler', 'Processing item.finalized event', { 
       itemId,
@@ -369,8 +369,8 @@ async function handleItemFinalized(payload) {
 async function handleItemUpdated(payload) {
   try {
     const itemId = mongoEq(payload.id);
-    const boardId = mongoEq(payload.board_id);
-    const workspaceId = mongoEq(payload.workspace_id);
+    const boardId = mongoEqOrNull(payload.board_id);
+    const workspaceId = mongoEqOrNull(payload.workspace_id);
     
     info('Webhook-Handler', 'Processing item.updated event', { 
       itemId,
@@ -471,7 +471,7 @@ async function handleItemDeleted(payload) {
       itemId,
     });
 
-    let boardId = mongoEq(payload.board_id);
+    let boardId = mongoEqOrNull(payload.board_id);
 
     if (!boardId) {
       const item = await Item.findOne({ itemId })

@@ -6,6 +6,15 @@ import https from 'https';
 import { info, warn, error, logAttributeError, logApiError, logOperationStart, logOperationEnd } from '../utils/logger.js';
 import { buildJobPlanningValues, buildServiceFeeTypeValues } from '../utils/isoplusJobReferenceHelpers.js';
 import { getErrorMessageFromUnknown } from '../utils/isoplusErrorHelpers.js';
+// Safe direction: offlineIsoplus.js imports models and the logger, never this
+// module, so there is no cycle.
+import {
+    isOfflineMode,
+    getItemValuesOffline,
+    getReferencesOffline,
+    getAttributeOffline,
+    getFolderOffline,
+} from './offlineIsoplus.js';
 import {
     secureRandomFloat,
     mongoEq,
@@ -549,6 +558,9 @@ export async function getBoard(authorization, workspaceId) {
 }
 
 export async function getFolder(workspaceId, boardId) {
+    if (isOfflineMode()) {
+        return getFolderOffline(workspaceId, boardId);
+    }
     try {
         const folders = await collectPaginated(iterateFolders(workspaceId, boardId));
         return { folder: folders, status: 200 };
@@ -651,6 +663,15 @@ export async function getViewsById(authorization, workspaceId, boardId, viewId) 
 
 
 export async function setIntegrationMessage(workspaceId, boardId, itemId, message) {
+    // Offline, this write-back can only 404: the local items are inventions the
+    // live platform has never heard of. Skip rather than throw — the local run
+    // has already done its work, and a skip is the same honest behaviour as the
+    // board_sync handler's offline skip.
+    if (isOfflineMode()) {
+        warn('ISO+™ Service', 'setIntegrationMessage skipped: backend is in offline mode', { workspaceId, boardId, itemId });
+        return false;
+    }
+
     try {
         const board = await Board.findOne({ boardId: mongoEq(boardId) })
             .select('attribute')
@@ -734,6 +755,13 @@ export async function putTimeTracking(workspaceId, boardId, itemId, startTime, e
 export const ITEM_DELETED = Symbol('ITEM_DELETED');
 
 export async function getItemValues(workspaceId, boardId, itemId, authorization) {
+    // Offline, this 401s and the whole inbound webhook path then refuses real
+    // payloads as intrusion attempts. Served from Mongo instead — see
+    // getItemValuesOffline, and isOfflineMode for why production is unaffected.
+    if (isOfflineMode()) {
+        return getItemValuesOffline(workspaceId, boardId, itemId);
+    }
+
     const maxRetries = 5; // Increased from 3 to handle rate limits better
     let lastError = null;
     let retryDelay = 2000; // Start with 2 seconds (increased from 1 second)
@@ -814,6 +842,12 @@ export async function validateItemBelongsToTenant(workspaceId, boardId, itemId) 
 }
 
 export async function getReferences(workspaceId, boardId, itemId) {
+    // Offline, references come from the committed fixture — see
+    // getReferencesOffline.
+    if (isOfflineMode()) {
+        return getReferencesOffline(workspaceId, boardId, itemId);
+    }
+
     try {
         const url = buildIsoPlusV2BoardReferencesUrl(workspaceId, boardId, itemId);
         const headers = {
@@ -831,6 +865,11 @@ export async function getReferences(workspaceId, boardId, itemId) {
 }
 
 export async function getAttribute(workspaceId, boardId, attributeId) {
+    // Offline: resolved from the fixture's attribute list, same guard as above.
+    if (isOfflineMode()) {
+        return getAttributeOffline(workspaceId, boardId, attributeId);
+    }
+
     try {
         const url = buildIsoPlusV2BoardAttributeUrl(workspaceId, boardId, attributeId);
         const headers = {
@@ -929,37 +968,30 @@ export async function getBoardAttributes(workspaceId, boardId) {
     try {
         const url = buildIsoPlusV2BoardAttributesUrl(workspaceId, boardId);
         const headers = {
-            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
+            Authorization: `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'X-API-Version': '2025-02-26.morava',
         };
-        const params = {
-            "limit": "100",
-            "sort_by": "created_at",
-            "sort_direction": "desc",
+        const baseParams = {
+            limit: '100',
+            sort_by: 'created_at',
+            sort_direction: 'desc',
         };
 
-        let attribute = [];
-        const result = await axios.get(url, { headers, params });
-
-        if (result.status === 200) {
-            attribute = attribute.concat(result.data.data);
-            let has_more = result.data.has_more, after = result.data.after;
-
-            while (has_more) {
-                const response = await axios.get(url, { headers, params: { ...params, after } });
-                if (response.status === 200) {
-                    attribute = attribute.concat(response.data.data);
-                    has_more = response.data.has_more;
-                    after = response.data.after;
-                } else {
-                    has_more = false;
-                }
-            }
-        }
-        return { attribute: attribute, status: 200 };
+        // Same paginator guards as fetchAllBoardAttributes (max pages + cursor safety).
+        const attribute = await collectPaginated(
+            createPaginator(
+                (after) => isoPlusClient.get(url, { headers, params: withAfterParam(baseParams, after) }),
+                {
+                    selectData: (response) => pageAttributesFromResponse(response.data),
+                    debugKey: `board-attributes:${workspaceId}:${boardId}`,
+                },
+            ),
+        );
+        return { attribute, status: 200 };
     } catch (err) {
-        return { message: err.message, status: 500 };
+        return { message: err.message, status: err?.response?.status || 500 };
     }
 }
 
@@ -1203,6 +1235,12 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
 }
 
 export async function setGeneratedField(workspaceId, boardId, itemId, message) {
+    // Offline skip, same reason as setIntegrationMessage above.
+    if (isOfflineMode()) {
+        warn('ISO+™ Service', 'setGeneratedField skipped: backend is in offline mode', { workspaceId, boardId, itemId });
+        return false;
+    }
+
     try {
         const itemValues = await getItemValues(workspaceId, boardId, itemId);
         if (!itemValues) {
@@ -1233,6 +1271,12 @@ export async function setGeneratedField(workspaceId, boardId, itemId, message) {
 }
 
 export async function setPDFLinkAttribute(workspaceId, boardId, itemId, pdfUrl, docType) {
+    // Offline skip, same reason as setIntegrationMessage above.
+    if (isOfflineMode()) {
+        warn('ISO+™ Service', 'setPDFLinkAttribute skipped: backend is in offline mode', { workspaceId, boardId, itemId });
+        return false;
+    }
+
     try {
         // Get the board to find the PDF attribute ID
         const board = await Board.findOne({ boardId: mongoEq(boardId) })

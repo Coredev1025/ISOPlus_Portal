@@ -1,0 +1,137 @@
+import Invoice from '../../models/Invoice.js';
+import Item from '../../models/Item.js';
+import PDFLink from '../../models/PDFLink.js';
+import { INVOICE_KIND, INVOICE_STATUS } from '../../constants/invoiceLedger.js';
+import { mongoEq } from '../securityHelpers.js';
+import { numberForms, parseInvoiceNumber } from './numbers.js';
+
+/**
+ * The only code that reads invoice identity once the readers move onto the ledger
+ * (KAN-302). Screens and documents call these; nothing else queries `pdflinks`,
+ * `invoicenumbers` or `invoicedBy` for that purpose.
+ *
+ * Every function takes the workspace explicitly and scopes by it. Results are lean
+ * documents.
+ */
+
+const eqAll = (values) => ({ $in: values.map((v) => mongoEq(String(v))) });
+
+/**
+ * An invoice by number, from the plain number or any form it has been known by.
+ * The invoice that owns the number wins over a flagged duplicate. A void invoice is
+ * returned too: a link to an old document must still resolve.
+ */
+export async function byNumber(workspaceId, rawNumber) {
+  const parsed = parseInvoiceNumber(rawNumber);
+  if (!parsed) return null;
+  const forms = numberForms(rawNumber);
+
+  return Invoice.findOne({
+    workspaceId: mongoEq(String(workspaceId)),
+    source: parsed.source,
+    $or: [{ number: parsed.number }, { legacyNumbers: eqAll(forms) }],
+  }).sort({ duplicateOrdinal: 1 }).lean();
+}
+
+/**
+ * An invoice by number on one board, from any form of the number, the one that owns the number
+ * first. The pdf-link lookup answers per board (access is checked per board, and two boards can
+ * hold a duplicate of one number), so an invoice with no board is never served here.
+ */
+export async function byNumberOnBoard(workspaceId, boardId, rawNumber) {
+  const parsed = parseInvoiceNumber(rawNumber);
+  if (!parsed) return null;
+  return Invoice.findOne({
+    workspaceId: mongoEq(String(workspaceId)),
+    boardId: mongoEq(String(boardId)),
+    source: parsed.source,
+    $or: [{ number: parsed.number }, { legacyNumbers: eqAll(numberForms(rawNumber)) }],
+  }).sort({ duplicateOrdinal: 1 }).lean();
+}
+
+/**
+ * Of the issued invoices that list an item: the one it points at, else the one its marker
+ * names (design 4.4: for existing data the active invoice is the one the marker names),
+ * else the latest.
+ */
+function chooseActive(candidates, activeInvoiceId, marker) {
+  if (activeInvoiceId) {
+    const pointed = candidates.find((inv) => String(inv._id) === String(activeInvoiceId));
+    if (pointed) return pointed;
+  }
+  const forms = numberForms(marker);
+  if (forms.length > 0) {
+    const named = candidates.find((inv) => forms.includes(inv.number) || (inv.legacyNumbers || []).some((n) => forms.includes(n)));
+    if (named) return named;
+  }
+  return [...candidates].sort((a, b) => new Date(b.issuedAt || 0) - new Date(a.issuedAt || 0))[0];
+}
+
+/**
+ * Item id to the invoice it currently belongs to. An item on no issued invoice is
+ * absent from the map.
+ */
+export async function activeForItems(workspaceId, itemIds) {
+  const ids = (itemIds || []).map(String);
+  if (ids.length === 0) return new Map();
+  const workspace = mongoEq(String(workspaceId));
+
+  const invoices = await Invoice.find({
+    workspaceId: workspace, status: INVOICE_STATUS.ISSUED, 'lines.itemId': eqAll(ids),
+  }).lean();
+  const pointers = await Item.find({
+    workspaceId: workspace, itemId: eqAll(ids),
+  }).select('itemId activeInvoiceId invoicedBy').lean();
+  const pointerOf = new Map(pointers.map((i) => [i.itemId, i]));
+
+  // One pass over the invoices' lines, not a scan of every invoice per item.
+  const wanted = new Set(ids);
+  const candidatesOf = new Map();
+  for (const invoice of invoices) {
+    for (const line of invoice.lines) {
+      if (wanted.has(line.itemId)) candidatesOf.set(line.itemId, [...(candidatesOf.get(line.itemId) || []), invoice]);
+    }
+  }
+  const result = new Map();
+  for (const [id, candidates] of candidatesOf) {
+    result.set(id, chooseActive(candidates, pointerOf.get(id)?.activeInvoiceId, pointerOf.get(id)?.invoicedBy));
+  }
+  return result;
+}
+
+/**
+ * The issued invoices for a participant on a board, oldest first: the same scope the
+ * statement uses today (per board, matched by participant name, every invoice).
+ */
+export async function forParticipant({ workspaceId, boardId, participant }) {
+  return Invoice.find({
+    workspaceId: mongoEq(String(workspaceId)),
+    boardId: mongoEq(String(boardId)),
+    'participant.name': mongoEq(String(participant)),
+    status: INVOICE_STATUS.ISSUED,
+    // The statement is for NDIS and Age Care invoices, as the old document types were.
+    kind: { $in: [INVOICE_KIND.NDIS, INVOICE_KIND.AGE_CARE] },
+  }).sort({ issuedAt: 1, createdAt: 1 }).lean();
+}
+
+/** The invoices a scheduled slot produced on a board, for replay checks. */
+export async function slotInvoices(workspaceId, boardId, periodKey) {
+  return Invoice.find({
+    workspaceId: mongoEq(String(workspaceId)),
+    boardId: mongoEq(String(boardId)),
+    periodKey: mongoEq(String(periodKey)),
+  }).sort({ number: 1 }).lean();
+}
+
+/**
+ * Record that an invoice the portal issued has been pushed to Xero as a draft. Sets
+ * `xero` on the invoice, and, while both are written, the older
+ * `pdflinks.xeroInvoiceNumber` on its document rows, which the draft push still reads.
+ */
+export async function stampXero(invoiceId, xeroInvoiceNumber, xeroId = undefined) {
+  const xero = { invoiceNumber: String(xeroInvoiceNumber), ...(xeroId ? { id: String(xeroId) } : {}) };
+  const updated = await Invoice.findByIdAndUpdate(invoiceId, { $set: { xero } }, { new: true }).lean();
+  if (!updated) throw new Error(`Invoice ${invoiceId} not found`);
+  await PDFLink.updateMany({ invoiceId: updated._id }, { $set: { xeroInvoiceNumber: xero.invoiceNumber } });
+  return updated;
+}

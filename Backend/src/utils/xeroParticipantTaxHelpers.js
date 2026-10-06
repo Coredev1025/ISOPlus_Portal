@@ -1,3 +1,4 @@
+import { lineAmountsFrom } from './invoiceLedger/lineAmounts.js';
 export function resolveParticipantTaxDueDate(invoiceDateRaw, dueDateRaw, asIsoString = false) {
   let dueDate = dueDateRaw ? String(dueDateRaw).split('T')[0] : '';
   if (dueDate) {
@@ -127,12 +128,16 @@ function buildParticipantTaxLineItem(item, ctx) {
 
 export function buildParticipantTaxLineItems(ctx) {
   const lineItems = [];
+  const billedRows = [];
   let totalAmount = 0;
   for (const item of ctx.items) {
     const lineItem = buildParticipantTaxLineItem(item, ctx);
     if (!lineItem) continue;
     lineItems.push(lineItem);
+    billedRows.push({ itemId: item.id, amount: lineItem.lineAmount });
     totalAmount += lineItem.lineAmount;
   }
-  return { lineItems, totalAmount };
+  // What each item billed (KAN-308), from the same amounts the Xero lines carry.
+  const lineAmounts = lineAmountsFrom(billedRows, 'itemId', (row) => row.amount);
+  return { lineItems, totalAmount, lineAmounts };
 }

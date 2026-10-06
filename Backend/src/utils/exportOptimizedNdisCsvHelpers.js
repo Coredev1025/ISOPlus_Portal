@@ -1,3 +1,4 @@
+import { loadInvoiceMaps } from './invoiceLedger/listMaps.js';
 import { collectInvoiceRefIdsFromMasterItems } from './ndisInvoiceContextHelpers.js';
 import { toRequiredQueryString } from './securityHelpers.js';
 
@@ -294,11 +295,11 @@ export async function handleNdisInvoiceCsvExport(req, res, deps) {
 
     refItemsMap = await loadNdisSupportCatalogueIntoMap(workspaceId, boardId, refIdSets.servicePlanIds, refItemsMap, deps);
 
-    const invoiceNumberMap = new Map(
-      (await deps.InvoiceNumber.find({
-        workspaceId, boardId, itemId: { $in: masterItems.map((i) => i.itemId) }, type: 'PDF',
-      }).lean()).map((inv) => [inv.itemId, inv.invoiceNumber || '']),
-    );
+    // The old log (PDF rows), the invoice record, or both compared (KAN-313).
+    const { invoiceNumberMap: loadedNumbers } = await loadInvoiceMaps({
+      workspaceId, boardId, itemIds: masterItems.map((i) => i.itemId), InvoiceNumber: deps.InvoiceNumber,
+    });
+    const invoiceNumberMap = new Map([...loadedNumbers].map(([itemId, number]) => [itemId, number || '']));
 
     const statusFieldAttributeNames = detectNdisStatusFieldNames(masterItems);
     masterItems = applyNdisMasterItemFilters(masterItems, {

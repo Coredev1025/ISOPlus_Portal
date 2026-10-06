@@ -10,7 +10,8 @@ import { useAppContext } from "@/app/context";
 import axios from "@/app/utils/axiosConfig";
 import { showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
 import Spinner from "@/components/ui/spin";
-import { isOwnerOrSupport } from "@/lib/access";
+import { isOwnerOrSupport, isContextUserHydrated } from "@/lib/access";
+import { WorkspaceFeatureTogglesCard } from "@/lib/workspace-feature-toggles-card";
 
 // Function to decode HTML entities
 const decodeHtmlEntities = (text: string): string => {
@@ -38,6 +39,16 @@ export default function WorkspaceConfiguration() {
       setCurrentWorkspaceId(null);
     };
   }, [id, setCurrentWorkspaceId]);
+
+  const isOwnerOrSupportUser = isOwnerOrSupport(user);
+  const userReady = isContextUserHydrated(user);
+
+  useEffect(() => {
+    if (!userReady) return;
+    if (!isOwnerOrSupportUser) {
+      router.replace("/workspace/access-denied");
+    }
+  }, [userReady, isOwnerOrSupportUser, router]);
 
   const handleCheckLinks = async () => {
     setIsCheckingLinks(true);
@@ -79,11 +90,7 @@ export default function WorkspaceConfiguration() {
     return <div>Loading...</div>;
   }
 
-  // Check if user has permission to access this page
-  const isOwnerOrSupportUser = isOwnerOrSupport(user);
-
-  if (!isOwnerOrSupportUser) {
-    router.replace("/workspace/access-denied");
+  if (!userReady || !isOwnerOrSupportUser) {
     return null;
   }
 
@@ -112,7 +119,7 @@ export default function WorkspaceConfiguration() {
                   Workspace Configuration
                 </h1>
                 <p className="text-muted-foreground">
-                  Configure workspace settings and manage board links
+                  Configure workspace settings, feature toggles, and manage board links
                 </p>
               </div>
             </div>
@@ -125,11 +132,14 @@ export default function WorkspaceConfiguration() {
               <div>
                 <h3 className="text-lg font-semibold mb-2">Permission Required</h3>
                 <p className="text-muted-foreground">
-                  This feature is available to <strong>Owner</strong> and <strong>Support Admin</strong> users only.
+                  Board linking tools on this page are available to System Owner
+                  and Support Admin users only.
                 </p>
               </div>
             </div>
           </Card>
+
+          <WorkspaceFeatureTogglesCard workspaceId={id} />
 
           {/* Dynamic Linking Actions */}
           <Card className="p-6 shadow-lg">

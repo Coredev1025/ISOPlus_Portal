@@ -11,9 +11,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Upload, AlertCircle, Loader2, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Upload,
+  Loader2,
+  X,
+  Image as ImageIcon,
+  IdCard,
+  MapPin,
+  Hash,
+} from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { Header } from "@/components/ui/header";
 import axios from "@/app/utils/axiosConfig";
 import {
@@ -22,23 +31,104 @@ import {
   revokeBlobUrl,
   type LogoField,
 } from "@/lib/business-logo";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { showSaveSuccessToast, showSaveErrorToast, showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
-import { extractDocumentNumberingSequences, mapBusinessProfileToFormData } from "@/lib/configure-business-helpers";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { BUSINESS_PROFILE_SECTION } from "@/constants/businessProfile";
+import { mapBusinessProfileToBusinessFormData } from "@/lib/configure-business-helpers";
 
-interface NumberSequence {
-  prefix: string;
-  nextNumber: number;
+type CardHeaderBlockProps = Readonly<{
+  icon: ReactNode;
+  title: string;
+  description: string;
+}>;
+
+function CardHeaderBlock({ icon, title, description }: CardHeaderBlockProps) {
+  return (
+    <div className="mb-4 flex items-start gap-3">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        {icon}
+      </div>
+      <div>
+        <h3 className="text-[14.5px] font-bold leading-tight">{title}</h3>
+        <p className="mt-0.5 text-[12.5px] text-muted-foreground">{description}</p>
+      </div>
+    </div>
+  );
+}
+
+type LogoUploadColumnProps = Readonly<{
+  title: string;
+  preview: string | null;
+  previewAlt: string;
+  removeLabel: string;
+  /** Square slots for default/square; wide uses a shorter, wider frame inside the same-height row. */
+  variant: "square" | "wide";
+  helpText: readonly string[];
+  onRemove: () => void;
+  onFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
+}>;
+
+function LogoUploadColumn({
+  title,
+  preview,
+  previewAlt,
+  removeLabel,
+  variant,
+  helpText,
+  onRemove,
+  onFileChange,
+}: LogoUploadColumnProps) {
+  const previewFrameClass =
+    variant === "wide"
+      ? "h-24 w-full max-w-[14rem]"
+      : "h-32 w-32";
+
+  return (
+    <div className="flex h-full flex-col gap-3 rounded-lg border p-4">
+      <h4 className="shrink-0 text-sm font-semibold">{title}</h4>
+
+      {/* Fixed-height slot so Choose File rows align across the three columns. */}
+      <div className="flex h-36 w-full shrink-0 items-center justify-center">
+        <div
+          className={`${previewFrameClass} relative flex items-center justify-center rounded-lg border-2 border-dashed bg-muted`}
+        >
+          {preview ? (
+            <>
+              <img
+                src={preview}
+                alt={previewAlt}
+                className="h-full w-full object-contain p-1"
+              />
+              <button
+                type="button"
+                className="absolute right-0 top-0 z-10 rounded-full bg-white p-1 shadow hover:bg-red-100"
+                onClick={onRemove}
+                aria-label={removeLabel}
+              >
+                <X className="h-4 w-4 text-destructive" />
+              </button>
+            </>
+          ) : (
+            <Upload className="h-8 w-8 text-muted-foreground" />
+          )}
+        </div>
+      </div>
+
+      <Input
+        type="file"
+        accept="image/*"
+        onChange={onFileChange}
+        className="block h-10 w-full min-w-0 shrink-0 whitespace-nowrap overflow-hidden file:mr-3 file:inline-flex file:h-full file:shrink-0 file:items-center file:border-0 file:bg-transparent file:px-0 file:text-sm file:font-medium file:text-foreground"
+      />
+
+      <div className="space-y-1">
+        {helpText.map((line) => (
+          <p key={line} className="text-sm leading-snug text-muted-foreground">
+            {line}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function ConfigureBusinessPage() {
@@ -53,11 +143,8 @@ export default function ConfigureBusinessPage() {
   const [wideLogoPreview, setWideLogoPreview] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
   const [showError, setShowError] = useState(false);
-  // Document number sequences
-  const [invoiceSequence, setInvoiceSequence] = useState<NumberSequence>({ prefix: "INV-", nextNumber: 1000 });
-  const [purchaseOrderSequence, setPurchaseOrderSequence] = useState<NumberSequence>({ prefix: "PO-", nextNumber: 1000 });
-  const [quoteSequence, setQuoteSequence] = useState<NumberSequence>({ prefix: "QT-", nextNumber: 1000 });
   const [loading, setLoading] = useState(false);
+  const [profileReady, setProfileReady] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [apiError, setApiError] = useState<string>('');
   const [defaultLogoRemoved, setDefaultLogoRemoved] = useState(false);
@@ -108,21 +195,6 @@ export default function ConfigureBusinessPage() {
       Object.values(logoPreviewBlobUrls.current).forEach((url) => revokeBlobUrl(url));
     };
   }, []);
-
-  // Alert dialog state
-  const [alertDialog, setAlertDialog] = useState<{
-    isOpen: boolean;
-    title: string;
-    description: string;
-    type: 'invoice' | 'purchaseOrder' | 'quote';
-    newValue: number;
-  }>({
-    isOpen: false,
-    title: '',
-    description: '',
-    type: 'invoice',
-    newValue: 0
-  });
 
   const countryStates: { [key: string]: string[] } = {
     "Afghanistan": [],
@@ -336,13 +408,6 @@ export default function ConfigureBusinessPage() {
     abn: "",
     acn: "",
     workspaceId: id,
-    bankAccountName: "",
-    bankName: "",
-    bsb: "",
-    accountNumber: "",
-    paymentReference: "",
-    accountsReceivableTerms: "",
-    accountsPayableTerms: "",
     headOfficeTimezone: "Australia/Sydney",
   });
 
@@ -361,12 +426,7 @@ export default function ConfigureBusinessPage() {
 
         if (!abortController.signal.aborted) {
           const data = response.data;
-          setFormData(mapBusinessProfileToFormData(data, id));
-
-          const sequences = extractDocumentNumberingSequences(data);
-          if (sequences.invoice) setInvoiceSequence(sequences.invoice);
-          if (sequences.purchaseOrder) setPurchaseOrderSequence(sequences.purchaseOrder);
-          if (sequences.quote) setQuoteSequence(sequences.quote);
+          setFormData(mapBusinessProfileToBusinessFormData(data, id));
 
           // Load logo previews via authenticated API (no expiring presigned URLs in UI)
           await applyLogoPreviews({
@@ -375,12 +435,21 @@ export default function ConfigureBusinessPage() {
             wideLogo: data.wideLogo,
           });
           showFetchSuccessToast("Business profile");
+          setProfileReady(true);
         }
       } catch (error: any) {
-        if (error.name != "CanceledError" && error.name != "AbortError") {
-          console.error("Failed to fetch business profile:", error);
-          showFetchErrorToast("business profile", error.response?.data?.message || "Failed to load business profile");
+        if (error.name == "CanceledError" || error.name == "AbortError") {
+          return;
         }
+        // New workspaces have no profile yet — empty form is expected, not an error toast.
+        if (error.response?.status === 404) {
+          setProfileReady(true);
+          return;
+        }
+        console.error("Failed to fetch business profile:", error);
+        showFetchErrorToast("business profile", error.response?.data?.message || "Failed to load business profile");
+        // Allow save after a failed load so operators are not stuck.
+        setProfileReady(true);
       }
     };
 
@@ -422,12 +491,8 @@ export default function ConfigureBusinessPage() {
       Object.keys(formData).forEach((key) => {
         formDataToSend.append(key, formData[key as keyof typeof formData]);
       });
-      formDataToSend.append('documentNumbering', JSON.stringify({
-        invoice: invoiceSequence,
-        purchaseOrder: purchaseOrderSequence,
-        quote: quoteSequence
-      }));
-
+      // Names this page so the server validates only what it owns (KAN-322).
+      formDataToSend.append("section", BUSINESS_PROFILE_SECTION.BUSINESS);
       if (logoFile) {
         formDataToSend.append("defaultLogo", logoFile);
       }
@@ -496,41 +561,6 @@ export default function ConfigureBusinessPage() {
     }
   };
 
-  const handleNumberChange = (type: 'invoice' | 'purchaseOrder' | 'quote', value: string) => {
-    const newValue = parseInt(value);
-    const currentValue = type === 'invoice'
-      ? invoiceSequence.nextNumber
-      : type === 'purchaseOrder'
-        ? purchaseOrderSequence.nextNumber
-        : quoteSequence.nextNumber;
-
-    if (newValue < currentValue) {
-      setAlertDialog({
-        isOpen: true,
-        title: 'Warning: Reducing Number Sequence',
-        description: 'Reducing the next number may result in duplicate document numbers if previous numbers have been used. Are you sure you want to continue?',
-        type,
-        newValue
-      });
-    } else {
-      updateNumberSequence(type, newValue);
-    }
-  };
-
-  const updateNumberSequence = (type: 'invoice' | 'purchaseOrder' | 'quote', value: number) => {
-    switch (type) {
-      case 'invoice':
-        setInvoiceSequence(prev => ({ ...prev, nextNumber: value }));
-        break;
-      case 'purchaseOrder':
-        setPurchaseOrderSequence(prev => ({ ...prev, nextNumber: value }));
-        break;
-      case 'quote':
-        setQuoteSequence(prev => ({ ...prev, nextNumber: value }));
-        break;
-    }
-  };
-
   const handleRemoveLogo = (type: 'default' | 'square' | 'wide') => {
     switch (type) {
       case 'default':
@@ -554,528 +584,311 @@ export default function ConfigureBusinessPage() {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      <div className="container mx-auto py-8">
-        <Button variant="ghost" className="mb-6" onClick={() => router.replace(`/workspace/${id}`)}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
+      <div className="container mx-auto px-4 py-8 sm:px-6 lg:px-8">
+        <Button
+          variant="ghost"
+          className="mb-6"
+          onClick={() => router.replace(`/workspace/${id}`)}
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Workspace
         </Button>
 
-        <Card className="max-w-2xl mx-auto p-6">
-          <h1 className="text-2xl font-bold mb-6">Configure Your Business</h1>
+        <h1 className="mb-2 text-2xl font-bold tracking-tight sm:text-3xl">
+          Business Configuration
+        </h1>
+        <p className="mb-2 max-w-3xl text-sm text-muted-foreground sm:text-base">
+          Manage your business details, address, and branding.
+        </p>
+        <p className="mb-8 max-w-3xl text-sm text-muted-foreground">
+          Bank details and document numbering are managed under{" "}
+          <button
+            type="button"
+            className="font-medium text-foreground underline underline-offset-2"
+            onClick={() =>
+              router.push(`/workspace/${id}/finance-settings?tab=financial`)
+            }
+          >
+            Finance Settings & Automation
+          </button>
+          {"."}
+        </p>
 
-          <Tabs defaultValue="basic" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="basic">Basic Information</TabsTrigger>
-              <TabsTrigger value="additional">Additional Settings</TabsTrigger>
-            </TabsList>
+        <div className="space-y-[18px]">
+          <Card className="border p-5 shadow-sm">
+            <CardHeaderBlock
+              icon={<ImageIcon className="h-4 w-4" />}
+              title="Company Logos"
+              description="Upload different logo formats for various uses throughout the application."
+            />
+            <div
+              data-testid="company-logos-grid"
+              className="grid grid-cols-1 items-stretch gap-4 md:grid-cols-3"
+            >
+              <LogoUploadColumn
+                title="Default Logo"
+                preview={defaultLogoPreview}
+                previewAlt="Default Logo Preview"
+                removeLabel="Remove Default Logo"
+                variant="square"
+                helpText={[
+                  "Maximum file size: 1 MB.",
+                  "Used for general application areas, profile displays, and generated PDF documents, including tax invoices.",
+                ]}
+                onRemove={() => handleRemoveLogo("default")}
+                onFileChange={(e) =>
+                  handleLogoChange(e, "defaultLogo", setLogoFile)
+                }
+              />
+              <LogoUploadColumn
+                title="Square Logo"
+                preview={squareLogoPreview}
+                previewAlt="Square Logo Preview"
+                removeLabel="Remove Square Logo"
+                variant="square"
+                helpText={[
+                  "Recommended dimensions: 512 × 512 px",
+                  "Maximum file size: 1 MB.",
+                  "Used for digital forms, such as the Incident Report Form.",
+                ]}
+                onRemove={() => handleRemoveLogo("square")}
+                onFileChange={(e) =>
+                  handleLogoChange(e, "squareLogo", setSquareLogoFile)
+                }
+              />
+              <LogoUploadColumn
+                title="Wide Logo"
+                preview={wideLogoPreview}
+                previewAlt="Wide Logo Preview"
+                removeLabel="Remove Wide Logo"
+                variant="wide"
+                helpText={[
+                  "Recommended dimensions: 820 × 312 px, with the logo centred within the middle third of the image. Maximum file size: 1 MB.",
+                  "Used for online documents, including policies and procedures.",
+                ]}
+                onRemove={() => handleRemoveLogo("wide")}
+                onFileChange={(e) =>
+                  handleLogoChange(e, "wideLogo", setWideLogoFile)
+                }
+              />
+            </div>
+          </Card>
 
-            <TabsContent value="basic">
-              <div className="space-y-6">
-                <div className="space-y-4 border rounded-lg p-5">
-                  <h3 className="text-lg font-semibold">Company Logos</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Upload different logo formats for various uses throughout the application
-                  </p>
-
-                  <div className="border rounded-lg p-4">
-                    <Tabs defaultValue="default" className="space-y-4">
-                      <TabsList className="grid grid-cols-3 w-full">
-                        <TabsTrigger value="default">Default Logo</TabsTrigger>
-                        <TabsTrigger value="square">Square Logo</TabsTrigger>
-                        <TabsTrigger value="wide">Wide Logo</TabsTrigger>
-                      </TabsList>
-
-                      <TabsContent value="default" className="pt-4">
-                        <div className="flex items-center gap-4">
-                          <div
-                            className="w-32 h-32 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted relative"
-                          >
-                            {defaultLogoPreview ? (
-                              <>
-                                <img
-                                  src={defaultLogoPreview}
-                                  alt="Default Logo Preview"
-                                  className="w-full h-full object-contain"
-                                />
-                                <button
-                                  type="button"
-                                  className="absolute top-[0px] right-[0px] bg-white rounded-full p-1 shadow hover:bg-red-100 z-10"
-                                  onClick={() => handleRemoveLogo('default')}
-                                  aria-label="Remove Default Logo"
-                                >
-                                  <X className="w-4 h-4 text-destructive" />
-                                </button>
-                              </>
-                            ) : (
-                              <Upload className="h-8 w-8 text-muted-foreground" />
-                            )}
-                          </div>
-                          <div>
-                            <h4 className="text-sm font-medium mb-2">Default Logo</h4>
-                            <Input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => handleLogoChange(e, 'defaultLogo', setLogoFile)}
-                              className="max-w-xs"
-                            />
-                            <p className="text-sm text-muted-foreground mt-2">
-                              Maximum file size: 5MB
-                            </p>
-                            <p className="text-sm text-muted-foreground mt-1">
-                              Used for general application areas, profile displays, and generated PDF documents
-                            </p>
-                          </div>
-                        </div>
-                      </TabsContent>
-
-                      <TabsContent value="square" className="pt-4">
-                        <div className="flex items-center gap-4">
-                          <div
-                            className="w-32 h-32 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted relative"
-                          >
-                            {squareLogoPreview ? (
-                              <>
-                                <img
-                                  src={squareLogoPreview}
-                                  alt="Square Logo Preview"
-                                  className="w-full h-full object-contain"
-                                />
-                                <button
-                                  type="button"
-                                  className="absolute top-[0px] right-[0px] bg-white rounded-full p-1 shadow hover:bg-red-100 z-10"
-                                  onClick={() => handleRemoveLogo('square')}
-                                  aria-label="Remove Square Logo"
-                                >
-                                  <X className="w-4 h-4 text-destructive" />
-                                </button>
-                              </>
-                            ) : (
-                              <Upload className="h-8 w-8 text-muted-foreground" />
-                            )}
-                          </div>
-                          <div>
-                            <h4 className="text-sm font-medium mb-2">Square Logo</h4>
-                            <Input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => handleLogoChange(e, 'squareLogo', setSquareLogoFile)}
-                              className="max-w-xs"
-                            />
-                            <p className="text-sm text-muted-foreground mt-2">
-                              Recommended size: 512x512px
-                            </p>
-                            <p className="text-sm text-muted-foreground mt-1">
-                              Used for online forms
-                            </p>
-                          </div>
-                        </div>
-                      </TabsContent>
-
-                      <TabsContent value="wide" className="pt-4">
-                        <div className="flex items-center gap-4">
-                          <div
-                            className="w-48 h-24 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted relative"
-                          >
-                            {wideLogoPreview ? (
-                              <>
-                                <img
-                                  src={wideLogoPreview}
-                                  alt="Wide Logo Preview"
-                                  className="w-full h-full object-contain"
-                                />
-                                <button
-                                  type="button"
-                                  className="absolute top-[0px] right-[0px] bg-white rounded-full p-1 shadow hover:bg-red-100 z-10"
-                                  onClick={() => handleRemoveLogo('wide')}
-                                  aria-label="Remove Wide Logo"
-                                >
-                                  <X className="w-4 h-4 text-destructive" />
-                                </button>
-                              </>
-                            ) : (
-                              <Upload className="h-8 w-8 text-muted-foreground" />
-                            )}
-                          </div>
-                          <div>
-                            <h4 className="text-sm font-medium mb-2">Wide Logo</h4>
-                            <Input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => handleLogoChange(e, 'wideLogo', setWideLogoFile)}
-                              className="max-w-xs"
-                            />
-                            <p className="text-sm text-muted-foreground mt-2">
-                              Recommended size: 820 x 312 pixels, with your logo centred within the middle third of the document area
-                            </p>
-                            <p className="text-sm text-muted-foreground mt-1">
-                              Used for online documents
-                            </p>
-                          </div>
-                        </div>
-                      </TabsContent>
-                    </Tabs>
-                  </div>
-                </div>
-
-                <div className="space-y-4 border rounded-lg p-5">
-                  <h3 className="text-lg font-semibold">Business Details</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="name">Company Name</Label>
-                      <Input
-                        id="name"
-                        placeholder="Enter company name"
-                        value={formData.name}
-                        onChange={handleInputChange}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="companyRegistrationId">Company Registration ID</Label>
-                      <Input
-                        id="companyRegistrationId"
-                        placeholder="NDIS of Aged Care Provider ID"
-                        value={formData.companyRegistrationId}
-                        onChange={handleInputChange}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="phone">Phone Number</Label>
-                      <Input
-                        id="phone"
-                        placeholder="Enter phone number"
-                        value={formData.phone}
-                        onChange={handleInputChange}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Business Email</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        placeholder="Enter business email"
-                        value={formData.email}
-                        onChange={handleInputChange}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="headOfficeTimezone">Head Office Timezone</Label>
-                    <Select
-                      value={formData.headOfficeTimezone}
-                      onValueChange={(value) =>
-                        setFormData((prevData) => ({
-                          ...prevData,
-                          headOfficeTimezone: value,
-                        }))
-                      }
-                    >
-                      <SelectTrigger id="headOfficeTimezone">
-                        <SelectValue placeholder="Select timezone" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</SelectItem>
-                        <SelectItem value="Australia/Melbourne">Australia/Melbourne (AEST/AEDT)</SelectItem>
-                        <SelectItem value="Australia/Brisbane">Australia/Brisbane (AEST)</SelectItem>
-                        <SelectItem value="Australia/Adelaide">Australia/Adelaide (ACST/ACDT)</SelectItem>
-                        <SelectItem value="Australia/Darwin">Australia/Darwin (ACST)</SelectItem>
-                        <SelectItem value="Australia/Perth">Australia/Perth (AWST)</SelectItem>
-                        <SelectItem value="Australia/Hobart">Australia/Hobart (AEST/AEDT)</SelectItem>
-                        <SelectItem value="Pacific/Auckland">Pacific/Auckland (NZST/NZDT)</SelectItem>
-                        <SelectItem value="UTC">UTC</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-sm text-muted-foreground">
-                      Used to display invoice item dates and times in your local time
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-4  border rounded-lg p-5">
-                  <h3 className="text-lg font-semibold">Business Address</h3>
-                  <div className="space-y-2">
-                    <Label htmlFor="country">Country</Label>
-                    <Select
-                      value={formData.country}
-                      onValueChange={(value) =>
-                        setFormData((prevData) => ({
-                          ...prevData,
-                          country: value,
-                        }))
-                      }
-                    >
-                      <SelectTrigger id="country">
-                        <SelectValue placeholder="Select country" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.keys(countryStates).map((country) => (
-                          <SelectItem key={country} value={country}>
-                            {country}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="street">Street Address</Label>
-                    <Input
-                      id="street"
-                      placeholder="Enter street address"
-                      value={formData.street}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="suburb">Suburb</Label>
-                      <Input
-                        id="suburb"
-                        placeholder="Enter city"
-                        value={formData.suburb}
-                        onChange={handleInputChange}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="state">State</Label>
-                      <Select
-                        value={formData.state}
-                        onValueChange={(value) =>
-                          setFormData((prevData) => ({
-                            ...prevData,
-                            state: value,
-                          }))
-                        }
-                      >
-                        <SelectTrigger id="state">
-                          <SelectValue placeholder="Select state" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {countryStates[formData.country]?.map((state: string) => (
-                            <SelectItem key={state} value={state}>
-                              {state}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="postcode">Postcode</Label>
-                    <Input
-                      id="postcode"
-                      placeholder="Enter postcode"
-                      maxLength={8}
-                      value={formData.postcode}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-4  border rounded-lg p-5">
-                  <h3 className="text-lg font-semibold">Business Numbers</h3>
-                  <div className="grid grid-cols-1 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="abn">Australian Business Number (ABN)</Label>
-                      <Input
-                        id="abn"
-                        placeholder="Enter ABN"
-                        maxLength={11}
-                        value={formData.abn}
-                        onChange={handleInputChange}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="acn">Australian Company Number (ACN)</Label>
-                      <Input
-                        id="acn"
-                        placeholder="Enter ACN"
-                        maxLength={9}
-                        value={formData.acn}
-                        onChange={handleInputChange}
-                      />
-                    </div>
-                  </div>
-                </div>
+          <Card className="border p-5 shadow-sm">
+            <CardHeaderBlock
+              icon={<IdCard className="h-4 w-4" />}
+              title="Business Details"
+              description="Enter your core business information."
+            />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="name">Company Name</Label>
+                <Input
+                  id="name"
+                  placeholder="Enter company name"
+                  value={formData.name}
+                  onChange={handleInputChange}
+                />
               </div>
-            </TabsContent>
-
-            <TabsContent value="additional">
-              <div className="space-y-6">
-                {/* Bank Details */}
-                <div className="space-y-4 border rounded-lg p-5">
-                  <h3 className="text-lg font-semibold">Bank Details</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    These details will appear on your invoices for receiving payments
-                  </p>
-
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="bankName">Bank Name</Label>
-                      <Input
-                        id="bankName"
-                        placeholder="Enter bank name"
-                        value={formData.bankName}
-                        onChange={handleInputChange}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="bankAccountName">Account Name</Label>
-                      <Input
-                        id="bankAccountName"
-                        value={formData.bankAccountName}
-                        onChange={handleInputChange}
-                        placeholder="Enter account name"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="bsb">BSB</Label>
-                        <Input
-                          id="bsb"
-                          placeholder="Enter BSB"
-                          value={formData.bsb}
-                          onChange={handleInputChange}
-                          maxLength={6}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="accountNumber">Account Number</Label>
-                        <Input
-                          id="accountNumber"
-                          placeholder="Enter account number"
-                          value={formData.accountNumber}
-                          onChange={handleInputChange}
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="accountsReceivableTerms">Accounts Receivable Payment Terms</Label>
-                      <Input
-                        id="accountsReceivableTerms"
-                        placeholder="When clients are expected to pay you"
-                        value={formData.accountsReceivableTerms}
-                        onChange={handleInputChange}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="accountsPayableTerms">Accounts Payable Payment Terms</Label>
-                      <Input
-                        id="accountsPayableTerms"
-                        placeholder="When your business pays contractors or suppliers"
-                        value={formData.accountsPayableTerms}
-                        onChange={handleInputChange}
-                      />
-                    </div>
-                  </div>
-                </div>
-                <div className="space-y-4 border rounded-lg p-5">
-                  <h3 className="text-lg font-semibold">Document Number Configuration</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Configure prefixes and next numbers for various document types
-                  </p>
-
-                  {/* Invoice Numbers */}
-                  <div className="space-y-4">
-                    <div className="p-4 bg-muted/30 rounded-lg space-y-3">
-                      <h4 className="font-medium">Invoice Numbers</h4>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="invoice-prefix">Prefix</Label>
-                          <Input
-                            id="invoice-prefix"
-                            value={invoiceSequence.prefix}
-                            onChange={(e) => setInvoiceSequence(prev => ({ ...prev, prefix: e.target.value }))}
-                            placeholder="e.g. INV-"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="invoice-next">Next Number</Label>
-                          <Input
-                            id="invoice-next"
-                            type="number"
-                            value={invoiceSequence.nextNumber}
-                            onChange={(e) => handleNumberChange('invoice', e.target.value)}
-                            min={1}
-                          />
-                        </div>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        Next invoice will be: {invoiceSequence.prefix}{invoiceSequence.nextNumber}
-                      </p>
-                    </div>
-
-                    {/* Purchase Order Numbers */}
-                    <div className="p-4 bg-muted/30 rounded-lg space-y-3">
-                      <h4 className="font-medium">Purchase Order Numbers</h4>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="po-prefix">Prefix</Label>
-                          <Input
-                            id="po-prefix"
-                            value={purchaseOrderSequence.prefix}
-                            onChange={(e) => setPurchaseOrderSequence(prev => ({ ...prev, prefix: e.target.value }))}
-                            placeholder="e.g. PO-"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="po-next">Next Number</Label>
-                          <Input
-                            id="po-next"
-                            type="number"
-                            value={purchaseOrderSequence.nextNumber}
-                            onChange={(e) => handleNumberChange('purchaseOrder', e.target.value)}
-                            min={1}
-                          />
-                        </div>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        Next purchase order will be: {purchaseOrderSequence.prefix}{purchaseOrderSequence.nextNumber}
-                      </p>
-                    </div>
-
-                    {/* Quote Numbers */}
-                    <div className="p-4 bg-muted/30 rounded-lg space-y-3">
-                      <h4 className="font-medium">Quote Numbers</h4>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="quote-prefix">Prefix</Label>
-                          <Input
-                            id="quote-prefix"
-                            value={quoteSequence.prefix}
-                            onChange={(e) => setQuoteSequence(prev => ({ ...prev, prefix: e.target.value }))}
-                            placeholder="e.g. QT-"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="quote-next">Next Number</Label>
-                          <Input
-                            id="quote-next"
-                            type="number"
-                            value={quoteSequence.nextNumber}
-                            onChange={(e) => handleNumberChange('quote', e.target.value)}
-                            min={1}
-                          />
-                        </div>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        Next quote will be: {quoteSequence.prefix}{quoteSequence.nextNumber}
-                      </p>
-                    </div>
-                  </div>
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="companyRegistrationId">
+                  Company Registration ID
+                </Label>
+                <Input
+                  id="companyRegistrationId"
+                  placeholder="NDIS of Aged Care Provider ID"
+                  value={formData.companyRegistrationId}
+                  onChange={handleInputChange}
+                />
               </div>
-            </TabsContent>
-          </Tabs>
+              <div className="space-y-2">
+                <Label htmlFor="phone">Phone Number</Label>
+                <Input
+                  id="phone"
+                  placeholder="Enter phone number"
+                  value={formData.phone}
+                  onChange={handleInputChange}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Business Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="Enter business email"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="headOfficeTimezone">Head Office Timezone</Label>
+                <Select
+                  value={formData.headOfficeTimezone}
+                  onValueChange={(value) =>
+                    setFormData((prevData) => ({
+                      ...prevData,
+                      headOfficeTimezone: value,
+                    }))
+                  }
+                >
+                  <SelectTrigger id="headOfficeTimezone">
+                    <SelectValue placeholder="Select timezone" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Australia/Sydney">
+                      Australia/Sydney (AEST/AEDT)
+                    </SelectItem>
+                    <SelectItem value="Australia/Melbourne">
+                      Australia/Melbourne (AEST/AEDT)
+                    </SelectItem>
+                    <SelectItem value="Australia/Brisbane">
+                      Australia/Brisbane (AEST)
+                    </SelectItem>
+                    <SelectItem value="Australia/Adelaide">
+                      Australia/Adelaide (ACST/ACDT)
+                    </SelectItem>
+                    <SelectItem value="Australia/Darwin">
+                      Australia/Darwin (ACST)
+                    </SelectItem>
+                    <SelectItem value="Australia/Perth">
+                      Australia/Perth (AWST)
+                    </SelectItem>
+                    <SelectItem value="Australia/Hobart">
+                      Australia/Hobart (AEST/AEDT)
+                    </SelectItem>
+                    <SelectItem value="Pacific/Auckland">
+                      Pacific/Auckland (NZST/NZDT)
+                    </SelectItem>
+                    <SelectItem value="UTC">UTC</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground">
+                  Used to display invoice item dates and times in your local
+                  time
+                </p>
+              </div>
+            </div>
+          </Card>
 
-          <div className="mt-6">
+          <Card className="border p-5 shadow-sm">
+            <CardHeaderBlock
+              icon={<MapPin className="h-4 w-4" />}
+              title="Business Address"
+              description="Enter your registered business address."
+            />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="country">Country</Label>
+                <Select
+                  value={formData.country}
+                  onValueChange={(value) =>
+                    setFormData((prevData) => ({
+                      ...prevData,
+                      country: value,
+                    }))
+                  }
+                >
+                  <SelectTrigger id="country">
+                    <SelectValue placeholder="Select country" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.keys(countryStates).map((country) => (
+                      <SelectItem key={country} value={country}>
+                        {country}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="street">Street Address</Label>
+                <Input
+                  id="street"
+                  placeholder="Enter street address"
+                  value={formData.street}
+                  onChange={handleInputChange}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="suburb">Suburb</Label>
+                <Input
+                  id="suburb"
+                  placeholder="Enter city"
+                  value={formData.suburb}
+                  onChange={handleInputChange}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="state">State</Label>
+                <Select
+                  value={formData.state}
+                  onValueChange={(value) =>
+                    setFormData((prevData) => ({
+                      ...prevData,
+                      state: value,
+                    }))
+                  }
+                >
+                  <SelectTrigger id="state">
+                    <SelectValue placeholder="Select state" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {countryStates[formData.country]?.map((state: string) => (
+                      <SelectItem key={state} value={state}>
+                        {state}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="postcode">Postcode</Label>
+                <Input
+                  id="postcode"
+                  placeholder="Enter postcode"
+                  maxLength={8}
+                  value={formData.postcode}
+                  onChange={handleInputChange}
+                />
+              </div>
+            </div>
+          </Card>
+
+          <Card className="border p-5 shadow-sm">
+            <CardHeaderBlock
+              icon={<Hash className="h-4 w-4" />}
+              title="Business Numbers"
+              description="Enter your Australian business numbers."
+            />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="abn">Australian Business Number (ABN)</Label>
+                <Input
+                  id="abn"
+                  placeholder="Enter ABN"
+                  maxLength={11}
+                  value={formData.abn}
+                  onChange={handleInputChange}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="acn">Australian Company Number (ACN)</Label>
+                <Input
+                  id="acn"
+                  placeholder="Enter ACN"
+                  maxLength={9}
+                  value={formData.acn}
+                  onChange={handleInputChange}
+                />
+              </div>
+            </div>
+
             {errors.length > 0 && (
-              <div className="mb-4 p-4 bg-destructive/10 border border-destructive rounded-md">
-                <h4 className="text-sm font-medium text-destructive mb-2">Please correct the following errors:</h4>
-                <ul className="list-disc list-inside space-y-1">
+              <div className="mt-4 rounded-md border border-destructive bg-destructive/10 p-4">
+                <h4 className="mb-2 text-sm font-medium text-destructive">
+                  Please correct the following errors:
+                </h4>
+                <ul className="list-inside list-disc space-y-1">
                   {errors.map((error, index) => (
                     <li key={index} className="text-sm text-destructive">
                       {error}
@@ -1085,65 +898,38 @@ export default function ConfigureBusinessPage() {
               </div>
             )}
 
-            {apiError && (
-              <div className="mb-4 p-4 bg-destructive/10 border border-destructive rounded-md">
+            {apiError ? (
+              <div className="mt-4 rounded-md border border-destructive bg-destructive/10 p-4">
                 <p className="text-sm text-destructive">{apiError}</p>
               </div>
-            )}
+            ) : null}
 
-            {showSuccess && (
-              <div className="mb-4 p-4 bg-green-100 border border-green-500 rounded-md">
-                <p className="text-sm text-green-700">Business profile saved successfully!</p>
+            {showSuccess ? (
+              <div className="mt-4 rounded-md border border-green-500 bg-green-100 p-4">
+                <p className="text-sm text-green-700">
+                  Business profile saved successfully!
+                </p>
               </div>
-            )}
+            ) : null}
 
-            <Button
-              className="w-full"
-              size="lg"
-              onClick={handleSave}
-              disabled={loading}
-            >
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Saving...
-                </span>
-              ) : (
-                'Save Business Configuration'
-              )}
-            </Button>
-          </div>
-        </Card>
-      </div >
-
-      {/* Warning Dialog for Number Sequence Reduction */}
-      <AlertDialog
-        open={alertDialog.isOpen}
-        onOpenChange={(open) => setAlertDialog(prev => ({ ...prev, isOpen: open }))}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-destructive" />
-              {alertDialog.title}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {alertDialog.description}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                updateNumberSequence(alertDialog.type, alertDialog.newValue);
-                setAlertDialog(prev => ({ ...prev, isOpen: false }));
-              }}
-            >
-              Continue
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div >
+            <div className="mt-4 flex justify-end gap-2.5">
+              <Button
+                onClick={handleSave}
+                disabled={loading || !profileReady}
+              >
+                {loading ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Saving...
+                  </span>
+                ) : (
+                  "Save Changes"
+                )}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
   );
 }

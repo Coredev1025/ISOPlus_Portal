@@ -1,6 +1,7 @@
 "use client"
 
 import React, { createContext, useState, Dispatch, SetStateAction, ReactNode, useContext, useEffect } from 'react';
+import type { BoardSyncSchedule } from '@/lib/board-sync-status-helpers';
 
 export interface User {
     id: string;
@@ -43,6 +44,12 @@ export interface SyncStatus {
     } | null;
 }
 
+/** Board row subset from `/api/sync/workspace/status` that Configuration reads. */
+export type WorkspaceBoardStatus = {
+    boardId: string;
+    schedule?: BoardSyncSchedule | null;
+};
+
 interface ContextProps {
     user: User;
     setUser: Dispatch<SetStateAction<User>>;
@@ -50,6 +57,8 @@ interface ContextProps {
     setWorkspaces: Dispatch<SetStateAction<Workspace[]>>;
     syncStatuses: SyncStatus[];
     setSyncStatuses: Dispatch<SetStateAction<SyncStatus[]>>;
+    workspaceBoardStatuses: WorkspaceBoardStatus[];
+    setWorkspaceBoardStatuses: Dispatch<SetStateAction<WorkspaceBoardStatus[]>>;
     currentWorkspaceId: string | null;
     setCurrentWorkspaceId: Dispatch<SetStateAction<string | null>>;
 }
@@ -66,6 +75,7 @@ export function ContextProvider({ children }: { children: ReactNode }) {
     });
     const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
     const [syncStatuses, setSyncStatuses] = useState<SyncStatus[]>([]);
+    const [workspaceBoardStatuses, setWorkspaceBoardStatuses] = useState<WorkspaceBoardStatus[]>([]);
     const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null);
 
     useEffect(() => {
@@ -97,6 +107,8 @@ export function ContextProvider({ children }: { children: ReactNode }) {
             setWorkspaces,
             syncStatuses,
             setSyncStatuses,
+            workspaceBoardStatuses,
+            setWorkspaceBoardStatuses,
             currentWorkspaceId,
             setCurrentWorkspaceId
         }}>

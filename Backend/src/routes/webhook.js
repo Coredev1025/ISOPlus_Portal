@@ -8,16 +8,34 @@ import { fileURLToPath } from 'url';
 import Business from '../models/Business.js';
 import PDFLink from '../models/PDFLink.js';
 import Item from '../models/Item.js';
-import InvoiceNumber from '../models/InvoiceNumber.js';
 import Board from '../models/Board.js';
-import { getS3File, uploadFileToS3, getS3FileUrl } from '../utils/uploadS3.js';
+import { uploadFileToS3, getS3FileUrl } from '../utils/uploadS3.js';
 import { isEmpty } from '../utils/helpers.js';
 import { applyTemplateTextDefaultsToPages } from '../utils/webhookTemplateHelpers.js';
 import { paginatePdfmeTemplateTableByRows } from '../utils/webhookPdfPaginationHelpers.js';
 import { processWebhookNdisQuotePdfItem, processWebhookNdisInvoicePdfItem } from '../utils/webhookNdisPdfHandlers.js';
 import { handleParticipantTaxInvoiceRoute } from '../utils/webhookParticipantTaxPdfHelpers.js';
+import { generateNdisInvoiceGeneratorPdf } from '../services/automation/ndisInvoiceGeneratorPdf.js';
+import { recordPdfLinks } from '../services/automation/generateDocuments.js';
+import { recordIssuedInvoice } from '../utils/invoiceLedger/issue.js';
+import { INVOICE_KIND, INVOICE_TRIGGER } from '../constants/invoiceLedger.js';
+import { PDFLINK_TYPE_NDIS_INVOICE } from '../constants/automation.js';
+import { parseInvoiceGeneratorMasterItemIds } from '../utils/xeroNdisRouteHandlers.js';
+import {
+    enableRepeatHeadOnTables,
+    formatDateNumericAU,
+    getLogoData,
+    saveInvoiceNumber,
+} from '../utils/invoicePdfSupport.js';
 import { handleMonthlyStatementRoute, buildMonthlyStatementDeps } from '../utils/webhookMonthlyStatementPdfHelpers.js';
 import { mongoEq } from '../utils/securityHelpers.js';
+import {
+    GENERATED_DOCUMENT_PUBLIC_READ,
+    GENERATED_PDF_URL_EXPIRY_SECONDS,
+    OUTPUT_TYPE,
+} from '../constants/storage.js';
+import { buildOutputKey } from '../utils/s3OutputKey.js';
+import { claimInvoiceNumber } from '../utils/documentNumberAllocator.js';
 
 import {
     enrichNumericAggregateFields,
@@ -38,46 +56,10 @@ import {
 } from '../services/isoplus.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
 import { fetchBudgetItems, fetchServiceItems } from '../services/monthlyStatementData.js';
-import {
-    NDIS_MASTERPLAN_ATTR as NDIS_MASTERPLAN_ATTR_DB,
-    buildNdisMasterPlanServiceRows,
-    buildNdisSupportCatalogueForServicePlan,
-    extractRefId as extractNdisRefId,
-    formatDdMmYyyy,
-    formatDateInValueZone,
-    formatDateTimeInValueZone,
-} from '../utils/ndisServiceRecords.js';
-import { resolveNdisPricingRuleForServicePlan } from '../utils/ndisPricingRules.js';
-import {
-    getNdisInvoiceGeneratorContextFromMasterItems,
-    fetchParticipantProfileItemForMasterPlan,
-    prepareParticipantForInvoiceGenerator,
-} from '../utils/ndisInvoiceGeneratorInvoicing.js';
-import {
-    buildMasterItemsMap,
-    buildNdisInvoicePdfClientDetails,
-    enrichNdisInvoiceGeneratorRows,
-} from '../utils/ndisInvoiceGeneratorOutput.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const router = express.Router();
-
-function enableRepeatHeadOnTables(template) {
-    if (!template || !Array.isArray(template.schemas)) {
-        return;
-    }
-    for (const pageSchemas of template.schemas) {
-        if (!Array.isArray(pageSchemas)) {
-            continue;
-        }
-        for (const schema of pageSchemas) {
-            if (schema && schema.type === 'table') {
-                schema.repeatHead = true;
-            }
-        }
-    }
-}
 
 // Attribute names constants (matching items.js)
 const ATTRIBUTE_NAMES = {
@@ -119,6 +101,24 @@ async function getValidatedBusiness(workspaceId) {
     return business;
 }
 
+/**
+ * These routes answer once, but the work does not stop there: a PDF route sends
+ * its response and then keeps going — writing the invoice number back, saving
+ * the business, advancing the numbering. When any of that trailing work throws,
+ * the catch around it tries to answer a request that has already been answered,
+ * which throws ERR_HTTP_HEADERS_SENT out of the catch itself. That second throw
+ * escapes to the route's outer catch, which answers again and throws again, this
+ * time with nothing left to catch it — an unhandled rejection that fails the
+ * whole test run while every test still passes.
+ *
+ * The first answer is the one the caller already has, so a later one has nothing
+ * to add. Skip it rather than crash.
+ */
+function respondOnce(res, status, body) {
+    if (res.headersSent) return res;
+    return res.status(status).json(body);
+}
+
 async function handlePDFError(err, workspaceId, boardId, itemId, action, req, res) {
     const errorMessage = (err && err.message) ? err.message : 'Server error: An unknown error occurred. Please contact support via ISO+™ Portal.';
     await setIntegrationMessage(workspaceId, boardId, itemId, errorMessage);
@@ -129,22 +129,7 @@ async function handlePDFError(err, workspaceId, boardId, itemId, action, req, re
         detail: `Resource ID: ${itemId}, Error: ${errorMessage}`,
         req
     });
-    return res.status(200).json({ message: errorMessage });
-}
-
-async function getLogoData(business, req = null) {
-    const logoKey = business.defaultLogo;
-    if (!logoKey) return '';
-
-    const buffer = await getS3File(logoKey, false);
-    if (!buffer) throw new Error('Failed to retrieve logo from S3');
-
-    info('Webhook-Service', 'Embedding default logo for PDF generation', {
-      workspaceId: business?.workspaceId,
-      hasDefaultLogo: !!business?.defaultLogo
-    }, req ?? null);
-    const type = logoKey.split('.').pop();
-    return `data:image/${type};base64,${buffer.toString('base64')}`;
+    return respondOnce(res, 200, { message: errorMessage });
 }
 
 async function fetchImageUrlAsBase64(url) {
@@ -583,48 +568,9 @@ function formatLabelValue(value, labels = []) {
     return String(value);
 }
 
-async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, type, pdfLink = null) {
-    try {
-        await InvoiceNumber.findOneAndUpdate(
-            {
-                itemId: itemId,
-                workspaceId: workspaceId,
-                boardId: boardId,
-                type: type
-            },
-            {
-                $set: {
-                    itemId: itemId,
-                    workspaceId: workspaceId,
-                    boardId: boardId,
-                    invoiceNumber: invoiceNumber,
-                    type: type,
-                    pdfLink: pdfLink,
-                    updatedAt: new Date()
-                },
-                $setOnInsert: {
-                    createdAt: new Date()
-                }
-            },
-            {
-                upsert: true,
-                new: true
-            }
-        );
-    } catch (err) {
-        // Log error but don't fail the invoice generation if saving fails
-        warn('Webhook-Service', 'Failed to save invoice number to database', {
-            workspaceId,
-            boardId,
-            itemId,
-            invoiceNumber,
-            type,
-            error: err.message
-        }, {});
-    }
-}
-
-function formatValue(val) {
+// Exported for services/automation/generateDocuments.js, which renders the
+// same templates outside a request.
+export function formatValue(val) {
     const num = Number(val);
     if (!isNaN(num)) {
         const factor = Math.pow(10, 2);
@@ -690,13 +636,6 @@ function formatDateToAU(value, timezone) {
         timeZone: effectiveTimezone
     };
     return new Intl.DateTimeFormat('en-AU', options).format(date);
-}
-
-function formatDateNumericAU(value, timeZone) {
-    if (!value) return new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric', timeZone: timeZone || 'Australia/Sydney' });
-    const d = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric', timeZone: timeZone || 'Australia/Sydney' });
 }
 
 function safeString(value) {
@@ -1299,14 +1238,27 @@ function applyBudgetMapping(templateInputs, aggregate, mappings = []) {
 
 function validateRequestParams(req) {
     const { workspaceId, boardId } = req.params;
-    if (!req.body.items?.length) {
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (!items.length) {
         error('Webhook-Service', 'Server error', { message: "There are no items." }, req ?? null);
         throw new Error('No items found in the payload');
     }
     return { workspaceId, boardId };
 }
 
-async function handlePDFSuccess(workspaceId, boardId, itemId, fileUrl, docType, req, res) {
+/**
+ * Record a generated document and answer the caller.
+ *
+ * `document` carries the fields a statement of account matches on: the board,
+ * the participant, the figure billed and the date the invoice claims. They are
+ * optional because most callers here produce quotes and purchase orders, which
+ * no statement reads — but every invoice path must pass them. Without them the
+ * row is written with `boardId`, `participant` and `invoiceTotal` all absent,
+ * and `participantInvoices` filters on exactly those three, so the invoice is
+ * invisible to the statement for ever after. `boardId` in particular was in
+ * scope here all along and simply was not stored.
+ */
+async function handlePDFSuccess(workspaceId, boardId, itemId, fileUrl, docType, req, res, document = {}) {
     await setIntegrationMessage(workspaceId, boardId, itemId, `Your ${docType} has been successfully created.\n`);
     await setPDFLinkAttribute(workspaceId, boardId, itemId, fileUrl, docType);
     logAuditTrail({
@@ -1317,15 +1269,24 @@ async function handlePDFSuccess(workspaceId, boardId, itemId, fileUrl, docType, 
     });
     await PDFLink.insertOne({
         workspaceId,
+        boardId,
         itemId,
         type: docType,
         pdfLink: fileUrl,
+        participant: document.participant || undefined,
+        invoiceNumber: document.invoiceNumber || undefined,
+        invoiceTotal: Number.isFinite(Number(document.invoiceTotal))
+            ? Number(document.invoiceTotal)
+            : undefined,
+        invoiceDate: Number.isNaN(new Date(document.invoiceDate).getTime())
+            ? undefined
+            : new Date(document.invoiceDate),
         createdBy: "",
         isDeleted: false,
         SignatureStatus: "Unsigned"
     });
     info('Webhook-Service', `Successfully generating PDF ${docType.toLowerCase()}`, { link: fileUrl }, req ?? null);
-    return res.json({ pdfUrl: fileUrl });
+    return respondOnce(res, 200, { pdfUrl: fileUrl });
 }
 
 function appendInvoiceLine(description, label, amount, gst) {
@@ -1380,7 +1341,6 @@ async function processWebhookInvoiceItem(req, res, workspaceId, boardId, busines
     enableRepeatHeadOnTables(template);
 
     const logoBase64 = await getLogoData(business);
-    const invoiceNumber = business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
     const invoiceValues = item.values;
     const invoiceDate = invoiceValues['Issue Date'] ? invoiceValues['Issue Date'].replace('Z', '') : '';
     const dueDate = invoiceValues['Due Date'] ? invoiceValues['Due Date'].replace('Z', '') : '';
@@ -1391,6 +1351,12 @@ async function processWebhookInvoiceItem(req, res, workspaceId, boardId, busines
     const subTotal = formatValue(subTotalRaw);
     const gstTotal = formatValue((subTotal * parseFloat(gst) / 100));
     const total = formatValue(parseFloat(subTotal) + parseFloat(gstTotal));
+
+    // Claimed here, just before the number is first used. Items in one request
+    // run at the same time against one shared `business`, so reading its counter
+    // gave every one of them the same number (KAN-288); the claim is a single
+    // database operation.
+    const invoiceNumber = await claimInvoiceNumber(workspaceId);
 
     const clientDetails = {
         Address: contactValues.address,
@@ -1436,19 +1402,38 @@ async function processWebhookInvoiceItem(req, res, workspaceId, boardId, busines
         plugins: { text, image, line, table, multiVariableText },
     });
 
-    const filename = `output/${workspaceId}/${boardId}/invoices/${invoiceNumber + '-ISO+™-' + item.id}.pdf`;
-    const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
+    const filename = buildOutputKey({
+        workspaceId,
+        boardId,
+        type: OUTPUT_TYPE.INVOICE,
+        name: `${invoiceNumber}-ISO+™-${item.id}.pdf`,
+    });
+    const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
 
     if (uploadResult['$metadata'].httpStatusCode !== 200) {
         throw new Error('Upload of PDF failed, please provide correct information.');
     }
 
-    const fileUrl = await getS3FileUrl(filename, 3600, true);
+    const fileUrl = await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'Invoice', req, res);
-    await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
-    await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);
-    business.documentNumbering.invoice.nextNumber += 1;
-    await business.save();
+    // KAN-294: stored and written back as issued, with no "(ISO+™)" suffix.
+    await setGeneratedField(workspaceId, boardId, item.id, invoiceNumber);
+    await saveInvoiceNumber(workspaceId, boardId, item.id, invoiceNumber, 'PDF', fileUrl);
+    // KAN-306: the invoice record, behind INVOICE_LEDGER_WRITE. Never throws.
+    await recordIssuedInvoice({
+        workspaceId,
+        boardId,
+        itemIds: [item.id],
+        generated: { invoiceNumber, fileUrl, invoiceTotal: Number(total) },
+        kind: INVOICE_KIND.JOB,
+        participant: { name: contactValues.client || 'Client' },
+        trigger: INVOICE_TRIGGER.MANUAL,
+        lineAmounts: { [item.id]: Number(total) },
+        // The operator's own values, with their zone: `invoiceDate` above has it stripped
+        // for the PDF, and a zoneless string reads differently on different servers.
+        invoiceDate: invoiceValues['Issue Date'] || undefined,
+        dueDate: invoiceValues['Due Date'] || undefined,
+    });
 }
 
 router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
@@ -1465,7 +1450,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
         }));
     } catch (err) {
         error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
-        return res.status(200).json({ message: err.message });
+        return respondOnce(res, 200, { message: err.message });
     }
 });
 
@@ -1552,11 +1537,16 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     plugins: { text, image, line, table, multiVariableText }
                 });
 
-                const filename = `output/${workspaceId}/${boardId}/purchaseorder/${purchaseOrderNumber + '-ISO+™-' + item.id}.pdf`;
-                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
+                const filename = buildOutputKey({
+                    workspaceId,
+                    boardId,
+                    type: OUTPUT_TYPE.PURCHASE_ORDER,
+                    name: `${purchaseOrderNumber}-ISO+™-${item.id}.pdf`,
+                });
+                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
 
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
-                    const fileUrl = await getS3FileUrl(filename, 3600, true);
+                    const fileUrl = await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
                     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'Purchase Order', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${purchaseOrderNumber} (ISO+™)`);
                     business.documentNumbering.purchaseOrder.nextNumber += 1;
@@ -1570,7 +1560,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
         }));
     } catch (err) {
         error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
-        return res.status(200).json({ message: err.message });
+        return respondOnce(res, 200, { message: err.message });
     }
 });
 
@@ -1649,11 +1639,16 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                     plugins: { text, image, line, table, multiVariableText }
                 });
 
-                const filename = `output/${workspaceId}/${boardId}/quote/${quoteNumber + '-ISO+™-' + item.id}.pdf`;
-                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
+                const filename = buildOutputKey({
+                    workspaceId,
+                    boardId,
+                    type: OUTPUT_TYPE.QUOTE,
+                    name: `${quoteNumber}-ISO+™-${item.id}.pdf`,
+                });
+                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
 
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
-                    const fileUrl = await getS3FileUrl(filename, 3600, true);
+                    const fileUrl = await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
                     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'Quote', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${quoteNumber} (ISO+™)`);
                     business.documentNumbering.quote.nextNumber += 1;
@@ -1667,7 +1662,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
         }));
     } catch (err) {
         error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
-        return res.status(200).json({ message: err.message });
+        return respondOnce(res, 200, { message: err.message });
     }
 });
 
@@ -1694,7 +1689,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         })));
     } catch (err) {
         error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
-        return res.status(200).json({ message: err.message });
+        return respondOnce(res, 200, { message: err.message });
     }
 });
 
@@ -1721,290 +1716,148 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         })));
     } catch (err) {
         error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
-        return res.status(200).json({ message: err.message });
+        return respondOnce(res, 200, { message: err.message });
     }
 });
-
-function parseMasterItemIdsFromBody(body) {
-    const raw = Array.isArray(body?.itemIds)
-        ? body.itemIds
-        : (Array.isArray(body?.items) ? body.items : []);
-
-    return [...new Set(raw.map((r) => {
-        if (!r) return null;
-        if (typeof r === 'string') return r;
-        if (typeof r === 'object') {
-            if (r.sourceItemId) return String(r.sourceItemId);
-            if (r.id && String(r.id).includes(':')) return String(r.id).split(':')[0];
-            if (r.id) return String(r.id);
-        }
-        return null;
-    }).filter((r) => Boolean(r)).map((r) => String(r)))];
-}
 
 router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, res) => {
     try {
         const { workspaceId, boardId } = validateRequestParams(req);
-        const business = await getValidatedBusiness(workspaceId);
-
-        const masterItemIds = parseMasterItemIdsFromBody(req.body);
-
-        const { masterItems, refItemsMap, participantProfileItem } =
-            await getNdisInvoiceGeneratorContextFromMasterItems({
-                workspaceId,
-                boardId,
-                masterItemIds,
-            });
-
-        const fallbackParticipantName =
-            String(req.body?.participantName || '').trim() ||
-            masterItems
-                .map((m) => formatLabelValue(m?.data?.['Participant Full Name']).trim())
-                .find(Boolean) ||
-            '';
-
-        const { participantProfile, participantProfileItem: profileItem, participantName } =
-            await prepareParticipantForInvoiceGenerator({
-                workspaceId,
-                boardId,
-                participantProfileItem,
-                fallbackParticipantName,
-            });
-
-        const clientDetails = buildNdisInvoicePdfClientDetails({
-            participantProfile,
-            participantProfileItem: profileItem,
-            fallbackParticipantName: participantName,
+        const result = await generateNdisInvoiceGeneratorPdf({
+            workspaceId,
+            boardId,
+            masterItemIds: parseInvoiceGeneratorMasterItemIds(req.body),
+            participantName: req.body?.participantName,
+            invoiceDate: req.body?.invoiceDate,
+            dueDate: req.body?.dueDate,
         });
-
-        const invoiceDateRaw = req.body?.invoiceDate || new Date().toISOString();
-        const dueDateRaw = req.body?.dueDate || '';
-        const invoiceDate = invoiceDateRaw ? String(invoiceDateRaw).replace('Z', '') : '';
-        let dueDate = dueDateRaw ? String(dueDateRaw).replace('Z', '') : '';
-        if (!dueDate) {
-            const d = new Date(invoiceDateRaw);
-            d.setDate(d.getDate() + 14);
-            dueDate = d.toISOString();
-        }
-
-        const templatePath = path.join(__dirname, '..', 'assets', 'NDISinvoice.json');
-        const templateData = await fs.readFile(templatePath, 'utf8');
-        const template = JSON.parse(templateData);
-        enableRepeatHeadOnTables(template);
-
-        const logoBase64 = await getLogoData(business);
-
-        const invoiceNumberBase =
-            business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
-        const invoiceNumber = `${invoiceNumberBase} (ISO+™)`;
-
-        const allRows = [];
-        for (const masterPlanItem of masterItems) {
-            const spId = extractNdisRefId(masterPlanItem?.data?.[NDIS_MASTERPLAN_ATTR_DB.SERVICE_PLAN]);
-            const servicePlanItem = spId ? refItemsMap.get(spId) : null;
-            if (!servicePlanItem) {
-                throw new Error(
-                    'Master plan information is required. Master plan is missing a service plan reference.'
-                );
-            }
-
-            const ctId = extractNdisRefId(masterPlanItem?.data?.['Cancellation Type']);
-            const cancellationTypeItem = ctId ? refItemsMap.get(ctId) : null;
-
-            const pricingRule = await resolveNdisPricingRuleForServicePlan(workspaceId, servicePlanItem, boardId);
-            const supportCatalogue = buildNdisSupportCatalogueForServicePlan(servicePlanItem, refItemsMap, pricingRule);
-
-            allRows.push(...buildNdisMasterPlanServiceRows({
-                masterPlanItem,
-                participantName,
-                participantProfileItem: profileItem,
-                servicePlanItem,
-                supportCatalogue,
-                cancellationTypeItem,
-                invoiceNumber,
-                invoicePdfLink: null,
-                timeZone: business?.headOfficeTimezone || 'Australia/Sydney',
-                pricingRule,
-            }));
-        }
-
-        if (allRows.length === 0) {
+        if (result.empty) {
             return res.status(200).json({ message: 'There is nothing to invoice!' });
         }
-
-        const invoiceGenTz = business?.headOfficeTimezone || 'Australia/Sydney';
-        const enrichedRows = enrichNdisInvoiceGeneratorRows(
-            allRows,
-            buildMasterItemsMap(masterItems),
-            invoiceGenTz
-        );
-
-        const fmt2 = (val) => {
-            const n = Number(val);
-            if (!Number.isFinite(n)) return '0.00';
-            return (Math.round(n * 100) / 100).toFixed(2);
-        };
-
-        let subTotalNum = 0;
-        const gstLabel = 'GST Free';
-        const ordersArr = enrichedRows.map((r) => {
-            const jobStatus = (r.jobStatus || '').toString().trim().toLowerCase();
-            const dateIso = jobStatus === 'cancelled'
-                ? (r.scheduledServiceDate || r.serviceDeliveryDate || '')
-                : (r.serviceDeliveryDate || r.scheduledServiceDate || '');
-            const rowDate = formatDdMmYyyy(dateIso, invoiceGenTz) || ' ';
-
-            subTotalNum += Number(r.totalAmount || 0);
-            return [
-                rowDate,
-                (r.service || ' ').toString(),
-                (r.unit || ' ').toString(),
-                fmt2(r.quantity),
-                fmt2(r.unitPrice),
-                gstLabel,
-                fmt2(r.totalAmount),
-            ];
+        // The document ledger the statement of account reads. This screen is
+        // how invoices are actually raised on a Care Management board, and it
+        // recorded nothing at all: ISO+ marked the shifts with the new number
+        // while the portal held no document for it, so the statement went on
+        // citing an older invoice that no longer matched anything the client
+        // had been sent. One row per item carrying the whole invoice total, the
+        // same convention the scheduled run writes and `participantInvoices`
+        // dedupes by `pdfLink`. No `periodKey`: this invoice belongs to no
+        // slot, which is also what keeps it outside the double-billing index.
+        await recordPdfLinks({
+            workspaceId,
+            boardId,
+            itemIds: parseInvoiceGeneratorMasterItemIds(req.body),
+            invoiceNumber: result.invoiceNumber,
+            invoiceTotal: result.invoiceTotal,
+            invoiceDate: req.body?.invoiceDate,
+            participant: req.body?.participantName,
+            pdfUrl: result.fileUrl,
+            type: PDFLINK_TYPE_NDIS_INVOICE,
         });
-
-        const subTotal = fmt2(subTotalNum);
-        const gst = '0%';
-        const gstTotal = fmt2((Number(subTotal) * parseFloat(gst)) / 100);
-        const total = fmt2(Number(subTotal) + Number(gstTotal));
-
-        const pdfBytes = await generate({
-            template,
-            inputs: [
-                {
-                    logo: logoBase64,
-                    subtotal: subTotal,
-                    totalGST: gstTotal,
-                    total: total,
-                    clientDetails: JSON.stringify(clientDetails),
-                    invoiceDetails: JSON.stringify({
-                        Date: formatDateNumericAU(invoiceDate || null, business?.headOfficeTimezone),
-                        'Invoice Number': invoiceNumberBase,
-                    }),
-                    companyName: JSON.stringify({ 'Company Name': business.name }),
-                    companyDetails: JSON.stringify({
-                        ABN: business.abn,
-                        'Street Address': business.address.street,
-                        Suburb: business.address.suburb,
-                        State: business.address.state,
-                        Postcode: business.address.postcode,
-                        Country: business.address.country,
-                    }),
-                    orders: JSON.stringify(ordersArr),
-                    dueDate: formatDateNumericAU(dueDate || null, business?.headOfficeTimezone),
-                    'Bank Details': JSON.stringify({
-                        'Account Name': business.bankDetails.accountName,
-                        'Bank Name': business.bankDetails.bankName,
-                        BSB: business.bankDetails.bsb,
-                        'Account Number': business.bankDetails.accountNumber,
-                        'invoice Number': invoiceNumberBase,
-                    }),
-                },
-            ],
-            plugins: { text, image, line, table, multiVariableText },
+        // KAN-306: the invoice record, behind INVOICE_LEDGER_WRITE. Never throws.
+        await recordIssuedInvoice({
+            workspaceId,
+            boardId,
+            itemIds: parseInvoiceGeneratorMasterItemIds(req.body),
+            generated: result,
+            kind: INVOICE_KIND.NDIS,
+            participant: { name: req.body?.participantName || 'Participant' },
+            trigger: INVOICE_TRIGGER.MANUAL,
+            lineAmounts: result.lineAmounts,
+            invoiceDate: req.body?.invoiceDate || undefined,
+            dueDate: req.body?.dueDate || undefined,
         });
-
-        const safeSuffix = (participantName || participantProfile.displayName || 'Multiple').replace(/[^a-zA-Z0-9-_]+/g, '_').slice(0, 40);
-        const filename = `output/${workspaceId}/${boardId}/NDIS-invoices/${invoiceNumberBase + '-ISO+™-' + safeSuffix}.pdf`;
-        const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
-        if (uploadResult?.$metadata?.httpStatusCode !== 200) {
-            throw new Error('Upload of PDF failed, please provide correct information.');
-        }
-        const fileUrl = await getS3FileUrl(filename, 3600, true);
-
-        await Promise.all(masterItems.map(async (it) => {
-            await saveInvoiceNumber(workspaceId, boardId, it.itemId, invoiceNumber, 'PDF', fileUrl);
-        }));
-
-        business.documentNumbering.invoice.nextNumber += 1;
-        await business.save();
-
         return res.json({
-            invoiceNumber,
-            fileUrl,
-            itemCount: masterItems.length,
-            lineCount: ordersArr.length,
+            invoiceNumber: result.invoiceNumber,
+            fileUrl: result.fileUrl,
+            itemCount: result.itemCount,
+            lineCount: result.lineCount,
         });
     } catch (err) {
         error('Webhook-Service', 'Server error (NDIS invoice generator PDF)', { message: err.message, stack: err.stack }, req ?? null);
-        return res.status(200).json({ message: err.message });
+        return respondOnce(res, 200, { message: err.message });
     }
 });
 
 router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => {
     try {
-        return await handleParticipantTaxInvoiceRoute(req, res, {
-            validateRequestParams,
-            getValidatedBusiness,
-            getLogoData,
-            enableRepeatHeadOnTables,
-            bulkFetchReferenceItemsFromDB,
-            getValueFromFlatData,
-            attributeNames: ATTRIBUTE_NAMES,
-            refAttributeNames: REF_ATTRIBUTE_NAMES,
-            getParticipantNameFromProfile,
-            getServiceFromServicePlan,
-            formatLabelValue,
-            formatValue,
-            formatCurrencyValue,
-            uploadFileToS3,
-            getS3FileUrl,
-            saveInvoiceNumber,
-            info,
-            error,
-        });
+        return await handleParticipantTaxInvoiceRoute(req, res, liveParticipantTaxDeps());
     } catch (err) {
         error('Webhook-Service', 'Server error', { err }, req);
         return res.status(500).json({ message: err.message });
     }
 });
 
+export function liveParticipantTaxDeps() {
+    return {
+        validateRequestParams,
+        getValidatedBusiness,
+        getLogoData,
+        enableRepeatHeadOnTables,
+        bulkFetchReferenceItemsFromDB,
+        getValueFromFlatData,
+        attributeNames: ATTRIBUTE_NAMES,
+        refAttributeNames: REF_ATTRIBUTE_NAMES,
+        getParticipantNameFromProfile,
+        getServiceFromServicePlan,
+        formatLabelValue,
+        formatValue,
+        formatCurrencyValue,
+        uploadFileToS3,
+        getS3FileUrl,
+        saveInvoiceNumber,
+        info,
+        error,
+    };
+}
+
+export function liveMonthlyStatementDeps() {
+    return buildMonthlyStatementDeps({
+        getValidatedBusiness,
+        enableRepeatHeadOnTables,
+        ensureMonthlyStatementHeaderFromPage2,
+        getLogoData,
+        resolveTemplateImageUrls,
+        getTemplateImageContentByName,
+        applyTemplateTextDefaults,
+        calculateBudgetAggregates,
+        enrichAggregateFromCategory,
+        initializeBudgetAggregate,
+        getQuarterMetadata,
+        setMultiValueField,
+        setCurrencyField,
+        applyBudgetMapping,
+        safeString,
+        formatDateToAU,
+        createServiceBuckets,
+        determineFundingCode,
+        normalizeStatus,
+        buildServiceTableRows,
+        normalizeTableCell,
+        parseNumberValue,
+        uploadFileToS3,
+        getS3FileUrl,
+        info,
+        warn,
+        error,
+        fetchBudgetItems,
+        fetchServiceItems,
+        generate,
+        text,
+        image,
+        line,
+        table,
+        multiVariableText,
+        path,
+        fs,
+        fileURLToPath,
+        SERVICE_TABLE_CONFIG,
+    });
+}
+
 router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
     try {
-        return await handleMonthlyStatementRoute(req, res, buildMonthlyStatementDeps({
-            getValidatedBusiness,
-            enableRepeatHeadOnTables,
-            ensureMonthlyStatementHeaderFromPage2,
-            getLogoData,
-            resolveTemplateImageUrls,
-            getTemplateImageContentByName,
-            applyTemplateTextDefaults,
-            calculateBudgetAggregates,
-            enrichAggregateFromCategory,
-            initializeBudgetAggregate,
-            getQuarterMetadata,
-            setMultiValueField,
-            setCurrencyField,
-            applyBudgetMapping,
-            safeString,
-            formatDateToAU,
-            createServiceBuckets,
-            determineFundingCode,
-            normalizeStatus,
-            buildServiceTableRows,
-            normalizeTableCell,
-            parseNumberValue,
-            uploadFileToS3,
-            getS3FileUrl,
-            info,
-            warn,
-            error,
-            fetchBudgetItems,
-            fetchServiceItems,
-            generate,
-            text,
-            image,
-            line,
-            table,
-            multiVariableText,
-            path,
-            fs,
-            fileURLToPath,
-            SERVICE_TABLE_CONFIG,
-        }));
+        return await handleMonthlyStatementRoute(req, res, liveMonthlyStatementDeps());
     } catch (err) {
         error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
         return res.status(500).json({ message: err.message });
@@ -2016,7 +1869,7 @@ router.get('/uploads/:filename', async (req, res) => {
         const { filename } = req.params;
         const key = `pdfs/${filename}`;
 
-        const fileUrl = await getS3FileUrl(key, 604800, true);
+        const fileUrl = await getS3FileUrl(key, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
 
         if (fileUrl) {
             res.redirect(fileUrl);

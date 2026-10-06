@@ -20,7 +20,7 @@ import axios from "@/app/utils/axiosConfig";
 import Spinner from "@/components/ui/spin";
 import { showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
 import { Badge } from "@/components/ui/badge";
-import { isOwnerOrSupport } from "@/lib/access";
+import { isOwnerOrSupport, canAccessBoard, isIsoPlusWorkspaceMember } from "@/lib/access";
 import { Input } from "@/components/ui/input";
 import {
   Tooltip,
@@ -62,10 +62,9 @@ export default function WorkspaceDetail() {
   const isOwnerOrSupportUser = isOwnerOrSupport(user);
   const isWorkspaceOwner = user.role === "isoplus_user" && workspace?.user_role === "owner";
   const isWorkspaceAdmin = user.role === "isoplus_user" && workspace?.user_role === "admin";
-  const isWorkspaceRestricted = user.role === "isoplus_user" && workspace?.user_role === "restricted_member";
-  const isWorkspaceFullMember = user.role === "isoplus_user" && workspace?.user_role === "full_member";
   const canSeeBoardMeta = isOwnerOrSupportUser || isWorkspaceOwner || isWorkspaceAdmin;
-  const canAccessThisWorkspace = isOwnerOrSupportUser || isWorkspaceOwner || isWorkspaceAdmin || isWorkspaceRestricted || isWorkspaceFullMember;
+  const canAccessThisWorkspace = canAccessBoard(user, workspace);
+  const canAccessWorkspace = isIsoPlusWorkspaceMember(user, workspace);
   const adminBoardIds = useMemo(() => {
     if (!isWorkspaceAdmin) return null;
     const boardList = (workspace as any)?.board;
@@ -92,9 +91,7 @@ export default function WorkspaceDetail() {
       (canSeeBoardMeta ? (b.label || "").toLowerCase().includes(q) : false)
     );
   }, [visibleBoards, boardSearch, canSeeBoardMeta]);
-  const canOpenBoard = (board: Board) => {
-    return canAccessThisWorkspace;
-  };
+  const canOpenBoard = (_board: Board) => canAccessThisWorkspace;
   const openBoardTooltip = (board: Board) => {
     if (canOpenBoard(board)) return undefined;
     return "You don't have permission to open this board.";
@@ -266,9 +263,9 @@ export default function WorkspaceDetail() {
             </div>
           </Card>
 
-          {/* Workspace Actions */}
+          {/* Workspace Actions — admin/owner (Finance, Configure Business, Audit) */}
           {
-            canAccessThisWorkspace && (
+            (isOwnerOrSupportUser || canAccessWorkspace) && (
               <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-2 lg:grid-cols-4">
                 <Card className="card-hover flex h-full flex-col p-6">
                   <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
@@ -276,13 +273,13 @@ export default function WorkspaceDetail() {
                   </div>
                   <h2 className="text-xl font-semibold">Business Configuration</h2>
                   <p className="mb-4 flex-1 text-sm text-muted-foreground">
-                    Manage your business details, address, and tax information
+                    Manage your business details, address, and branding.
                   </p>
                   <Button
                     onClick={() => router.push(`/workspace/${workspace?.id}/configure-business`)}
                     className="mt-auto w-full"
                   >
-                    <span>Configure Business</span>
+                    <span>Manage Business</span>
                   </Button>
                 </Card>
 
@@ -290,15 +287,15 @@ export default function WorkspaceDetail() {
                   <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
                     <FileSpreadsheet className="h-6 w-6 text-primary" />
                   </div>
-                  <h2 className="text-xl font-semibold">Xero Integration</h2>
+                  <h2 className="text-xl font-semibold">Finance Settings & Automation</h2>
                   <p className="mb-4 flex-1 text-sm text-muted-foreground">
-                    Connect and manage your Xero accounting integration
+                    Manage bank details, payment terms, document numbering, integrations, and billing automation.
                   </p>
                   <Button
-                    onClick={() => router.push(`/workspace/${workspace?.id}/xero-integration`)}
+                    onClick={() => router.push(`/workspace/${workspace?.id}/finance-settings`)}
                     className="mt-auto w-full"
                   >
-                    <span>Setup Xero</span>
+                    <span>Manage Finance</span>
                   </Button>
                 </Card>
 

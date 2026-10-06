@@ -27,9 +27,17 @@ import syncRoutes from './routes/sync.js';
 import itemsRoutes from './routes/items.js';
 import exportOptimizedRoutes from './routes/exportOptimized.js';
 import subscriptionRoutes from './routes/subscription.js';
+import schedulerRoutes from './routes/scheduler.js';
+import localFilesRoutes from './routes/localFiles.js';
+import systemHealthRoutes from './routes/systemHealth.js';
 import session from 'express-session';
+import { resolveSessionCookieOptions } from './utils/sessionCookieHelpers.js';
 import MongoStore from 'connect-mongo';
 import syncWorker, { checkAndRetryFailedJobs } from './workers/syncWorker.js'; // Initialize sync worker
+import { startAutomationWorker } from './workers/automationWorker.js';
+import { startEmailEventsWorker } from './workers/emailEventsWorker.js';
+import { registerSchedulerHandlers } from './services/scheduler/handlers.js';
+import { startBoardSyncCron } from './services/scheduler/portalSchedule.js';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
@@ -37,9 +45,21 @@ import { syncQueue } from './services/sync/queue.js';
 import { requestContextMiddleware } from './middleware/requestContext.js';
 import { auditHttpMiddleware } from './middleware/auditHttp.js';
 import { errorHandler } from './middleware/errorHandler.js';
-import { info, error as logError } from './utils/logger.js';
+import { authenticateToken } from './middleware/auth.js';
+import { requireOwnerOrSupport } from './middleware/requireOwnerOrSupport.js';
+import { info, warn, error as logError } from './utils/logger.js';
 
 dotenv.config();
+
+// Register scheduler job handlers alongside the other background wiring
+// (sync worker, queue) so the registry is populated before the first tick.
+registerSchedulerHandlers();
+
+// Drains the automation queue. Inert by design — see automationWorker.js.
+startAutomationWorker();
+
+// Polls the SES events queue. Inert by design — see emailEventsWorker.js.
+startEmailEventsWorker();
 
 axios.defaults.timeout = Math.max(parseInt(process.env.HTTP_CLIENT_TIMEOUT_MS || '30000', 10), 1000);
 axios.defaults.httpAgent = new http.Agent({ keepAlive: true, maxSockets: 100 });
@@ -52,6 +72,15 @@ if (missingEnvVars.length > 0) {
   logError('Bootstrap', 'Missing required environment variables', { missingEnvVars });
   logError('Bootstrap', 'Please check your .env file and ensure all required variables are set.');
   process.exit(1);
+}
+
+// Deliberately a warning, not a required variable: the scheduler must not be
+// able to stop the whole API booting. But a missing key is otherwise silent —
+// the app is healthy, every other route works, and only POST /api/scheduler/tick
+// answers 500, on every EventBridge invocation, forever, so no schedule ever
+// runs and nothing says why. See docs/scheduling.md.
+if (!process.env.SCHEDULER_API_KEY) {
+  warn('Bootstrap', 'SCHEDULER_API_KEY is not set: POST /api/scheduler/tick will reject every call with 500 and no schedule will run');
 }
 
 mongoose.set('strictQuery', true);
@@ -107,12 +136,6 @@ app.use(express.json({ limit: requestBodyLimitBytes }));
 app.use(express.urlencoded({ extended: true, limit: requestBodyLimitBytes }));
 app.use(mongoSanitize({ replaceWith: '_', allowDots: true }));
 
-const isProduction = process.env.NODE_ENV === 'production';
-// Local tunnel dev (e.g. Cloudflare quick tunnel) puts the frontend and
-// backend on genuinely different sites, so the session cookie needs the same
-// SameSite=None/Secure treatment as production or the browser silently drops
-// it on cross-site XHR (e.g. /api/auth/verify right after login succeeds).
-const crossSiteCookies = isProduction || process.env.SESSION_COOKIE_CROSS_SITE === 'true';
 app.use(session({
   secret: process.env.SESSION_SECRET || 'default_secret',
   resave: false,
@@ -122,12 +145,7 @@ app.use(session({
     collectionName: 'sessions',
     autoRemove: 'native'
   }),
-  cookie: {
-    secure: crossSiteCookies,
-    httpOnly: true,
-    sameSite: crossSiteCookies ? 'none' : 'lax',
-    maxAge: 1000 * 60 * 60 * 24
-  }
+  cookie: resolveSessionCookieOptions(),
 }));
 
 app.use(auditHttpMiddleware);
@@ -151,6 +169,12 @@ app.use('/api/sync', syncRoutes);
 app.use('/api/items', itemsRoutes);
 app.use('/api/export', exportOptimizedRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/scheduler', schedulerRoutes);
+// SES delivery notifications, delivered by SNS. Unauthenticated by
+// nature — the router verifies the SNS signature itself.
+// Offline-mode PDF store; 404s entirely outside offline mode.
+app.use('/api/local-files', localFilesRoutes);
+app.use('/api/system-health', systemHealthRoutes);
 
 // Setup Bull Board for queue monitoring
 const serverAdapter = new ExpressAdapter();
@@ -163,11 +187,14 @@ createBullBoard({
   serverAdapter: serverAdapter,
 });
 
-// Mount Bull Board UI
-app.use('/api/queues', serverAdapter.getRouter());
+// Mount Bull Board UI — portal staff only (same gate as System Health).
+app.use('/api/queues', authenticateToken, requireOwnerOrSupport, serverAdapter.getRouter());
 
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => info('Bootstrap', 'Connected to MongoDB'))
+  .then(() => {
+    info('Bootstrap', 'Connected to MongoDB');
+    startBoardSyncCron();
+  })
   .catch((err) => logError('Bootstrap', 'MongoDB connection error', err));
 
 process.on('unhandledRejection', (reason) => {
