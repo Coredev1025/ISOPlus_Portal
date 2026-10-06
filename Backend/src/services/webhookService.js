@@ -12,9 +12,14 @@ import {
 import {
   sanitizeApiPathSegment,
 } from '../utils/securityHelpers.js';
+import { withHookRetry } from '../utils/hookRetryHelpers.js';
 
 const ISO_PLUS_API_VERSION = '2026-04-20.morava';
 const ISO_PLUS_API_V2_BASE = 'https://app.isoplus.online/api/v2';
+
+function hookRetryLogger(action, context) {
+  return (details) => warn('Webhook-Service', `ISO+ rate limited the hook ${action}, retrying`, { ...context, ...details });
+}
 
 function buildSafeBoardHooksUrl(workspaceId, boardId) {
   const safeWorkspaceId = encodeURIComponent(sanitizeApiPathSegment(workspaceId, 'workspaceId'));
@@ -45,7 +50,10 @@ export async function getBoardHooks(authorization, workspaceId, boardId) {
       'X-API-Version': ISO_PLUS_API_VERSION
     };
 
-    const response = await axios.get(url, { headers });
+    const response = await withHookRetry(
+      () => axios.get(url, { headers }),
+      { onRetry: hookRetryLogger('lookup', { workspaceId, boardId }) },
+    );
 
     if (response.status === 200) {
       return {
@@ -116,7 +124,10 @@ export async function registerHook(authorization, workspaceId, boardId, events, 
       headers: { ...headers, Authorization: 'REDACTED' }
     });
 
-    const response = await axios.post(url, payload, { headers });
+    const response = await withHookRetry(
+      () => axios.post(url, payload, { headers }),
+      { onRetry: hookRetryLogger('registration', { workspaceId, boardId }) },
+    );
 
     if (response.status === 200 || response.status === 201) {
       info('Webhook-Service', 'Hook registered successfully', { 
@@ -182,7 +193,10 @@ export async function unregisterHook(authorization, workspaceId, boardId, hookId
       'X-API-Version': ISO_PLUS_API_VERSION
     };
 
-    const response = await axios.delete(url, { headers });
+    const response = await withHookRetry(
+      () => axios.delete(url, { headers }),
+      { onRetry: hookRetryLogger('removal', { workspaceId, boardId, hookId }) },
+    );
 
     if (response.status === 200 || response.status === 204) {
       info('Webhook-Service', 'Hook unregistered successfully', { 
