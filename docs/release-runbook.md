@@ -22,8 +22,10 @@ Ticket: KAN-295. Branching, tickets and commit rules are in
   application version in `isoplus-be-prod` labelled `<timestamp>-<commit sha>`,
   and points `isoplus-be-prod-blue` (region `ap-southeast-2`) at it.
 - A push to `develop` does the same for `isoplus-be-dev-blue`.
-- **The frontend is not deployed by this workflow.** How it reaches production is
-  **(to confirm)**.
+- **The frontend is not deployed by this workflow.** AWS Amplify builds and deploys
+  it from `main`, as a separate build of about 3 minutes, shown in the Amplify
+  console as "Deployment N". It starts on the same push as the backend deploy but
+  finishes on its own, so check both (section 3, step 4).
 - A change that touches only `.github/` produces no push run, so it does not
   deploy itself. The workflow can be started by hand with the `deploy` input set,
   which builds, tests and deploys the backend. The Elastic Beanstalk steps only act
@@ -70,8 +72,9 @@ note rather than skipping it.
    that carries a migration or touches billing. The procedure, the handling rules
    (the copy holds real data and may hold live credentials) and the pass criteria
    are in "Rehearsing on a copy of production" below.
-8. **Take a database backup or snapshot and note its time.** How is **(to
-   confirm)**. A migration is effectively irreversible without one.
+8. **Take a database backup and note its time.** A migration is effectively
+   irreversible without one. Atlas on the Flex plan cannot take on-demand
+   snapshots, so the backup is a fresh `mongodump`; see "Taking the backup" below.
 9. **Pick the time.** Avoid the scheduled automation slots of the workspaces that
    matter most, and avoid starting a deploy while a run is in flight. Slot times
    are per workspace in the `scheduledjobs` collection.
@@ -84,6 +87,22 @@ note rather than skipping it.
       --environment-names isoplus-be-prod-blue --region ap-southeast-2 \
       --query 'Environments[0].VersionLabel'
     ```
+
+### Taking the backup
+
+Done on 2026-10-06 and to be repeated for each release that carries a migration:
+
+- A fresh `mongodump` as a gzip archive, with read preference `primaryPreferred`.
+  Give the credentials through a config file readable only by its owner, never on
+  a command line (it shows in the process list and the shell history).
+- Copy the archive to the backup bucket under a `pre-release/<date>/` prefix.
+- Verify it: download it back and compare its SHA-256 with the local file, then
+  run `mongorestore --dryRun` against the archive.
+- The dump is consistent per collection, not across the database at one instant.
+  Writes made while it runs can appear in one collection and not another.
+- The bucket's lifecycle rule deletes objects after 60 days. Ticket KAN-335 tracks
+  changing retention to 2 years; until then, copy a release backup somewhere else
+  if it must outlive 60 days.
 
 ## Comparing main with develop
 
@@ -151,7 +170,7 @@ commands; it will be out of date.
    must have confirmed they can sign in with them, or support admins are locked
    out. `GOOGLE_SUPPORT_BREAK_GLASS_EMAILS` is the escape hatch for a failed
    directory lookup only.
-3. **Six migrations have never run in production** (table below).
+3. **Eight migrations had never run in production** (table in section 2). They ran on 2026-10-06; see there.
 4. **New infrastructure and environment variables are needed** (below). Several
    fail silently when missing.
 
@@ -301,36 +320,35 @@ For a production release:
 Keep this table current. Add a row in the PR that adds the migration; delete the
 row once the migration has run in production and the release is closed.
 
-| Migration | Added by | Run | What it does | Check it worked | Undo |
+**Status, 2026-10-06:** all eight below ran in production on 2026-10-06 (20:53 to
+20:55 AEDT), one at a time with `--single`, about 12 seconds in total, each
+verified with its check. The existing document numbering counters were
+fingerprinted before and after and were identical. The rows stay until the release
+is closed: **run in production 2026-10-06, release not yet closed.** (The `Run` column says when each had to run; all eight have.)
+
+All eight are in `develop`, in timestamp order: the seven of PR #953 (merged on
+2026-10-04) and `invoice-ledger-indexes` (KAN-302). The first seven ran on dev on
+2026-10-04. Pending migrations apply in timestamp order, and `up <name>` without
+`--single` takes every older one with it. All of them only add indexes, clean up,
+or disable rows; none reshapes data the old code reads. Run the index migrations
+**before the deploy**, so the new code never runs without them (the unique one is
+the guard against billing a period twice), and the KAN-292 backfill **before it as
+well**: until it has run, a business with a missing counter is refused when it
+tries to set its first numbers. `invoice-ledger-indexes` only builds indexes on the
+new, empty `invoices` collection (and a partial one on `pdflinks.invoiceId`, a
+field no row has yet), so it is safe at any time. So all eight run before the
+deploy. Keep `AUTOMATION_ENABLED` off until they have run.
+
+| Migration | Added by | Run | What it does | Risk, check and pre-check | Undo |
 |---|---|---|---|---|---|
-| `backfill-document-numbering-initialized` | KAN-292 (PR #953) | **Before** the deploy that includes KAN-292. The first-numbers screen refuses a business whose counters are not all stored, so migrating first means nobody is ever refused. Safe against the old code and at any time. Idempotent. Needs MongoDB 4.2 or later (not DocumentDB). | Stores every missing document numbering counter and prefix (older businesses lack `statementOfAccount` and `statement`) and the `documentNumberingInitialized` flag, so a stale `save()` cannot write defaults back over numbers the user chose. Never changes a value that is already there. The flag is true where any of invoice, purchase order, quote or statement of account has moved off 1, otherwise false. | Before and after: `MONGODB_URI='<production uri>' npm run schema -- businesses`. Then in the database: `db.businesses.countDocuments({documentNumberingInitialized: {$exists: false}})` must be `0`, and `db.businesses.countDocuments({"documentNumbering.statementOfAccount.nextNumber": {$exists: false}})` must be `0` (same for `statement`, `invoice`, `purchaseOrder`, `quote`). After the deploy (section 4), open Finance Settings for one workspace that has issued invoices: the number fields must be read-only. | `MONGODB_URI='<production uri>' npm run migrate -- down backfill-document-numbering-initialized --single --allow-remote` removes the flag only; the backfilled counters stay. **It removes every flag, including one a user set after the migration**: a business that chose 1 for all four numbers and has issued nothing then looks unset again and can set its numbers a second time. Only run it together with rolling back the code that reads the flag. |
-
-#### Migrations that ship when `develop` is promoted (snapshot 2026-10-04)
-
-All eight are in `develop`: the seven of PR #953 (merged on 2026-10-04) and
-`invoice-ledger-indexes` (KAN-302).
-
-None of these has run in production (the first seven ran on dev on 2026-10-04). Pending migrations apply in
-timestamp order, and `up <name>` without `--single` takes every older one with it. All of them only add indexes, clean up, or disable rows; none
-reshapes data the old code reads. Run the index migrations **before the deploy**,
-so the new code never runs without them (the unique one is the guard against
-billing a period twice), and the KAN-292 backfill **before it as well**: until it
-has run, a business with a missing counter is refused when it tries to set its
-first numbers. `invoice-ledger-indexes` only builds indexes on the new, empty
-`invoices` collection (and a partial one on `pdflinks.invoiceId`, a field no row has yet),
-so it is safe at any time. So all eight run before the deploy. Keep `AUTOMATION_ENABLED` off
-until they have run.
-
-| Migration | What it does | Risk and pre-check | Undo |
-|---|---|---|---|
-| `1771401600000-remove-xero-connection-logs` | Unsets `xeroConnectionLogs` on every business. Those events now live in the audit trail. | Not reversible: the log documents are not copied out. Its own note says production documents never had the field. Check: `db.businesses.countDocuments({xeroConnectionLogs: {$exists: true}})`. | `down` writes an empty array back, not the history. |
-| `1786697189409-pdflink-scheduled-xero-ids` | Creates index `automation_slot_lookup` on `pdflinks`. | Index build on the whole `pdflinks` collection. | `down` drops the index **and removes `periodKey` and `invoiceNumber`** from every `pdflinks` row that has a `periodKey`, which is every row an automation run wrote. Once automation has run that is billing data, so treat it as not undoable. |
-| `1787023330061-pdflink-email-delivery-state` | Creates sparse index `delivery_message_lookup` on `pdflinks`. | Sparse, so small. No backfill by design. | `down` drops the index **and removes** `deliveryMessageId`, `deliveryState`, `deliveryDetail` and `deliveryUpdatedAt` from every row that carries a message id. Once emails have been tracked that is real data, so do not run it after go-live without a reason. |
-| `1787097600000-audit-trail-workspace-category-index` | Creates `workspaceId_1_category_1_createdAt_-1` on `audittrails`. | Index build on a large collection. | `down` drops the index. |
-| `1787186180650-pdflink-invoice-period` | Drops and recreates the **unique** partial index `automation_period_item_unique` (the double-billing guard) after the duplicate check. It does not add the period fields themselves; they are optional fields written by automation runs. | It checks for duplicate rows first and refuses to build, with a clear message naming them, if any exist; no index is left behind. If it refuses, the duplicates must be understood, not deleted blindly. | `down` drops the index and removes `periodStart`, `periodEnd`, `invoiceType` and `invoiceTotal` from rows that have them. `periodKey` is left alone. |
-| `1787291724206-disable-portal-board-sync-schedule` | Sets `enabled: false` on the old EventBridge-era `scheduledjobs` row with `kind: 'board_sync'` and `targetId: 'portal'`. | That row must stay disabled or a tick claims it with no handler. Check: `db.scheduledjobs.find({kind: 'board_sync', targetId: 'portal'})`. | `down` sets it back to enabled, which you do not want. |
-| `1791050490815-backfill-document-numbering-initialized` (KAN-292, PR #953) | The row above. | The row above. On the 2026-10-03 production snapshot it flags 93 of 95 businesses as initialized, because production counters started at 1000 (83 businesses sit at 1000/1000/1000/1 and have most likely issued nothing); for them the first-numbers screen is read-only. **Accepted (Masoud, 2026-10-04)**: a business that asks is updated by a support script. | The row above. |
-| `1791102300000-invoice-ledger-indexes` (KAN-302) | Creates the indexes of the new `invoices` collection, including the unique `invoice_number_unique` that makes committing an invoice idempotent, and the partial index `invoice_document` on `pdflinks.invoiceId`. | Nothing is built on existing data, so it is fast and safe against the old code. `commitInvoice` and the invoice backfill refuse to write without it, and the ledger reads scan without `invoice_line_item`. Check: `db.invoices.getIndexes()` lists `invoice_number_unique`, `invoice_line_item`, `invoice_legacy_number`, `invoice_participant`, `invoice_slot`. | `down` drops the indexes and keeps every invoice. Only run it with the ledger flags `off`: without the unique index a retried write can create a second invoice. |
+| `1771401600000-remove-xero-connection-logs` | commit `507356ec` | Before the deploy. | Unsets `xeroConnectionLogs` on every business. Those events now live in the audit trail. | Not reversible: the log documents are not copied out. Its own note says production documents never had the field. Check: `db.businesses.countDocuments({xeroConnectionLogs: {$exists: true}})`. | `down` writes an empty array back, not the history. |
+| `1786697189409-pdflink-scheduled-xero-ids` | commit `b42bdd5c` | Before the deploy. | Creates index `automation_slot_lookup` on `pdflinks`. | Index build on the whole `pdflinks` collection. | `down` drops the index **and removes `periodKey` and `invoiceNumber`** from every `pdflinks` row that has a `periodKey`, which is every row an automation run wrote. Once automation has run that is billing data, so treat it as not undoable. |
+| `1787023330061-pdflink-email-delivery-state` | commit `8b122d82` | Before the deploy. | Creates sparse index `delivery_message_lookup` on `pdflinks`. | Sparse, so small. No backfill by design. | `down` drops the index **and removes** `deliveryMessageId`, `deliveryState`, `deliveryDetail` and `deliveryUpdatedAt` from every row that carries a message id. Once emails have been tracked that is real data, so do not run it after go-live without a reason. |
+| `1787097600000-audit-trail-workspace-category-index` | commit `a8bd86bb` | Before the deploy. | Creates `workspaceId_1_category_1_createdAt_-1` on `audittrails`. | Index build on a large collection. | `down` drops the index. |
+| `1787186180650-pdflink-invoice-period` | commit `ad494d2c` | Before the deploy. | Drops and recreates the **unique** partial index `automation_period_item_unique` (the double-billing guard) after the duplicate check. It does not add the period fields themselves; they are optional fields written by automation runs. | It checks for duplicate rows first and refuses to build, with a clear message naming them, if any exist; no index is left behind. If it refuses, the duplicates must be understood, not deleted blindly. | `down` drops the index and removes `periodStart`, `periodEnd`, `invoiceType` and `invoiceTotal` from rows that have them. `periodKey` is left alone. |
+| `1787291724206-disable-portal-board-sync-schedule` | commit `f9a997c7` | Before the deploy. | Sets `enabled: false` on the old EventBridge-era `scheduledjobs` row with `kind: 'board_sync'` and `targetId: 'portal'`. | That row must stay disabled or a tick claims it with no handler. Check: `db.scheduledjobs.find({kind: 'board_sync', targetId: 'portal'})`. | `down` sets it back to enabled, which you do not want. |
+| `1791050490815-backfill-document-numbering-initialized` | KAN-292 (PR #953, commit `b8939f5e`) | **Before** the deploy that includes KAN-292. The first-numbers screen refuses a business whose counters are not all stored, so migrating first means nobody is ever refused. Safe against the old code and at any time. Idempotent. Needs MongoDB 4.2 or later (not DocumentDB). | Stores every missing document numbering counter and prefix (older businesses lack `statementOfAccount` and `statement`) and the `documentNumberingInitialized` flag, so a stale `save()` cannot write defaults back over numbers the user chose. Never changes a value that is already there. The flag is true where any of invoice, purchase order, quote or statement of account has moved off 1, otherwise false. | Before and after: `MONGODB_URI='<production uri>' npm run schema -- businesses`. Then in the database: `db.businesses.countDocuments({documentNumberingInitialized: {$exists: false}})` must be `0`, and `db.businesses.countDocuments({"documentNumbering.statementOfAccount.nextNumber": {$exists: false}})` must be `0` (same for `statement`, `invoice`, `purchaseOrder`, `quote`). After the deploy (section 4), open Finance Settings for one workspace that has issued invoices: the number fields must be read-only. On the 2026-10-03 production snapshot it flags 93 of 95 businesses as initialized, because production counters started at 1000 (83 businesses sit at 1000/1000/1000/1 and have most likely issued nothing); for them the first-numbers screen is read-only. **Accepted (Masoud, 2026-10-04)**: a business that asks is updated by a support script. | `MONGODB_URI='<production uri>' npm run migrate -- down backfill-document-numbering-initialized --single --allow-remote` removes the flag only; the backfilled counters stay. **It removes every flag, including one a user set after the migration**: a business that chose 1 for all four numbers and has issued nothing then looks unset again and can set its numbers a second time. Only run it together with rolling back the code that reads the flag. |
+| `1791102300000-invoice-ledger-indexes` | KAN-302 (commit `f198a82d`) | Before the deploy. | Creates the indexes of the new `invoices` collection, including the unique `invoice_number_unique` that makes committing an invoice idempotent, and the partial index `invoice_document` on `pdflinks.invoiceId`. | Nothing is built on existing data, so it is fast and safe against the old code. `commitInvoice` and the invoice backfill refuse to write without it, and the ledger reads scan without `invoice_line_item`. Check: `db.invoices.getIndexes()` lists `invoice_number_unique`, `invoice_line_item`, `invoice_legacy_number`, `invoice_participant`, `invoice_slot`. | `down` drops the indexes and keeps every invoice. Only run it with the ledger flags `off`: without the unique index a retried write can create a second invoice. |
 
 Before running any of them in production: take the backup (section 1), then
 `MONGODB_URI='<production uri>' npm run migrate -- list` to see exactly which are
@@ -347,10 +365,21 @@ environment change. See "After the deploy" for what to watch.
    eight are pre-deploy. Do not merge until they have run and been checked.
 1. Open a PR from `develop` to `main` (hotfixes go from `hotfix/...` to `main`,
    see "Hotfix"). Check the diff is the scope you agreed.
-2. Merge with a **merge commit**. The `CICD` workflow starts on the push to `main`.
+   - **Merge `main` into `develop` first**, through its own PR (done for the
+     2026-10-06 release in the KAN-336 PR), so the promotion has no conflicts.
+     Verify with `git fetch origin && git merge-tree --write-tree origin/main
+     origin/develop`: exit status 0 means a clean merge.
+   - **The first PR check run can show the Backend jobs as skipped.** Do not rely
+     on it: run the full Backend suite locally on the release commit (on
+     2026-10-06 it was 292 files, 5,733 tests, about 6.5 minutes).
+   - **`main` requires an approving review from someone other than the author**
+     (the PR shows `REVIEW_REQUIRED`). Plan for a second person.
+2. Merge with **"Create a merge commit"**, never squash and never rebase. Squash or
+   rebase leaves `main`'s commits outside `develop`'s history and the conflicts
+   return. The `CICD` workflow starts on the push to `main`.
 3. Watch it: the test jobs, then `Deploy Backend`. Both must be green. A red test
    job blocks the deploy by design.
-4. Watch the Elastic Beanstalk environment until it reports healthy:
+4. Watch the Elastic Beanstalk environment until it reports Ready, Green and Ok:
 
    ```bash
    aws elasticbeanstalk describe-environments \
@@ -359,8 +388,10 @@ environment change. See "After the deploy" for what to watch.
    ```
 
    The version label must be the new `<timestamp>-<sha>`. The backend can return
-   502 briefly while it restarts.
-5. Deploy the frontend **(to confirm how)**.
+   502 briefly while it restarts, and the health endpoint answers 502 for a short
+   moment during the restart.
+5. Watch the frontend: in the Amplify console the new "Deployment N" for `main`
+   must reach "Deployed" (about 3 minutes). There is no step to run by hand.
 6. Confirm "Deploy Backend" really ran (the workflow only deploys when `Backend/**`
    changed in the pushed commit). There are no migrations to run after the deploy.
 
@@ -378,6 +409,24 @@ Do these before calling it done, and write down the result of each.
   advancing. A stale value means the EventBridge rule or `SCHEDULER_API_KEY` is
   missing. See `docs/scheduling.md`, "What to alert on".
 - **Sign in** and open a workspace: dashboard, a board, Finance Settings.
+- **Elastic Beanstalk health.** The environment can show Degraded or Info for about
+  a minute after the deploy, from the rule on the percentage of 4xx requests over
+  a tiny sample, with no server errors. Before treating it as a problem, confirm
+  with `aws elasticbeanstalk describe-environment-health --environment-name
+  isoplus-be-prod-blue --attribute-names All --region ap-southeast-2` that the 5xx
+  count is 0.
+- **Both deployments finished.** The Amplify deployment for `main` is "Deployed",
+  and the Elastic Beanstalk environment is Ready, Green and Ok with the new
+  version label (section 3, steps 4 and 5).
+- **The release gate that was run on 2026-10-06** (do each, write the result down):
+  Google support-admin sign-in (login page, "Support agent sign-in"); ISO+ sign-in;
+  a member opening a workspace (the role refresh request
+  `GET /api/workspaces?includeDetails=true&q=<id>&limit=10` succeeds); Finance
+  Settings number fields read-only for a business that has issued invoices; a
+  manual Resync Data; Export to CSV; one PDF invoice, on a TEST workspace only.
+  **Warning: the Invoice Generator dialog opens with every line pre-ticked,
+  including lines already invoiced, and ticking one line invoices the whole
+  shift.** Only ever generate invoices on test workspaces until KAN-338 is fixed.
 - **Errors.** Sentry and the in-app Application Logs show no new error class
   since the deploy.
 - **The specific change.** Each change in the release has its own check. For
@@ -389,6 +438,36 @@ Do these before calling it done, and write down the result of each.
   Participant Profile` warning lists item ids worth a look.
 - **Stage 2 only: watch the next scheduled run** of a workspace you can verify, and
   the emails it sent, before leaving.
+- **The first scheduled board sweep.** The board catch-up schedule
+  (`BOARD_SYNC_CRON`) queues every board with `syncData: true`
+  (`Board.find({syncData: true})`). The worker runs one board at a time
+  (concurrency 1), about 30 seconds per board: on 2026-10-06, 154 boards in 102
+  workspaces took roughly 85 minutes. To run it early, change `BOARD_SYNC_CRON` on
+  the Elastic Beanstalk environment and change it back afterwards.
+  - **Every property change restarts the single instance. Do not change
+    environment properties while a sweep is running:** the board being synced at
+    that moment is left with a sync record stuck on in-progress, and its job is
+    retried.
+  - Calls to ISO+ to list, register and unregister hooks are not retried on HTTP
+    429, so some boards can keep an old hook (KAN-339).
+  - Webhooks are switched off at the start of a board's sync and back on at the
+    end, by design.
+  - **Decision (owner, 2026-10-06): production must set `BOARD_SYNC_GAP_MS` to
+    `60000`** (currently unset, which means 0). During the first sweep ISO+ answered
+    429 on the webhook calls (not retried, KAN-339), and boards with sync on and no
+    webhook rose from 13 to 29 in 30 minutes. The gap is the pause between boards.
+    - The sweep syncs the 154 boards with sync on, one at a time. With a 60 s gap it
+      takes about 2.6 hours instead of about 90 minutes: the 02:00 run would end
+      around 04:35. The code caps the setting at one hour.
+    - Set it when no sweep is running, and together with any other property change,
+      so there is a single restart.
+    - Read it back with `aws elasticbeanstalk describe-configuration-settings`, and
+      check the environment is Ready, Green and Ok and the health endpoint returns
+      200.
+    - Verify after the next sweep: scheduled sync records start about 60 s apart,
+      and the number of boards with sync on but no webhook does not increase.
+    - Roll back by setting it to `0`.
+    - The release task for this setting is KAN-340.
 
 ## 5. Rolling back
 
@@ -432,6 +511,19 @@ real shapes and volumes. The design behind it is section 8 of
 [`2026-10-04-invoice-source-of-truth-design.md`](superpowers/specs/2026-10-04-invoice-source-of-truth-design.md).
 
 **Automating this.** `npm run rehearse` replays steps 1 to 4, 6 and the invoice and marker backfills of 7 below on a throwaway MongoDB 8.0 in Docker, in about half a minute for the production snapshot, and compares the result with `scripts/rehearse/expectations.*.json`. How to run it, what it covers and what is still manual is in [`roadmap/release-rehearsal.md`](roadmap/release-rehearsal.md); change both together.
+
+What `npm run rehearse` needs and does not cover (learned on 2026-10-06):
+
+- It needs Docker and the backend image built from the exact release checkout:
+  `docker compose build backend`, with its own `COMPOSE_PROJECT_NAME` in a root
+  `.env` (see `.env.docker.example`) so it does not collide with another stack. It
+  uses a throwaway MongoDB 8.0; production is 8.0.34.
+- It does not cover `down` of each migration (do that on a separate restore, step 5
+  below), the booted app, or the document-generation paths (PDFs, statements,
+  Xero). Those stay manual.
+- A local machine on Node 26 fails about 373 existing Frontend unit tests, because
+  Node's built-in `localStorage` shadows jsdom's. Run them with
+  `NODE_OPTIONS=--no-experimental-webstorage`. CI uses Node 22 and is unaffected.
 
 **Handling.** The copy holds real participant and business data and may hold live
 credentials. Keep it outside the repo and only in the local Mongo, in its own
@@ -776,7 +868,8 @@ Fill these in and delete this list.
   release, or in a later stage.
 - Whether the three hotfix commits on `main` (KAN-22 and KAN-28) are still
   needed in the form they were written, or have been superseded in `develop`.
-- How the frontend is built and deployed to production, and how to roll it back.
+- How to roll the frontend back in Amplify (redeploy an earlier deployment, or
+  revert on `main`).
 - The production backend host and the production frontend host.
 - How to take and restore a production database backup, and whether the production
   cluster has point-in-time recovery.
