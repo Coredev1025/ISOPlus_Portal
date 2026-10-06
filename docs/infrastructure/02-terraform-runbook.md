@@ -99,7 +99,7 @@ Edit `uat.tfvars`. The values that matter:
 |---|---|
 | `sending_domain` | `uat.isoplus.online`. Must not collide with dev or prod |
 | `recipient_allowlist` | Keep restrictive. Include `*@simulator.amazonses.com` |
-| `alert_email` | A real inbox. You must click a confirmation link |
+| `alert_emails` | A list of real inboxes. Each address must click its own confirmation link |
 | `scheduler_rules_enabled` | `false`. Always false on first apply |
 | `scheduler_rules[*].api_key` | Generate with `openssl rand -base64 32` |
 
@@ -310,7 +310,7 @@ Do not run this until UAT has been stable through at least one full invoicing cy
 | `recipient_allowlist` | Restrictive | **Empty** | Real clients are on arbitrary domains |
 | `subscribe_email_to_events` | `true` | `false` | Would be thousands of emails a day |
 | `stalled_queue_threshold_seconds` | 900 | 600 | Invoicing is time sensitive |
-| `alert_email` | An individual | A distribution list | One person on leave is not monitoring |
+| `alert_emails` | An individual | A distribution list (or at least two people, until one exists, KAN-332) | One person on leave is not monitoring |
 | Reputation alarms | Not created | Created | Only apply at production volume |
 
 ### The allowlist decision

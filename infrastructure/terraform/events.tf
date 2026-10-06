@@ -121,17 +121,19 @@ resource "aws_sns_topic_subscription" "events_to_sqs" {
 }
 
 resource "aws_sns_topic_subscription" "events_to_email" {
-  count = var.subscribe_email_to_events ? 1 : 0
+  for_each = var.subscribe_email_to_events ? toset(var.alert_emails) : toset([])
 
   topic_arn = aws_sns_topic.events.arn
   protocol  = "email"
-  endpoint  = var.alert_email
+  endpoint  = each.value
 }
 
 resource "aws_sns_topic_subscription" "alerts_to_email" {
+  for_each = toset(var.alert_emails)
+
   topic_arn = aws_sns_topic.alerts.arn
   protocol  = "email"
-  endpoint  = var.alert_email
+  endpoint  = each.value
 
   # Email subscriptions are created PendingConfirmation. Terraform reports
   # success but nothing is delivered until a human clicks the link in the
