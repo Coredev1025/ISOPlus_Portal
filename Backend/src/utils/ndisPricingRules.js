@@ -17,6 +17,11 @@ export function blockPricingNetwork(blocked) {
     pricingNetworkBlocked = Boolean(blocked);
 }
 const boardRuleCache = new Map();
+// KAN-330. The lookups still waiting on ISO+, by the same key. The Invoice Generator
+// resolves every row at once and a row with no service plan lands here, so without
+// this a cold cache sent one identical ISO+ request per row (thousands on a large
+// board), ISO+ answered 429, and the retries held the first page load for ~45 s.
+const boardRuleInflight = new Map();
 
 export function hasSelectionValue(itemsValues, key) {
     const raw = itemsValues?.[key];
@@ -74,6 +79,19 @@ export async function boardUsesLegacyNdisPricing(workspaceId, boardId) {
     if (pricingNetworkBlocked) {
         throw new Error('the pricing rule cannot be inferred from the service plan data, and the backfill does not ask ISO+');
     }
+    // Concurrent callers for one board share one request. It is forgotten once it
+    // settles, so a request that failed outright is asked again by the next caller.
+    if (!boardRuleInflight.has(cacheKey)) {
+        boardRuleInflight.set(
+            cacheKey,
+            fetchBoardRule(cacheKey, workspaceId, boardId).finally(() => boardRuleInflight.delete(cacheKey)),
+        );
+    }
+    return boardRuleInflight.get(cacheKey);
+}
+
+/** Ask ISO+ for the board's attributes once and cache the answer, failures as legacy. */
+async function fetchBoardRule(cacheKey, workspaceId, boardId) {
     const result = await getBoardAttributes(workspaceId, boardId);
     if (result?.status !== 200) {
         boardRuleCache.set(cacheKey, { legacy: true, fetchedAt: Date.now() });

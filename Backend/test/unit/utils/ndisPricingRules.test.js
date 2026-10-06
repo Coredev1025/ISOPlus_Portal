@@ -284,6 +284,66 @@ describe('boardUsesLegacyNdisPricing', () => {
   });
 });
 
+// KAN-330. The NDIS Invoice Generator resolves the pricing rule for every row at once,
+// and a row with no service plan falls back to this board lookup. Before the fix the
+// cache held answers only, so on a cold cache every row asked ISO+ itself: one page
+// load on a 9,392-item board sent thousands of identical requests, ISO+ answered 429,
+// and the retries made the first load take ~45 s.
+describe('boardUsesLegacyNdisPricing under concurrent callers', () => {
+  const deferred = () => {
+    let resolve;
+    let reject;
+    const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+    return { promise, resolve, reject };
+  };
+
+  it('makes one ISO+ request for many concurrent callers on one uncached board', async () => {
+    const board = freshBoard();
+    const reply = deferred();
+    getBoardAttributes.mockReturnValue(reply.promise);
+
+    const callers = Array.from({ length: 50 }, () => boardUsesLegacyNdisPricing('55427', board));
+    reply.resolve({ status: 200, attribute: newAttributes });
+    const answers = await Promise.all(callers);
+
+    expect(getBoardAttributes).toHaveBeenCalledTimes(1);
+    expect(new Set(answers)).toEqual(new Set([false]));
+  });
+
+  // A request that fails outright (not a non-200 answer, which is cached as legacy)
+  // must not be remembered: the next caller after it settles asks again.
+  it('does not keep a failed request, so the next caller tries again', async () => {
+    const board = freshBoard();
+    const reply = deferred();
+    getBoardAttributes.mockReturnValueOnce(reply.promise);
+
+    const callers = [boardUsesLegacyNdisPricing('55427', board), boardUsesLegacyNdisPricing('55427', board)];
+    reply.reject(new Error('ISO+ unreachable'));
+    const settled = await Promise.allSettled(callers);
+    expect(settled.map((r) => r.status)).toEqual(['rejected', 'rejected']);
+    expect(getBoardAttributes).toHaveBeenCalledTimes(1);
+
+    getBoardAttributes.mockResolvedValueOnce({ status: 200, attribute: legacyAttributes });
+    expect(await boardUsesLegacyNdisPricing('55427', board)).toBe(true);
+    expect(getBoardAttributes).toHaveBeenCalledTimes(2);
+  });
+
+  it('still looks up each board separately', async () => {
+    const [a, b] = [freshBoard(), freshBoard()];
+    getBoardAttributes.mockImplementation(async (_ws, boardId) => (
+      { status: 200, attribute: boardId === a ? legacyAttributes : newAttributes }
+    ));
+
+    const answers = await Promise.all([
+      boardUsesLegacyNdisPricing('55427', a), boardUsesLegacyNdisPricing('55427', b),
+      boardUsesLegacyNdisPricing('55427', a), boardUsesLegacyNdisPricing('55427', b),
+    ]);
+
+    expect(answers).toEqual([true, false, true, false]);
+    expect(getBoardAttributes).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('boardUsesNewNdisPricing / resolveNdisPricingRuleForBoard', () => {
   it('negates and labels the legacy answer', async () => {
     const legacyBoard = freshBoard();
