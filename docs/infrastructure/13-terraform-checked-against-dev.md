@@ -103,14 +103,28 @@ Consequences to keep in mind:
 `isoplus-app-dev-policy`, with an S3 statement and a `SesSendDev` statement. The application's key in dev is that
 key. Production follows the same pattern: one existing user, one key, a policy statement added.
 
-**Do not copy dev's gap.** Dev's policy has **no statement allowing the queue to be read**, and the dev
-application has no `SES_EVENTS_QUEUE_URL` set, so its event consumer is not running. The result seen on
-2026-10-06: `isoplus-dev-ses-events` holds 62 unread messages and the alarm `isoplus-dev-ses-events-stalled` is in
-**ALARM**, so delivery, bounce and complaint states are not reaching documents in dev. The production
-Terraform does include the queue statement (`ConsumeSesEvents`), and stage 2 sets `SES_EVENTS_QUEUE_URL`
-(see [`09-production-environment-properties.md`](09-production-environment-properties.md)); both are required in
-production. Fixing dev is a separate change, planned after the production release (KAN-329): add the queue
-statement to `isoplus-app-dev-policy` and set `SES_EVENTS_QUEUE_URL` on the dev environment.
+**Do not copy dev's gap, and know about the bug it exposed.** Dev's policy had **no statement allowing the queue to
+be read**, and the dev application had no `SES_EVENTS_QUEUE_URL`, so its event consumer was not running and
+`isoplus-dev-ses-events` held 62 unread messages with the stalled alarm in ALARM. The production Terraform
+does include the queue statement (`ConsumeSesEvents`), and stage 2 sets `SES_EVENTS_QUEUE_URL` (see
+[`09-production-environment-properties.md`](09-production-environment-properties.md)); both are required in
+production.
+
+On 2026-10-06 dev was fixed (queue statement added as policy version `v6`, queue URL set, KAN-329) and that
+exposed a **bug in the event consumer**, now fixed by PR #992 (KAN-329) and verified on dev the same day:
+
+* **Cause:** the consumer processed events correctly (a row per event in `emailevents`, no errors) but its handler
+  returned nothing, and `sqs-consumer` v15 deletes a message only when the handler returns it. The messages stayed
+  on the queue, were redelivered, and after five receives moved to the dead-letter queue. Nothing was lost or
+  duplicated: redelivery was idempotent.
+* **Fix:** the handler returns the message once the event is stored. A new test runs the real `sqs-consumer`
+  against a fake SQS client, because the existing tests mock the library and could not see this.
+* **Verified on dev:** a redrive of the 63 dead-lettered events was processed and deleted (queue and DLQ at zero);
+  fresh simulator success, bounce and complaint events were each stored once; and a real scheduled run (statements
+  to the bounce simulator, an invoice to the success simulator) ended with the documents **bounced** and
+  **delivered** respectively.
+* **Production:** the consumer is inert there until stage 2 sets `SES_EVENTS_QUEUE_URL`. The fix ships with the
+  same release as the consumer, so stage 2 must not be switched on from a build that lacks it.
 
 ### 3. Wrong values in `prod.tfvars.example`
 
