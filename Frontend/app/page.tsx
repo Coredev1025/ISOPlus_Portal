@@ -19,16 +19,14 @@ import {
 
 const exchangedTickets = new Set<string>();
 
-function hasOAuthTicketInUrl(): boolean {
-  if (typeof window === "undefined") return false;
-  return Boolean(new URLSearchParams(window.location.search).get("ticket"));
-}
-
 export default function LoginPage() {
   const router = useRouter();
   const { setUser, setWorkspaces } = useAppContext();
   const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(hasOAuthTicketInUrl);
+  // Must match the server-rendered value (no `window` access) to avoid a
+  // hydration mismatch; the effect below flips this to true immediately on
+  // mount when an OAuth ticket is present in the URL.
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;

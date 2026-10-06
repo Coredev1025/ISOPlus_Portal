@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import { renderToString } from 'react-dom/server';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../msw/server';
@@ -205,5 +206,96 @@ describe('Login page', () => {
     expect(localStorage.getItem('workspace')).toBeNull();
     expect(localStorage.getItem('board')).toBeNull();
     expect(router.push).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Coming back from ISO+ sign-in the URL carries `?ticket=...`. The ticket is
+ * redeemed in an effect, and the page must render the SAME first markup with or
+ * without it: the server cannot see the URL, so a first render that reads
+ * `window.location` hydrates with a different button ("Signing in..." and
+ * disabled against "Sign in with ISO+") and React reports a hydration mismatch
+ * on every return from sign-in (KAN-22, KAN-333).
+ */
+describe('Login page: returning from ISO+ sign-in with an OAuth ticket', () => {
+  function setLocationSearch(search: string) {
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...window.location, search, pathname: '/' },
+    });
+  }
+
+  // The top-level beforeEach copies the CURRENT window.location, so a ?ticket=
+  // set here would leak into any test added after this block.
+  afterEach(() => {
+    setLocationSearch('');
+  });
+
+  function firstRenderMarkup() {
+    return renderToString(
+      <ContextProvider>
+        <LoginPage />
+      </ContextProvider>,
+    );
+  }
+
+  it('renders the same first markup with or without a ticket in the URL, so it hydrates cleanly', () => {
+    setLocationSearch('');
+    const withoutTicket = firstRenderMarkup();
+
+    setLocationSearch('?ticket=ticket-hydration-1');
+    const withTicket = firstRenderMarkup();
+
+    expect(withTicket).toBe(withoutTicket);
+    expect(withTicket).toContain('Sign in with ISO+');
+    expect(withTicket).not.toContain('Signing in');
+  });
+
+  it('shows the signing-in state, redeems the ticket once, stores the user and goes to the dashboard', async () => {
+    const exchanged: unknown[] = [];
+    server.use(
+      http.post('*/api/auth/oauth-exchange', async ({ request }) => {
+        exchanged.push(await request.json());
+        return HttpResponse.json({ user: SUPPORT_ADMIN });
+      }),
+    );
+    setLocationSearch('?ticket=ticket-ok-1');
+
+    renderPage();
+
+    // The effect flips the button as soon as the page mounts.
+    expect(
+      await screen.findByRole('button', { name: /Signing in/ }),
+    ).toBeDisabled();
+
+    await waitFor(() => {
+      expect(router.push).toHaveBeenCalledWith('/dashboard');
+    });
+    expect(exchanged).toEqual([{ ticket: 'ticket-ok-1' }]);
+    expect(JSON.parse(localStorage.getItem('user') ?? 'null')).toMatchObject({
+      email: SUPPORT_ADMIN.email,
+      role: 'support_admin',
+    });
+  });
+
+  it('puts the sign-in button back and stays on the page when the ticket is refused', async () => {
+    server.use(
+      http.post('*/api/auth/oauth-exchange', () =>
+        HttpResponse.json({ message: 'Ticket expired' }, { status: 401 }),
+      ),
+    );
+    setLocationSearch('?ticket=ticket-refused-1');
+
+    renderPage();
+
+    expect(
+      await screen.findByText('Ticket expired'),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'Sign in with ISO+™' }),
+      ).toBeEnabled();
+    });
+    expect(router.push).not.toHaveBeenCalledWith('/dashboard');
   });
 });

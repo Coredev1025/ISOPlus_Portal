@@ -49,7 +49,7 @@ const LABEL_COLORS: Record<NonNullable<BoardLabel>, string> = {
 export default function WorkspaceDetail() {
   const router = useRouter();
   const pathname = usePathname();
-  const { workspaces, user, setCurrentWorkspaceId } = useAppContext();
+  const { workspaces, user, setWorkspaces, setCurrentWorkspaceId } = useAppContext();
   const id = pathname.split('/').pop();
   const workspace = workspaces.find(workspace => workspace.id.toString() === id);
   const [boards, setBoards] = useState<Board[]>([]);
@@ -105,6 +105,32 @@ export default function WorkspaceDetail() {
       setCurrentWorkspaceId(null);
     };
   }, [id, setCurrentWorkspaceId]);
+
+  // The dashboard's list fetch doesn't call the per-member role lookup unless
+  // a search is active, so isoplus_user members are cached as "restricted_member"
+  // by default even when they're actually a workspace admin/owner/full_member.
+  // Refresh the real role for this one workspace so admin-only board filtering
+  // and the access checks below use the correct value.
+  useEffect(() => {
+    if (!id || user.role !== "isoplus_user") return;
+    let cancelled = false;
+    axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces`, {
+      params: { includeDetails: true, q: id, limit: 10 },
+    }).then((response) => {
+      if (cancelled) return;
+      const list = Array.isArray(response?.data?.workspace) ? response.data.workspace : [];
+      const match = list.find((w: any) => w?.id?.toString() === id);
+      if (!match?.user_role) return;
+      setWorkspaces((prev) => {
+        const current = prev.find((w) => w.id.toString() === id);
+        if (!current || current.user_role === match.user_role) return prev;
+        return prev.map((w) => (w.id.toString() === id ? { ...w, user_role: match.user_role } : w));
+      });
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [id, user.role, setWorkspaces]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedBoardQuery(boardSearch.trim()), 300);
