@@ -6,7 +6,7 @@ only; no values are recorded here. Compared on 2026-10-05 from a list of the key
 
 Setting any property restarts the environment, so make the whole set of changes for a stage in one update.
 
-## What production has (29 keys)
+## What production has (30 keys)
 
 `Admin_API_Key`, `ALLOWED_ORIGINS`, `AUTHORIZATION_ENDPOINT`, `AWS_ACCESS_KEY_ID`, `AWS_BUCKET`,
 `AWS_BUCKET_PUBLIC`, `AWS_REGION`, `AWS_SECRET_ACCESS_KEY`, `BACKEND_URL`, `CALLBACK_URL`, `CLIENT_ID`,
@@ -15,6 +15,9 @@ Setting any property restarts the environment, so make the whole set of changes 
 `TOKEN_ENDPOINT`, `USER_INFORMATION_ENDPOINT`, `XERO_CLIENT_ID`, `XERO_CLIENT_SECRET`, `XERO_REDIRECT_URL`.
 
 That is the full set the `main` branch needs. Every one is a plain text property.
+
+This list was first written as 29 keys; it is **30**. Counted from the environment's property names on
+2026-10-06: 30 original plus the 11 added for stage 1 gives the 41 properties production has now.
 
 ## What is missing
 
@@ -107,12 +110,23 @@ AWS managed Elastic Beanstalk policies and one inline policy, `ElasticBeanstalkS
   default AWS managed key).
 
 That works but is too broad: dev's role can read production's secrets if they share the account. Production
-must not copy the wildcard, and dev should be narrowed (see "Follow-ups" in the dev doc).
+must not copy the wildcard. Dev's policy was narrowed to its one secret on 2026-10-06 (see the dev doc).
 
 Applied 2026-10-05: the inline policy `ElasticBeanstalkSecretsManagerAccess` on `isoplus-be-prod-ec2-role`
-allows `secretsmanager:GetSecretValue` on exactly those two names (each ending `-*`). The two secrets exist
-(created 2026-10-05 in `ap-southeast-2`, default `aws/secretsmanager` key, so no KMS permission is needed).
-The policy is untested until the environment is updated to use them. Dev's role cannot read these and production's cannot read dev's.
+allows `secretsmanager:GetSecretValue` and nothing else, on the two production secrets only. The two secrets
+exist (created 2026-10-05 in `ap-southeast-2`, default `aws/secretsmanager` key, so no KMS permission is needed).
+Dev's role cannot read these and production's cannot read dev's.
+
+**Tightened 2026-10-06 to exact ARNs.** The policy first named each secret with a `-*` suffix wildcard, because
+the ARNs were not known when it was written. Once the secrets existed it was changed to each secret's full ARN,
+as dev's is. Verified: the role is allowed on both production secrets, denied on dev's, and denied on a look-alike
+name such as `GOOGLE_SERVICE_ACCOUNT_JSON_PROD-evil`, which the wildcard would have allowed.
+
+**Rotation rule.** A secret's ARN ends in six random characters that are fixed for the life of that secret. If
+either production secret is deleted and recreated (for example to rotate by recreation), the suffix changes and
+this policy **must be updated in the same change**, or the environment's next deploy or restart cannot read the
+secret and fails. Updating a secret's value in place (a new version) does not change the ARN, so that kind of
+rotation needs no policy change.
 
 ### Production platform (read 2026-10-05)
 
@@ -164,15 +178,18 @@ Secret names are unique per account and region, and dev's secret is named exactl
       "Effect": "Allow",
       "Action": "secretsmanager:GetSecretValue",
       "Resource": [
-        "arn:aws:secretsmanager:ap-southeast-2:<AWS_ACCOUNT_ID>:secret:GOOGLE_SERVICE_ACCOUNT_JSON_PROD-*",
-        "arn:aws:secretsmanager:ap-southeast-2:<AWS_ACCOUNT_ID>:secret:GOOGLE_OAUTH_CLIENT_SECRET_PROD-*"
+        "arn:aws:secretsmanager:ap-southeast-2:<AWS_ACCOUNT_ID>:secret:GOOGLE_SERVICE_ACCOUNT_JSON_PROD-<SUFFIX>",
+        "arn:aws:secretsmanager:ap-southeast-2:<AWS_ACCOUNT_ID>:secret:GOOGLE_OAUTH_CLIENT_SECRET_PROD-<SUFFIX>"
       ]
     }
   ]
 }
 ```
 
-   The `-*` is required: Secrets Manager appends six random characters to every secret's ARN.
+   `<SUFFIX>` is the six random characters Secrets Manager appends to every secret's ARN; read each secret's
+   full ARN with `aws secretsmanager describe-secret --secret-id <name> --query ARN` rather than typing it. If the
+   policy must be written before the secrets exist, end each name in `-*` and tighten it to the exact ARN as
+   soon as they do.
 4. Set the new properties in one environment update (it restarts the environment). If the role permission
    is missing the update fails or the property is empty.
 5. Confirm after the restart: `GET /api/auth/google/redirect` redirects to Google instead of answering 503.
@@ -199,9 +216,37 @@ both `_PROD` secrets and implicitly denied on dev's; dev's role is allowed on de
 production secrets. The environment update that followed also finished Ready and Green, so Elastic Beanstalk
 read both secrets in practice.
 
+## Verified 2026-10-06
+
+A read-only audit of production, from the AWS account and public endpoints. Nothing was changed by it.
+
+| Check | Result |
+|---|---|
+| Environment `isoplus-be-prod-blue` | Ready, load balancer target healthy, listeners 443 and 80, 8 September build |
+| Properties | 41 in total: 30 original, 9 new plain, 2 new Secrets Manager references. None missing, none unexpected. `AUTOMATION_ENABLED` is `false` |
+| Absent on purpose | `ISOPLUS_OFFLINE`, `LOCAL_FILE_ROOT`, `XERO_SCOPES`, `SESSION_COOKIE_SAMESITE`, plus the stage 2 properties (`EMAIL_FROM`, `EMAIL_BACKEND`, `SES_EVENTS_QUEUE_URL`, the scheduler keys) |
+| Secrets | Each has exactly one current version; the service account secret also holds an older previous version |
+| Role policy | Exact ARNs (see above); simulator results as above |
+| Application IAM user `isoplus-app` | One policy (S3 on the production buckets), one active key. It has **no** SES or queue permission yet: stage 2 adds it |
+| Google OAuth client | Google accepts the production callback, rejects a made-up one, and rejects dev's callback (the client holds no leftover dev URI) |
+| Delegation and group lookup | Tested earlier the same day with the production key: member true, non-member false |
+| TLS certificate | `*.isoplus.online`, issued, valid to February 2027, renewal eligible |
+| Redis, S3 buckets | Available (daily snapshot kept one day), both production buckets reachable |
+| MongoDB backup | Ran on 5 October (about 49 MB), no errors in three days |
+| **Stage 2 resources** | **None exist yet:** SES identity and configuration set, both SNS topics, both queues, the alarms, the scheduler rules and their role. The same checks do find dev's counterparts |
+| Terraform | `validate` passes; the production plan is 29 to add, 0 to change, 0 to destroy (30 with two alert recipients) |
+
+Stage 2 monitors, compared with dev: the two queue alarms are identical in design (same metrics, periods,
+missing-data handling, alarm and recovery notifications), with the stalled threshold tighter in production (600 s
+against 900 s), and production adds the SES bounce-rate and complaint-rate alarms. Those read the whole account;
+the account's rates on 6 October (bounce about 0.04 percent, complaint 0) are far below their thresholds, so they
+will not fire when created. Not covered by any alarm in dev or production: the scheduler stopping, the backup
+job failing, and the environment's health (KAN-331).
+
 ## Checklist
 
 * [x] Stage 1: `GOOGLE_*` properties set (2026-10-06), group created
+* [x] Role policy tightened to exact ARNs (2026-10-06)
 * [ ] Stage 1: a support admin has signed in (after the release)
 * [x] Stage 1: the client secret (ends `nRj_`) and the service account JSON are in Secrets Manager
 * [x] Stage 1: the local copies of both files are deleted (2026-10-06)
