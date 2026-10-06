@@ -225,6 +225,12 @@ describe('Login page: returning from ISO+ sign-in with an OAuth ticket', () => {
     });
   }
 
+  // The top-level beforeEach copies the CURRENT window.location, so a ?ticket=
+  // set here would leak into any test added after this block.
+  afterEach(() => {
+    setLocationSearch('');
+  });
+
   function firstRenderMarkup() {
     return renderToString(
       <ContextProvider>
