@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { IsoPlusRateLimitedError } from '../../../src/utils/isoplusRateLimitHelpers.js';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../msw/server.js';
 import Board from '../../../src/models/Board.js';
@@ -412,6 +413,95 @@ describe('getItemValues', () => {
     const result = await getItemValues(workspaceId, boardId, 'item-1');
 
     expect(result).toBeNull();
+  });
+
+  describe('when ISO+ answers 429', () => {
+    const originalRetries = process.env.ISOPLUS_HOOK_MAX_RETRIES;
+    beforeEach(() => {
+      process.env.ISOPLUS_HOOK_MAX_RETRIES = '2';
+    });
+    afterEach(() => {
+      if (originalRetries === undefined) delete process.env.ISOPLUS_HOOK_MAX_RETRIES;
+      else process.env.ISOPLUS_HOOK_MAX_RETRIES = originalRetries;
+    });
+
+    it('retries through the shared hook retry, honouring Retry-After, then returns the item', async () => {
+      const workspaceId = nextId('ws');
+      const boardId = nextId('board');
+      let calls = 0;
+      server.use(
+        http.get(`${API}/workspaces/${workspaceId}/boards/${boardId}/items/item-1`, () => {
+          calls += 1;
+          if (calls < 3) return new HttpResponse(null, { status: 429, headers: { 'Retry-After': '0' } });
+          return HttpResponse.json({ id: 'item-1', values: [] });
+        })
+      );
+
+      const result = await getItemValues(workspaceId, boardId, 'item-1');
+
+      expect(result).toEqual({ id: 'item-1', values: [] });
+      expect(calls).toBe(3);
+    });
+
+    it('returns null when 429 outlasts the retries, as it always has', async () => {
+      const workspaceId = nextId('ws');
+      const boardId = nextId('board');
+      let calls = 0;
+      server.use(
+        http.get(`${API}/workspaces/${workspaceId}/boards/${boardId}/items/item-1`, () => {
+          calls += 1;
+          return new HttpResponse(null, { status: 429, headers: { 'Retry-After': '0' } });
+        })
+      );
+
+      expect(await getItemValues(workspaceId, boardId, 'item-1')).toBeNull();
+      expect(calls).toBe(3);
+    });
+
+    it('throws IsoPlusRateLimitedError instead of null when the caller asks for it', async () => {
+      const workspaceId = nextId('ws');
+      const boardId = nextId('board');
+      server.use(
+        http.get(`${API}/workspaces/${workspaceId}/boards/${boardId}/items/item-1`, () =>
+          new HttpResponse(null, { status: 429, headers: { 'Retry-After': '0' } })
+        )
+      );
+
+      await expect(
+        getItemValues(workspaceId, boardId, 'item-1', undefined, { throwOnRateLimit: true })
+      ).rejects.toBeInstanceOf(IsoPlusRateLimitedError);
+    });
+
+    it('lets the caller cap the retries so a scan gives up quickly', async () => {
+      const workspaceId = nextId('ws');
+      const boardId = nextId('board');
+      let calls = 0;
+      server.use(
+        http.get(`${API}/workspaces/${workspaceId}/boards/${boardId}/items/item-1`, () => {
+          calls += 1;
+          return new HttpResponse(null, { status: 429, headers: { 'Retry-After': '0' } });
+        })
+      );
+
+      await expect(
+        getItemValues(workspaceId, boardId, 'item-1', undefined, { throwOnRateLimit: true, maxRetries: 1 })
+      ).rejects.toBeInstanceOf(IsoPlusRateLimitedError);
+      expect(calls).toBe(2);
+    });
+
+    it('still returns ITEM_DELETED for a 404 when the caller asks for the throw', async () => {
+      const workspaceId = nextId('ws');
+      const boardId = nextId('board');
+      server.use(
+        http.get(`${API}/workspaces/${workspaceId}/boards/${boardId}/items/item-1`, () =>
+          HttpResponse.json({ message: 'Not found' }, { status: 404 })
+        )
+      );
+
+      expect(
+        await getItemValues(workspaceId, boardId, 'item-1', undefined, { throwOnRateLimit: true })
+      ).toBe(ITEM_DELETED);
+    });
   });
 
   it('uses the session Authorization when provided, not PERSONAL_ACCESS_TOKEN', async () => {

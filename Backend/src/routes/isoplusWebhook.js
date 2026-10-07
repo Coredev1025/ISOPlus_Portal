@@ -8,6 +8,7 @@ import { syncTimeTrackingFromItem } from '../utils/timeTrackSync.js';
 import {
   itemDataReferencesId,
   resolveWebhookTransformedValue,
+  describeHookPayloadShape,
 } from '../utils/isoplusWebhookHelpers.js';
 import {
   deleteWebhookItemFromDatabase,
@@ -31,7 +32,8 @@ router.post('/isoplus', async (req, res) => {
     info('Webhook-Handler', 'Received hook event', { 
       event, 
       payloadObject: payload?.object,
-      payloadId: payload?.id
+      payloadId: payload?.id,
+      ...describeHookPayloadShape(payload),
     }, req ?? null);
 
     if (!event || !payload) {
@@ -170,7 +172,7 @@ async function handleValueCreated(payload) {
       return;
     }
 
-    const itemResult = await fetchOrCreateItem(itemId);
+    const itemResult = await fetchOrCreateItem(itemId, mongoEqOrNull(payload.board_id), mongoEqOrNull(payload.workspace_id));
     if (!itemResult) {
       warn('Webhook-Handler', 'Item not found for value create and could not be fetched', { 
         itemId, 

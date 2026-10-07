@@ -3,6 +3,7 @@ import {
   valueReferencesId,
   itemDataReferencesId,
   resolveWebhookTransformedValue,
+  describeHookPayloadShape,
 } from '../../../src/utils/isoplusWebhookHelpers.js';
 import { transformValue } from '../../../src/utils/itemTransform.js';
 
@@ -233,5 +234,35 @@ describe('resolveWebhookTransformedValue', () => {
 
     expect(resolveWebhookTransformedValue(payload, false, transform, warn)).toBe('transformed');
     expect(transform).toHaveBeenCalledWith(payload);
+  });
+});
+
+describe('describeHookPayloadShape', () => {
+  it('reports the keys and which ids are present, never any values', () => {
+    expect(describeHookPayloadShape({ id: 'v1', item_id: 'i1', attribute_id: 'a1', data: 'secret' })).toEqual({
+      payloadKeys: ['id', 'item_id', 'attribute_id', 'data'],
+      hasBoardId: false,
+      hasWorkspaceId: false,
+      hasItemId: true,
+    });
+    expect(describeHookPayloadShape({ id: 'i1', board_id: 'b1', workspace_id: 'w1' })).toMatchObject({
+      hasBoardId: true,
+      hasWorkspaceId: true,
+      hasItemId: true,
+    });
+  });
+
+  it('treats null ids as absent and tolerates a missing payload', () => {
+    expect(describeHookPayloadShape({ board_id: null, workspace_id: '' })).toMatchObject({
+      hasBoardId: false,
+      hasWorkspaceId: false,
+      hasItemId: false,
+    });
+    expect(describeHookPayloadShape(undefined)).toEqual({
+      payloadKeys: [],
+      hasBoardId: false,
+      hasWorkspaceId: false,
+      hasItemId: false,
+    });
   });
 });

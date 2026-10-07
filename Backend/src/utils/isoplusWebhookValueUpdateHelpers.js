@@ -68,7 +68,7 @@ export async function handleWebhookValueUpdated(payload) {
       return;
     }
 
-    const itemResult = await fetchOrCreateWebhookItem(itemId);
+    const itemResult = await fetchOrCreateWebhookItem(itemId, payload.board_id ? mongoEq(payload.board_id) : null, payload.workspace_id ? mongoEq(payload.workspace_id) : null);
     if (!itemResult) {
       warn('Webhook-Handler', 'Item not found for value update and could not be fetched', { itemId, valueId });
       return;
