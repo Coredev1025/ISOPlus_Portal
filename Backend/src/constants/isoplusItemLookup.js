@@ -14,3 +14,11 @@ export const ISOPLUS_ITEM_LOOKUP_CONCURRENCY = 3;
  * Touchpoints: utils/isoplusWebhookItemHelpers.js.
  */
 export const ISOPLUS_ITEM_SCAN_MAX_RETRIES = 1;
+
+/**
+ * Board scans allowed to run at once. A scan is up to one ISO+ read per synced
+ * board and the webhook endpoint is unauthenticated, so extra scans are skipped
+ * rather than queued. Read-only by convention.
+ * Touchpoints: utils/isoplusWebhookItemHelpers.js.
+ */
+export const ISOPLUS_ITEM_SCAN_MAX_CONCURRENT = 3;

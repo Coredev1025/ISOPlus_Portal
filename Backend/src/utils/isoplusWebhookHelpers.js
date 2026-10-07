@@ -51,3 +51,13 @@ export function resolveWebhookTransformedValue(payload, isDeleted, transformValu
 
   return transformValue(payload);
 }
+
+/** What a hook payload carries, for the log: key names and id presence only, never values. */
+export function describeHookPayloadShape(payload) {
+  return {
+    payloadKeys: Object.keys(payload ?? {}),
+    hasBoardId: Boolean(payload?.board_id),
+    hasWorkspaceId: Boolean(payload?.workspace_id),
+    hasItemId: Boolean(payload?.item_id ?? payload?.id),
+  };
+}

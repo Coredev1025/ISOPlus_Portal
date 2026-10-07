@@ -212,7 +212,7 @@ describe('fetchOrCreateWebhookItem — known board', () => {
     const result = await fetchOrCreateWebhookItem('itm_1001', 'brd_jobs', 'wsp_1');
 
     expect(getItemValues).toHaveBeenCalledTimes(1);
-    expect(getItemValues).toHaveBeenCalledWith('wsp_1', 'brd_jobs', 'itm_1001');
+    expect(getItemValues).toHaveBeenCalledWith('wsp_1', 'brd_jobs', 'itm_1001', undefined, { throwOnRateLimit: true, maxRetries: 1 });
     expect(result.boardId).toBe('brd_jobs');
     expect(result.workspaceId).toBe('wsp_1');
     expect(result.currentSyncGUID).toBe('guid-current');
@@ -249,17 +249,7 @@ describe('fetchOrCreateWebhookItem — known board', () => {
     expect(stored.folderId).toBe('');
   });
 
-  it('stores a null sync GUID when the board row is missing', async () => {
-    getItemValues.mockResolvedValue(isoPlusItem());
-
-    const result = await fetchOrCreateWebhookItem('itm_1001', 'brd_jobs', 'wsp_1');
-
-    expect(result.currentSyncGUID).toBeNull();
-    const stored = await Item.findOne({ itemId: 'itm_1001' }).lean();
-    expect(stored.syncGUID).toBeNull();
-  });
-
-  it('reports a deletion without creating the item when ISO+ 404s', async () => {
+  it('reports a deletion when the hinted board 404s and the scan finds no board with the item', async () => {
     await seedBoard();
     getItemValues.mockResolvedValue(ITEM_DELETED);
 
@@ -437,6 +427,32 @@ describe('fetchOrCreateWebhookItem — ISO+ rate limiting (KAN-349)', () => {
     expect(result).toBeNull();
   });
 
+  it('limits the scan to the workspace when only a workspace id is given', async () => {
+    await seedBoard({ boardId: 'brd_other', workspaceId: 'wsp_other' });
+    await seedBoard({ boardId: 'brd_mine1', workspaceId: 'wsp_1' });
+    await seedBoard({ boardId: 'brd_mine2', workspaceId: 'wsp_1', currentSyncGUID: 'g-2' });
+    getItemValues.mockImplementation(async (_w, boardId) =>
+      boardId === 'brd_mine2' ? isoPlusItem({ board_id: 'brd_mine2' }) : null);
+
+    const result = await fetchOrCreateWebhookItem('itm_1001', null, 'wsp_1');
+
+    expect(getItemValues.mock.calls.map((c) => c[1])).toEqual(['brd_mine1', 'brd_mine2']);
+    expect(result.boardId).toBe('brd_mine2');
+  });
+
+  it('does not share a scan between the same item looked up in different workspaces', async () => {
+    await seedBoard({ boardId: 'brd_a', workspaceId: 'wsp_a' });
+    await seedBoard({ boardId: 'brd_b', workspaceId: 'wsp_b' });
+    getItemValues.mockResolvedValue(null);
+
+    await Promise.all([
+      fetchOrCreateWebhookItem('itm_1001', null, 'wsp_a'),
+      fetchOrCreateWebhookItem('itm_1001', null, 'wsp_b'),
+    ]);
+
+    expect(getItemValues.mock.calls.map((c) => c[1]).sort()).toEqual(['brd_a', 'brd_b']);
+  });
+
   it('never has more than the shared cap of ISO+ item reads in flight', async () => {
     const { ISOPLUS_ITEM_LOOKUP_CONCURRENCY } = await import('../../../src/constants/isoplusItemLookup.js');
     for (let i = 0; i < 6; i += 1) await seedBoard({ boardId: `brd_${i}` });
@@ -455,5 +471,89 @@ describe('fetchOrCreateWebhookItem — ISO+ rate limiting (KAN-349)', () => {
 
     expect(peak).toBeGreaterThan(1);
     expect(peak).toBeLessThanOrEqual(ISOPLUS_ITEM_LOOKUP_CONCURRENCY);
+  });
+});
+
+describe('fetchOrCreateWebhookItem — forged hints (KAN-349)', () => {
+  it('ignores a hinted board that is not one of our synced boards', async () => {
+    await seedBoard({ boardId: 'brd_ours', currentSyncGUID: 'g-ours' });
+    await seedBoard({ boardId: 'brd_off', syncData: false });
+    getItemValues.mockImplementation(async (_w, boardId) => (boardId === 'brd_ours' ? isoPlusItem({ board_id: 'brd_ours' }) : null));
+
+    const result = await fetchOrCreateWebhookItem('itm_1001', 'brd_forged', 'wsp_1');
+    await fetchOrCreateWebhookItem('itm_1002', 'brd_off', 'wsp_1');
+
+    const boardsRead = getItemValues.mock.calls.map((c) => c[1]);
+    expect(boardsRead).not.toContain('brd_forged');
+    expect(boardsRead).not.toContain('brd_off');
+    expect(result.boardId).toBe('brd_ours');
+  });
+
+  it('ignores a hint whose workspace does not match the board we hold', async () => {
+    await seedBoard({ boardId: 'brd_jobs', workspaceId: 'wsp_1' });
+    getItemValues.mockImplementation(async (workspaceId) => (workspaceId === 'wsp_1' ? isoPlusItem() : null));
+
+    const result = await fetchOrCreateWebhookItem('itm_1001', 'brd_jobs', 'wsp_forged');
+
+    expect(getItemValues.mock.calls.every((c) => c[0] === 'wsp_1')).toBe(true);
+    expect(result.workspaceId).toBe('wsp_1');
+  });
+
+  it('takes the workspace from our board, not from the payload', async () => {
+    await seedBoard({ boardId: 'brd_jobs', workspaceId: 'wsp_1' });
+    getItemValues.mockResolvedValue(isoPlusItem());
+
+    await fetchOrCreateWebhookItem('itm_1001', 'brd_jobs');
+
+    expect(getItemValues.mock.calls[0].slice(0, 3)).toEqual(['wsp_1', 'brd_jobs', 'itm_1001']);
+  });
+
+  it('falls back to the scan when the hinted board 404s, and never deletes on that alone', async () => {
+    await seedBoard({ boardId: 'brd_hint' });
+    await seedBoard({ boardId: 'brd_other', currentSyncGUID: 'g-o' });
+    await seedItem({ itemId: 'itm_keep', isoPlusItemId: 'itm_keep', boardId: 'brd_keep' });
+    getItemValues.mockImplementation(async (_w, boardId) => {
+      if (boardId === 'brd_hint') return ITEM_DELETED;
+      throw new IsoPlusRateLimitedError('429');
+    });
+
+    expect(await fetchOrCreateWebhookItem('itm_1001', 'brd_hint', 'wsp_1')).toBeNull();
+    expect(await Item.findOne({ itemId: 'itm_keep' }).lean()).not.toBeNull();
+  });
+
+  it('stops at once when the hinted board is rate limited, without storing or deleting', async () => {
+    await seedBoard({ boardId: 'brd_hint' });
+    await seedBoard({ boardId: 'brd_other' });
+    getItemValues.mockRejectedValue(new IsoPlusRateLimitedError('429'));
+
+    expect(await fetchOrCreateWebhookItem('itm_1001', 'brd_hint', 'wsp_1')).toBeNull();
+
+    expect(getItemValues.mock.calls.map((c) => c[1])).not.toContain('brd_other');
+    expect(await Item.countDocuments({})).toBe(0);
+  });
+
+  it('scans every synced board when the hinted workspace holds none of them', async () => {
+    await seedBoard({ boardId: 'brd_a' });
+    getItemValues.mockResolvedValue(isoPlusItem({ board_id: 'brd_a' }));
+
+    const result = await fetchOrCreateWebhookItem('itm_1001', null, 'wsp_forged');
+
+    expect(result.boardId).toBe('brd_a');
+  });
+
+  it('skips lookups beyond the concurrent scan budget instead of queueing them', async () => {
+    await seedBoard({ boardId: 'brd_a' });
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    getItemValues.mockImplementation(async () => { await gate; return null; });
+
+    const lookups = ['f1', 'f2', 'f3', 'f4', 'f5'].map((id) => fetchOrCreateWebhookItem(`itm_${id}`));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const itemsRead = new Set(getItemValues.mock.calls.map((c) => c[2]));
+    release();
+    const results = await Promise.all(lookups);
+
+    expect(itemsRead.size).toBe(3);
+    expect(results.every((r) => r === null)).toBe(true);
   });
 });

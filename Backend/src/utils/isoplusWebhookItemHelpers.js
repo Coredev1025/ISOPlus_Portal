@@ -4,7 +4,7 @@ import { info, warn } from '../utils/logger.js';
 import { getItemValues, ITEM_DELETED } from '../services/isoplus.js';
 import { transformItemData } from '../utils/itemTransform.js';
 import { mongoEq } from './securityHelpers.js';
-import { ISOPLUS_ITEM_LOOKUP_CONCURRENCY, ISOPLUS_ITEM_SCAN_MAX_RETRIES } from '../constants/isoplusItemLookup.js';
+import { ISOPLUS_ITEM_LOOKUP_CONCURRENCY, ISOPLUS_ITEM_SCAN_MAX_RETRIES, ISOPLUS_ITEM_SCAN_MAX_CONCURRENT } from '../constants/isoplusItemLookup.js';
 import {
   IsoPlusRateLimitedError,
   createConcurrencyLimiter,
@@ -67,8 +67,13 @@ async function probeBoard(board, safeItemId) {
   }
 }
 
-async function scanBoardsForItem(safeItemId) {
-  const boards = await Board.find({ syncData: true }).select('workspaceId boardId currentSyncGUID').lean();
+async function scanBoardsForItem(safeItemId, safeWorkspaceId) {
+  const select = 'workspaceId boardId currentSyncGUID';
+  let boards = safeWorkspaceId
+    ? await Board.find({ syncData: true, workspaceId: safeWorkspaceId }).select(select).lean()
+    : [];
+  // An unknown workspace is a bad hint, not a reason to look nowhere.
+  if (!boards.length) boards = await Board.find({ syncData: true }).select(select).lean();
   // A 404 from one board means the item is not on THAT board (KAN-281). Only when
   // every board answered, and none was rate limited or errored, is it deleted.
   let notFoundOn = null;
@@ -94,10 +99,29 @@ async function scanBoardsForItem(safeItemId) {
   return { itemDeletedInIsoPlus: true, foundBoardId: notFoundOn.boardId, foundWorkspaceId: notFoundOn.workspaceId };
 }
 
-function searchSyncedBoardsForItem(itemId) {
+let activeScans = 0;
+
+// The endpoint is unauthenticated, so forged item ids must not be able to burn the
+// ISO+ token budget: only a few scans run at once, the rest are skipped.
+async function scanWithinBudget(safeItemId, safeWorkspaceId) {
+  if (activeScans >= ISOPLUS_ITEM_SCAN_MAX_CONCURRENT) {
+    warn('Webhook-Handler', 'Too many board scans running, skipping lookup for this item', { itemId: safeItemId });
+    return null;
+  }
+  activeScans += 1;
+  try {
+    return await scanBoardsForItem(safeItemId, safeWorkspaceId);
+  } finally {
+    activeScans -= 1;
+  }
+}
+
+// With a workspace id only that workspace's synced boards are scanned. The
+// payload rarely carries one, so the all-board scan stays as the fallback.
+function searchSyncedBoardsForItem(itemId, workspaceId = null) {
   const safeItemId = mongoEq(itemId);
   if (!safeItemId) return Promise.resolve(null);
-  return dedupeItemSearch(safeItemId, () => scanBoardsForItem(safeItemId));
+  return dedupeItemSearch(`${workspaceId ?? ''}:${safeItemId}`, () => scanWithinBudget(safeItemId, workspaceId));
 }
 
 async function fetchItemFromKnownBoard(itemId, workspaceId, boardId) {
@@ -107,8 +131,9 @@ async function fetchItemFromKnownBoard(itemId, workspaceId, boardId) {
   if (!safeItemId || !safeWorkspaceId || !safeBoardId) return null;
 
   try {
-    const itemData = await getItemValues(safeWorkspaceId, safeBoardId, safeItemId);
-    if (itemData === ITEM_DELETED) return { itemDeletedInIsoPlus: true };
+    const itemData = await limitedGetItemValues(safeWorkspaceId, safeBoardId, safeItemId);
+    // A 404 on a board named by an unauthenticated payload proves nothing.
+    if (itemData === ITEM_DELETED) return null;
     const currentSyncGUID = await getBoardSyncGUID(safeBoardId);
     return { itemData, currentSyncGUID };
   } catch (err) {
@@ -219,15 +244,25 @@ function mapApiLookupResult(result, defaults = {}) {
   };
 }
 
+/** The payload is unauthenticated: a hinted board counts only if it is one of our synced boards and the workspace agrees. */
+async function findTrustedHintBoard(safeBoardId, safeWorkspaceId) {
+  if (!safeBoardId) return null;
+  const board = await Board.findOne({ boardId: safeBoardId, syncData: true }).select('workspaceId boardId').lean();
+  if (!board?.workspaceId) return null;
+  if (safeWorkspaceId && board.workspaceId !== safeWorkspaceId) return null;
+  return board;
+}
+
 async function resolveWebhookItemApiData(safeItemId, safeBoardId, safeWorkspaceId) {
-  if (!safeBoardId || !safeWorkspaceId) {
-    return mapApiLookupResult(await searchSyncedBoardsForItem(safeItemId));
+  const hinted = await findTrustedHintBoard(safeBoardId, safeWorkspaceId);
+  if (hinted) {
+    const fetchResult = await fetchItemFromKnownBoard(safeItemId, hinted.workspaceId, hinted.boardId);
+    if (fetchResult?.itemData) {
+      return mapApiLookupResult(fetchResult, { foundBoardId: hinted.boardId, foundWorkspaceId: hinted.workspaceId });
+    }
+    // A miss, 404 or 429 on a hint never decides anything; the bounded scan does.
   }
-  const fetchResult = await fetchItemFromKnownBoard(safeItemId, safeWorkspaceId, safeBoardId);
-  return mapApiLookupResult(fetchResult, {
-    foundBoardId: safeBoardId,
-    foundWorkspaceId: safeWorkspaceId,
-  });
+  return mapApiLookupResult(await searchSyncedBoardsForItem(safeItemId, safeWorkspaceId));
 }
 
 async function handleWebhookItemDeletedInIsoPlus(safeItemId, foundBoardId) {

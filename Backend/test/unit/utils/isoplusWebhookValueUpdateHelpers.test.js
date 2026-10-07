@@ -213,7 +213,9 @@ describe('handleWebhookValueUpdated — payload guards', () => {
 
     await handleWebhookValueUpdated(valuePayload());
 
-    expect(getItemValues).toHaveBeenCalledTimes(1);
+    // The payload's board is only a hint: its 404 sends the lookup to the bounded
+    // scan, which asks that one synced board again before concluding anything.
+    expect(getItemValues).toHaveBeenCalledTimes(2);
     expect(await Item.countDocuments({})).toBe(0);
   });
 });

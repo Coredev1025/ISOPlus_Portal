@@ -484,6 +484,30 @@ describe('value.created', () => {
     expect(stored.syncGUID).toBeNull();
   });
 
+  it('reads the one board named in the payload instead of scanning every board', async () => {
+    await seedBoard();
+    const boardId = await seedBoard();
+    const itemId = nextId('item');
+    let reads = 0;
+    server.use(
+      http.get(`${API_BASE}/workspaces/ws-1/boards/:board/items/${itemId}`, ({ params }) => {
+        reads += 1;
+        return params.board === boardId
+          ? HttpResponse.json({ id: itemId, values: [{ data: 'hi', attribute: { id: 'a1', name: 'Title', type: 'text' } }] })
+          : HttpResponse.json({ message: 'Not found' }, { status: 404 });
+      })
+    );
+
+    const res = await post({
+      event: 'value.created',
+      payload: { id: 'v1', item_id: itemId, attribute_id: 'a1', board_id: boardId, workspace_id: 'ws-1' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(reads).toBe(2); // one to create the item, one for the value refresh, both on the named board
+    expect((await Item.findOne({ itemId }).lean()).boardId).toBe(boardId);
+  });
+
   it('does nothing when the item is not in the database and no board is syncing', async () => {
     const res = await post({
       event: 'value.created',
