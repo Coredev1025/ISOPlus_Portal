@@ -31,6 +31,8 @@ import {
     buildIsoPlusV2BoardAttributeUrl,
     buildIsoPlusAutomationUrl,
 } from '../utils/securityHelpers.js';
+import { withHookRetry } from '../utils/hookRetryHelpers.js';
+import { IsoPlusRateLimitedError } from '../utils/isoplusRateLimitHelpers.js';
 import { executeSetLogo } from '../utils/isoplusLogoHelpers.js';
 import { fetchPartyJobTypeReferencedItems } from '../utils/isoplusClientReferenceHelpers.js';
 import {
@@ -754,7 +756,13 @@ export async function putTimeTracking(workspaceId, boardId, itemId, startTime, e
 
 export const ITEM_DELETED = Symbol('ITEM_DELETED');
 
-export async function getItemValues(workspaceId, boardId, itemId, authorization) {
+/**
+ * 404 means the item is gone (ITEM_DELETED). 429 and 503 are retried by the shared
+ * hook retry, which honours Retry-After. Any other failure, or a 429 that outlasts
+ * the retries, returns null; a caller that must not mistake a rate limit for a
+ * miss passes { throwOnRateLimit: true } and gets IsoPlusRateLimitedError instead.
+ */
+export async function getItemValues(workspaceId, boardId, itemId, authorization, { throwOnRateLimit = false, maxRetries } = {}) {
     // Offline, this 401s and the whole inbound webhook path then refuses real
     // payloads as intrusion attempts. Served from Mongo instead — see
     // getItemValuesOffline, and isOfflineMode for why production is unaffected.
@@ -762,74 +770,32 @@ export async function getItemValues(workspaceId, boardId, itemId, authorization)
         return getItemValuesOffline(workspaceId, boardId, itemId);
     }
 
-    const maxRetries = 5; // Increased from 3 to handle rate limits better
-    let lastError = null;
-    let retryDelay = 2000; // Start with 2 seconds (increased from 1 second)
+    const url = `${buildIsoPlusV2ItemUrl(workspaceId, boardId, itemId)}?expand[]=values.attribute`;
+    const headers = {
+        "Authorization": authorization || `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-API-Version": "2025-02-26.morava",
+    };
 
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-        try {
-            const url = `${buildIsoPlusV2ItemUrl(workspaceId, boardId, itemId)}?expand[]=values.attribute`;
-            const headers = {
-                "Authorization": authorization || `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "X-API-Version": "2025-02-26.morava",
-            };
-
-            const result = await axios.get(url, { headers });
-            return result.status === 200 ? result.data : null;
-        } catch (err) {
-            lastError = err;
-            
-            if (err.response?.status === 404) {
-                info('ISO+™ Service', 'Item not found (404) - item was deleted in ISO+', { 
-                    workspaceId, 
-                    boardId, 
-                    itemId 
-                });
-                return ITEM_DELETED;
-            }
-            
-            // Check if it's a 429 error (rate limit)
-            const isRateLimitError = err.response?.status === 429 || 
-                                   err.message?.includes('429') ||
-                                   err.message?.toLowerCase().includes('rate limit') ||
-                                   err.message?.toLowerCase().includes('too many requests');
-
-            if (isRateLimitError && attempt < maxRetries - 1) {
-                // Exponential backoff with jitter: delay increases with each retry
-                // Add random jitter (0-30%) to prevent thundering herd
-                const jitter = 1 + (secureRandomFloat() * 0.3);
-                const backoffDelay = Math.min(
-                    retryDelay * Math.pow(2, attempt) * jitter,
-                    30000 // Cap at 30 seconds
-                );
-                warn('ISO+™ Service', `Rate limit hit, retrying after ${Math.floor(backoffDelay)}ms`, { 
-                    workspaceId, 
-                    boardId, 
-                    itemId, 
-                    attempt: attempt + 1,
-                    maxRetries 
-                });
-                await sleep(Math.floor(backoffDelay));
-                continue;
-            }
-
-            // If not a rate limit error or max retries reached, log and return null
-            if (!isRateLimitError || attempt === maxRetries - 1) {
-                error('ISO+™ Service', `Error getting item values: ${err.message}`, { 
-                    workspaceId, 
-                    boardId, 
-                    itemId,
-                    status: err.response?.status,
-                    isRateLimitError
-                });
-                return null;
-            }
+    try {
+        const result = await withHookRetry(() => axios.get(url, { headers }), {
+            ...(maxRetries === undefined ? {} : { maxRetries }),
+            onRetry: (retry) => warn('ISO+™ Service', 'Rate limit hit, retrying item read', { workspaceId, boardId, itemId, ...retry }),
+        });
+        return result.status === 200 ? result.data : null;
+    } catch (err) {
+        if (err.response?.status === 404) {
+            info('ISO+™ Service', 'Item not found (404) - item was deleted in ISO+', { workspaceId, boardId, itemId });
+            return ITEM_DELETED;
         }
+        const isRateLimitError = err.response?.status === 429;
+        error('ISO+™ Service', `Error getting item values: ${err.message}`, {
+            workspaceId, boardId, itemId, status: err.response?.status, isRateLimitError,
+        });
+        if (isRateLimitError && throwOnRateLimit) throw new IsoPlusRateLimitedError();
+        return null;
     }
-
-    return null;
 }
 
 export async function validateItemBelongsToTenant(workspaceId, boardId, itemId) {

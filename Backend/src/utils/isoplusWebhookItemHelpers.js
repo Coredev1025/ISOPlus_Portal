@@ -4,6 +4,12 @@ import { info, warn } from '../utils/logger.js';
 import { getItemValues, ITEM_DELETED } from '../services/isoplus.js';
 import { transformItemData } from '../utils/itemTransform.js';
 import { mongoEq } from './securityHelpers.js';
+import { ISOPLUS_ITEM_LOOKUP_CONCURRENCY, ISOPLUS_ITEM_SCAN_MAX_RETRIES } from '../constants/isoplusItemLookup.js';
+import {
+  IsoPlusRateLimitedError,
+  createConcurrencyLimiter,
+  createInFlightDeduper,
+} from './isoplusRateLimitHelpers.js';
 
 async function getBoardSyncGUID(boardId) {
   const safeBoardId = mongoEq(boardId);
@@ -41,46 +47,57 @@ async function findExistingWebhookItem(itemId) {
   return { item, boardId: item.boardId, workspaceId: item.workspaceId, currentSyncGUID };
 }
 
-async function searchSyncedBoardsForItem(itemId) {
-  const safeItemId = mongoEq(itemId);
-  if (!safeItemId) return null;
+const itemLookupLimit = createConcurrencyLimiter(ISOPLUS_ITEM_LOOKUP_CONCURRENCY);
+const dedupeItemSearch = createInFlightDeduper();
 
+const SCAN_READ_OPTIONS = { throwOnRateLimit: true, maxRetries: ISOPLUS_ITEM_SCAN_MAX_RETRIES };
+const limitedGetItemValues = (workspaceId, boardId, itemId) =>
+  itemLookupLimit(() => getItemValues(workspaceId, boardId, itemId, undefined, SCAN_READ_OPTIONS));
+
+const RATE_LIMITED = Symbol('RATE_LIMITED');
+const UNKNOWN = Symbol('UNKNOWN');
+
+/** One board's answer: item data, ITEM_DELETED, RATE_LIMITED, or UNKNOWN (null or any other failure). */
+async function probeBoard(board, safeItemId) {
+  try {
+    const itemData = await limitedGetItemValues(mongoEq(board.workspaceId), mongoEq(board.boardId), safeItemId);
+    return itemData || UNKNOWN;
+  } catch (err) {
+    return err instanceof IsoPlusRateLimitedError ? RATE_LIMITED : UNKNOWN;
+  }
+}
+
+async function scanBoardsForItem(safeItemId) {
   const boards = await Board.find({ syncData: true }).select('workspaceId boardId currentSyncGUID').lean();
-  // A 404 from one board means the item is not on THAT board; it says nothing
-  // about the others. Only when no board has it do we report it as deleted.
+  // A 404 from one board means the item is not on THAT board (KAN-281). Only when
+  // every board answered, and none was rate limited or errored, is it deleted.
   let notFoundOn = null;
-  for (const board of boards) {
-    if (!board.workspaceId || !board.boardId) continue;
-    try {
-      const itemData = await getItemValues(
-        mongoEq(board.workspaceId),
-        mongoEq(board.boardId),
-        safeItemId,
-      );
-      if (itemData === ITEM_DELETED) {
-        notFoundOn = notFoundOn ?? board;
-        continue;
-      }
-      if (itemData) {
-        return {
-          itemData,
-          foundBoardId: board.boardId,
-          foundWorkspaceId: board.workspaceId,
-          currentSyncGUID: board.currentSyncGUID,
-        };
-      }
-    } catch {
-      continue;
+  let incomplete = false;
+  for (const board of boards.filter((b) => b.workspaceId && b.boardId)) {
+    const answer = await probeBoard(board, safeItemId);
+    if (answer === RATE_LIMITED) {
+      warn('Webhook-Handler', 'ISO+ is rate limiting, stopping the board scan for this item', { itemId: safeItemId });
+      return null;
+    }
+    if (answer === ITEM_DELETED) notFoundOn = notFoundOn ?? board;
+    else if (answer === UNKNOWN) incomplete = true;
+    else {
+      return {
+        itemData: answer,
+        foundBoardId: board.boardId,
+        foundWorkspaceId: board.workspaceId,
+        currentSyncGUID: board.currentSyncGUID,
+      };
     }
   }
-  if (notFoundOn) {
-    return {
-      itemDeletedInIsoPlus: true,
-      foundBoardId: notFoundOn.boardId,
-      foundWorkspaceId: notFoundOn.workspaceId,
-    };
-  }
-  return null;
+  if (!notFoundOn || incomplete) return null;
+  return { itemDeletedInIsoPlus: true, foundBoardId: notFoundOn.boardId, foundWorkspaceId: notFoundOn.workspaceId };
+}
+
+function searchSyncedBoardsForItem(itemId) {
+  const safeItemId = mongoEq(itemId);
+  if (!safeItemId) return Promise.resolve(null);
+  return dedupeItemSearch(safeItemId, () => scanBoardsForItem(safeItemId));
 }
 
 async function fetchItemFromKnownBoard(itemId, workspaceId, boardId) {
